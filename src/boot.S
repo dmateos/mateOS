@@ -20,12 +20,15 @@ stack_top:
 .global _start
 .type _start, @function
 _start:
-			mov $stack_top, %esp
+	mov $stack_top, %esp
+	call kernel_main
+	cli
+1:	hlt
+	jmp 1b
 
-			call kernel_main
-
-			cli
-1:			hlt
-			jmp 1b
+.global _sleep
+.type _sleep, @function
+_sleep:
+		
 
 .size _start, . - _start
