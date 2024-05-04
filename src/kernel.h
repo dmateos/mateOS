@@ -10,3 +10,6 @@
 #if !defined(__i386__)
 #error "i386 required"
 #endif
+
+void outb(uint16_t port, uint8_t value);
+void inb(uint16_t port, uint8_t *value);
