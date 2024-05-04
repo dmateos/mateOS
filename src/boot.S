@@ -26,8 +26,4 @@ _start:
 1:	hlt
 	jmp 1b
 
-.global _sleep
-.type _sleep, @function
-_sleep:
-		
 .size _start, . - _start
