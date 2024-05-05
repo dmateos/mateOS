@@ -8,6 +8,8 @@ void init_gdt() {
   gp.limit = (sizeof(gdt_entry_t) * 3) - 1;
   gp.base = (uint32_t)&gdt;
 
+  // Flat memory model
+  // Were not really going to use segments.
   gdt[0].limit_low = 0xFFFF;
   gdt[0].base_low = 0x0000;
   gdt[0].base_middle = 0x00;
@@ -31,5 +33,16 @@ void init_gdt() {
 
   terminal_writestring("GDT iniitalizing\n");
   asm volatile("lgdt %0" : : "m"(gp));
+
+  // Whatever you do with the GDT has no effect on the CPU until
+  // you load new Segment Selectors into Segment Registers.
+  asm volatile("mov $0x00, %ax\n");
+  asm volatile("mov %ax, %ds\n");
+  asm volatile("mov %ax, %es\n");
+  asm volatile("mov %ax, %fs\n");
+  asm volatile("mov %ax, %gs\n");
+  asm volatile("mov %ax, %ss\n");
+  // asm volatile("ljmp $0x00, $next\n next:");
+
   terminal_writestring("GDT initialized\n");
 }
