@@ -1,11 +1,11 @@
 #include "gdt.h"
 #include "legacytty.h"
 
-struct gdt_entry gdt[3];
-struct gdt_ptr gp;
+gdt_entry_t gdt[3];
+gdt_ptr_t gp;
 
 void init_gdt() {
-  gp.limit = (sizeof(struct gdt_entry) * 3) - 1;
+  gp.limit = (sizeof(gdt_entry_t) * 3) - 1;
   gp.base = (uint32_t)&gdt;
 
   gdt[0].limit_low = 0xFFFF;
