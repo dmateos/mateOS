@@ -31,7 +31,7 @@ void init_gdt() {
   gdt[2].granularity = 0xCF;
   gdt[2].base_high = 0x00;
 
-  terminal_writestring("GDT iniitalizing\n");
+  term_writestr("GDT initializing\n");
   asm volatile("lgdt %0" : : "m"(gp));
 
   // Whatever you do with the GDT has no effect on the CPU until
@@ -44,5 +44,5 @@ void init_gdt() {
   asm volatile("mov %ax, %ss\n");
   // asm volatile("ljmp $0x00, $next\n next:");
 
-  terminal_writestring("GDT initialized\n");
+  term_writestr("GDT initialized\n");
 }

@@ -47,7 +47,7 @@ size_t terminal_column;
 uint8_t terminal_color;
 uint16_t *terminal_buffer;
 
-void terminal_initialize(void) {
+void init_term(void) {
   terminal_row = 0;
   terminal_column = 0;
   terminal_color = vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
@@ -84,6 +84,4 @@ void terminal_write(const char *data, size_t size) {
     terminal_putchar(data[i]);
 }
 
-void terminal_writestring(const char *data) {
-  terminal_write(data, strlen(data));
-}
+void term_writestr(const char *data) { terminal_write(data, strlen(data)); }
