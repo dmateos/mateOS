@@ -15,6 +15,6 @@ void kernel_main(void) {
   init_gdt();
 
   while (1) {
-    terminal_writestring("Hello, kernel World!\n");
+    // terminal_writestring("Hello, kernel World!\n");
   }
 }

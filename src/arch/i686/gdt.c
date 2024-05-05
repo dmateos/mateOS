@@ -1,4 +1,5 @@
 #include "gdt.h"
+#include "legacytty.h"
 
 struct gdt_entry gdt[3];
 struct gdt_ptr gp;
@@ -28,6 +29,7 @@ void init_gdt() {
   gdt[2].granularity = 0xCF;
   gdt[2].base_high = 0x00;
 
+  terminal_writestring("GDT iniitalizing\n");
   asm volatile("lgdt %0" : : "m"(gp));
-  asm volatile("mov $0x10, %ax; ltr %ax");
+  terminal_writestring("GDT initialized\n");
 }

@@ -41,6 +41,9 @@ test32:
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)
 
+stop-test:
+	ps aux |grep qemu | awk '{print $2}' | xargs kill
+
 iso:
 	@cp $(TARGET) isodir/boot/
 	grub-mkrescue -o out.iso isodir
