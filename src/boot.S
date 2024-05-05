@@ -16,6 +16,11 @@ stack_bottom:
 .skip 16384 # 16 KiB
 stack_top:
 
+/*
+The bootloader has loaded us into 32-bit protected mode on a x86
+machine. Interrupts are disabled. Paging is disabled.
+*/
+
 .section .text
 .global _start
 .type _start, @function
