@@ -41,7 +41,7 @@ void init_gdt() {
   asm volatile("mov %ax, %es\n");
   asm volatile("mov %ax, %fs\n");
   asm volatile("mov %ax, %gs\n");
-  asm volatile("mov %ax, %ss\n");
+  // asm volatile("mov %ax, %ss\n");
   // asm volatile("ljmp $0x00, $next\n next:");
 
   term_writestr("GDT initialized\n");
