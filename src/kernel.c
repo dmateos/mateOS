@@ -1,4 +1,5 @@
 #include "kernel.h"
+#include "arch/i686/gdt.h"
 #include "arch/i686/legacytty.h"
 
 void outb(uint16_t port, uint8_t value) {
@@ -11,6 +12,7 @@ void inb(uint16_t port, uint8_t *value) {
 
 void kernel_main(void) {
   terminal_initialize();
+  init_gdt();
 
   while (1) {
     terminal_writestring("Hello, kernel World!\n");
