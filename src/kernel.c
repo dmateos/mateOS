@@ -1,14 +1,15 @@
 #include "kernel.h"
+#include "lib.h"
+
 #include "arch/i686/gdt.h"
 #include "arch/i686/idt.h"
 #include "arch/i686/legacytty.h"
-#include "lib.h"
 
 void kernel_main(void) {
   // temporary term output using VGA text mode
   init_term();
 
-  // General and Interrupt Descriptor Tables
+  // Global and Interrupt Descriptor Tables
   init_gdt();
   init_idt();
 
