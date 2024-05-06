@@ -28,6 +28,7 @@ void init_gdt() {
   gdt[0].access = 0x00;
   gdt[0].granularity = 0x00;
   gdt[0].base_high = 0x00;
+
   // Kernel code segment
   gdt[1].limit_low = 0xFFFF;
   gdt[1].base_low = 0x0000;
