@@ -10,6 +10,8 @@ void init_gdt() {
 
   // Flat memory model
   // Were not really going to use segments.
+
+  // Kernel code segment
   gdt[0].limit_low = 0xFFFF;
   gdt[0].base_low = 0x0000;
   gdt[0].base_middle = 0x00;
@@ -17,19 +19,13 @@ void init_gdt() {
   gdt[0].granularity = 0xCF;
   gdt[0].base_high = 0x00;
 
+  // Kernel data segment
   gdt[1].limit_low = 0xFFFF;
   gdt[1].base_low = 0x0000;
   gdt[1].base_middle = 0x00;
   gdt[1].access = 0x92;
   gdt[1].granularity = 0xCF;
   gdt[1].base_high = 0x00;
-
-  gdt[2].limit_low = 0xFFFF;
-  gdt[2].base_low = 0x0000;
-  gdt[2].base_middle = 0x00;
-  gdt[2].access = 0xFA;
-  gdt[2].granularity = 0xCF;
-  gdt[2].base_high = 0x00;
 
   term_writestr("GDT initializing\n");
   asm volatile("lgdt %0" : : "m"(gp));
