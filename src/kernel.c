@@ -12,7 +12,6 @@ void kernel_main(void) {
   init_idt();
 
   printf("dmOS kernel started\n");
-  int x = 0;
   while (1) {
     // printf("dmOS kernel running %d\n", x++);
   }

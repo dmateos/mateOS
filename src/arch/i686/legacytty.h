@@ -1,7 +1,7 @@
 #ifndef _LEGACYTTY_H
 #define _LEGACYTTY_H
 
-#include "../../lib/lib.h"
+#include "../../lib.h"
 
 void init_term(void);
 void terminal_setcolor(uint8_t color);
