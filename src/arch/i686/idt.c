@@ -16,6 +16,5 @@ void init_idt() {
   // idt_load(&idt_ptr);
 }
 
-__attribute__((noreturn)) void idt_exception_handler(void) {
-  asm volatile("cli; hlt");
-}
+//__attribute__((noreturn))
+void idt_exception_handler(void) { asm volatile("cli; hlt"); }

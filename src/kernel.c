@@ -6,6 +6,8 @@
 #include "arch/i686/legacytty.h"
 #include "arch/i686/util.h"
 
+extern void test_assembly();
+
 void kernel_main(void) {
   // temporary term output using VGA text mode
   init_term();
@@ -17,6 +19,7 @@ void kernel_main(void) {
   init_idt();
 
   printf("mateOS init done\n");
+  test_assembly();
   print_registers();
 
   while (1) {
