@@ -1,7 +1,9 @@
 #include "gdt.h"
 #include "../../lib.h"
 
-gdt_entry_t gdt[3];
+#define GDT_ENTRY_COUNT 3
+
+gdt_entry_t gdt[GDT_ENTRY_COUNT];
 gdt_ptr_t gp_ptr;
 
 static void print_gdt(int segment, char *name) {
@@ -17,7 +19,7 @@ static void print_gdt(int segment, char *name) {
 void init_gdt() {
   printf("GDT initializing for i686\n");
 
-  gp_ptr.limit = (sizeof(gdt_entry_t) * 3) - 1;
+  gp_ptr.limit = (sizeof(gdt_entry_t) * GDT_ENTRY_COUNT) - 1;
   gp_ptr.base = (uint32_t)&gdt;
 
   // Flat memory model
