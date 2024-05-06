@@ -12,7 +12,7 @@ void kernel_main(void) {
   init_gdt();
   init_idt();
 
-  printf("dmOS kernel started\n");
+  printf("mateOS kernel started\n");
   while (1) {
     // printf("dmOS kernel running %d\n", x++);
   }
