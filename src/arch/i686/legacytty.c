@@ -60,9 +60,13 @@ void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) {
 }
 
 void term_putchar(char c) {
-  if (c != '\n') {
+  if (c == '\t') {
+    for(int i = 0; i < 4; i++) {
+      terminal_putentryat(' ', terminal_color, terminal_column++, terminal_row);
+    }
+  } else if (c != '\n') {
     terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
-  }
+  } 
 
   if (++terminal_column == VGA_WIDTH || c == '\n') {
     terminal_column = 0;

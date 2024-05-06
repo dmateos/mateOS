@@ -5,6 +5,7 @@
 #include "lib.h"
 
 void kernel_main(void) {
+  // temporary term output using VGA text mode
   init_term();
 
   // General and Interrupt Descriptor Tables
