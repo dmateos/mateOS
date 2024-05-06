@@ -2,7 +2,7 @@
 #include "../../lib.h"
 
 gdt_entry_t gdt[3];
-gdt_ptr_t gp;
+gdt_ptr_t gp_ptr;
 
 static void print_gdt(int segment, char *name) {
   printf("%s\n", name);
@@ -17,8 +17,8 @@ static void print_gdt(int segment, char *name) {
 void init_gdt() {
   printf("GDT initializing for i686\n");
 
-  gp.limit = (sizeof(gdt_entry_t) * 3) - 1;
-  gp.base = (uint32_t)&gdt;
+  gp_ptr.limit = (sizeof(gdt_entry_t) * 3) - 1;
+  gp_ptr.base = (uint32_t)&gdt;
 
   // Flat memory model
   // Were not really going to use segments.
@@ -49,7 +49,7 @@ void init_gdt() {
   print_gdt(1, "Kernel code segment");
   print_gdt(2, "Kernel data segment");
 
-  asm volatile("lgdt %0" : : "m"(gp));
+  asm volatile("lgdt %0" : : "m"(gp_ptr));
   printf("GDT built\n");
 
   // Whatever you do with the GDT has no effect on the CPU until
@@ -62,5 +62,5 @@ void init_gdt() {
   // asm volatile("mov %ax, %ss\n");
   // asm volatile("ljmp $0x00, $next\n next:");
 
-  printf("GDT initialized\n");
+  printf("GDT initialized at address 0x%x\n", &gdt);
 }

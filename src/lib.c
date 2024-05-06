@@ -26,6 +26,7 @@ void *memcpy(void *dest, const void *src, size_t num) {
   return dest;
 }
 
+// This is total shit and unsafe, does no bounds checks on buf etc
 void itoa(int num, char *buf, int base) {
   if (num == 0) {
     buf[0] = '0';
@@ -63,6 +64,7 @@ void itoa(int num, char *buf, int base) {
   }
 }
 
+// This is also unsafe
 void printf(const char *format, ...) {
   va_list args;
   va_start(args, format);
