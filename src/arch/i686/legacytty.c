@@ -1,7 +1,7 @@
 #include "legacytty.h"
 #include "../../lib.h"
 
-#include "../../lib.h"
+uint16_t *terminal_buffer = (uint16_t *)0xB8000;
 
 /* Hardware text mode color constants. */
 enum vga_color {
@@ -37,7 +37,6 @@ static const size_t VGA_HEIGHT = 25;
 size_t terminal_row;
 size_t terminal_column;
 uint8_t terminal_color;
-uint16_t *terminal_buffer;
 
 void init_term(void) {
   terminal_row = 0;
@@ -61,12 +60,12 @@ void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) {
 
 void term_putchar(char c) {
   if (c == '\t') {
-    for(int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++) {
       terminal_putentryat(' ', terminal_color, terminal_column++, terminal_row);
     }
   } else if (c != '\n') {
     terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
-  } 
+  }
 
   if (++terminal_column == VGA_WIDTH || c == '\n') {
     terminal_column = 0;
