@@ -17,12 +17,8 @@ void kernel_main(void) {
   init_idt();
 
   printf("mateOS init done\n");
-
-  for (int i = 0; i < 4; i++) {
-    printf("loop test %d\n", i);
-  }
-
   print_registers();
+
   while (1) {
   }
 }

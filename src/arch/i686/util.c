@@ -9,6 +9,7 @@ void print_registers(void) {
   asm volatile("mov %%ecx, %0" : "=r"(ecx));
   asm volatile("mov %%edx, %0" : "=r"(edx));
 
+  printf("Registers:\n");
   printf("EAX: 0x%x\n", eax);
   printf("EBX: 0x%x\n", ebx);
   printf("ECX: 0x%x\n", ecx);
