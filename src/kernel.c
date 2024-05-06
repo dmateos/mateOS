@@ -9,12 +9,18 @@ void kernel_main(void) {
   // temporary term output using VGA text mode
   init_term();
 
+  printf("mateOS kernel started\n");
+
   // Global and Interrupt Descriptor Tables
   init_gdt();
   init_idt();
 
-  printf("mateOS kernel started\n");
+  printf("mateOS init done\n");
+
+  for (int i = 0; i < 4; i++) {
+    printf("loop test %d\n", i);
+  }
+
   while (1) {
-    // printf("dmOS kernel running %d\n", x++);
   }
 }
