@@ -12,12 +12,15 @@ TARGET = dmos.bin
 SRC_C = $(wildcard $(SRCDIR)/*.c)
 SRC_C_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.c)
 SRC_S = $(wildcard $(SRCDIR)/*.S)
+SRC_S_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.S)
+
 OBJ_C = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC_C))
 OBJ_C_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.c,$(BUILDDIR)/%.o,$(SRC_C_ARCH))
 OBJ_S = $(patsubst $(SRCDIR)/%.S,$(BUILDDIR)/%.o,$(SRC_S))
+OBJ_S_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.S,$(BUILDDIR)/%.o,$(SRC_S_ARCH))
 
-$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH)
-	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_S) -o $(TARGET)
+$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH)
+	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_S) $(OBJ_S_ARCH) -o $(TARGET)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(BUILDDIR)
@@ -28,6 +31,10 @@ $(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.S
+	@mkdir -p $(BUILDDIR)
+	$(AS) -c $< -o $@
+
+$(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.S
 	@mkdir -p $(BUILDDIR)
 	$(AS) -c $< -o $@
 
