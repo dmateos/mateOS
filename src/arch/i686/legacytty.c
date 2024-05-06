@@ -1,7 +1,7 @@
 #include "legacytty.h"
 #include "../../lib.h"
 
-uint16_t *terminal_buffer = (uint16_t *)0xB8000;
+static uint16_t *terminal_buffer = (uint16_t *)0xB8000;
 
 /* Hardware text mode color constants. */
 enum vga_color {

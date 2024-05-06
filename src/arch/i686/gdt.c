@@ -3,8 +3,8 @@
 
 #define GDT_ENTRY_COUNT 3
 
-gdt_entry_t gdt[GDT_ENTRY_COUNT];
-gdt_ptr_t gp_ptr;
+static gdt_entry_t gdt[GDT_ENTRY_COUNT];
+static gdt_ptr_t gp_ptr;
 
 static void print_gdt(int segment, char *name) {
   printf("%s\n", name);
