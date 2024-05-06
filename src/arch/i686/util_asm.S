@@ -5,7 +5,13 @@ my_str:
 .section .text
 .global test_assembly
 test_assembly:
-    push $my_str
+    pushl %ebp
+    movl %esp, %ebp
+    subl $20, %esp
+
+    pushl $my_str
     call printf
-    leave
+
+    movl %ebp, %esp
+    popl %ebp
     ret

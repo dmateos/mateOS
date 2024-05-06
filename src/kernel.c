@@ -20,6 +20,7 @@ void kernel_main(void) {
 
   printf("mateOS init done\n");
   test_assembly();
+  test_assembly();
   print_registers();
 
   while (1) {
