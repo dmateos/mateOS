@@ -1,9 +1,7 @@
 #ifndef _IDT_H
 #define _IDT_H
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include "../../lib/lib.h"
 
 typedef struct idt_entry {
   uint16_t base_low;

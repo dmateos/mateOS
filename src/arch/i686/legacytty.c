@@ -1,9 +1,7 @@
 #include "legacytty.h"
 #include "../../lib.h"
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include "../../lib.h"
 
 /* Hardware text mode color constants. */
 enum vga_color {
@@ -61,7 +59,7 @@ void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) {
   terminal_buffer[index] = vga_entry(c, color);
 }
 
-void terminal_putchar(char c) {
+void term_putchar(char c) {
   if (c != '\n') {
     terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
   }
@@ -75,7 +73,7 @@ void terminal_putchar(char c) {
 
 void terminal_write(const char *data, size_t size) {
   for (size_t i = 0; i < size; i++)
-    terminal_putchar(data[i]);
+    term_putchar(data[i]);
 }
 
 void term_writestr(const char *data) { terminal_write(data, strlen(data)); }

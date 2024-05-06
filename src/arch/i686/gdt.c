@@ -1,16 +1,17 @@
 #include "gdt.h"
-#include "legacytty.h"
+#include "../../lib.h"
 
 gdt_entry_t gdt[3];
 gdt_ptr_t gp;
 
 void init_gdt() {
+  printf("GDT initializing\n");
+
   gp.limit = (sizeof(gdt_entry_t) * 3) - 1;
   gp.base = (uint32_t)&gdt;
 
   // Flat memory model
   // Were not really going to use segments.
-
   // Kernel code segment
   gdt[0].limit_low = 0xFFFF;
   gdt[0].base_low = 0x0000;
@@ -18,6 +19,14 @@ void init_gdt() {
   gdt[0].access = 0x9A;
   gdt[0].granularity = 0xCF;
   gdt[0].base_high = 0x00;
+
+  printf("Kernel code segment\n");
+  printf("gdt[0].limit_low: 0x%x\n", gdt[0].limit_low);
+  printf("gdt[0].base_low: 0x%x\n", gdt[0].base_low);
+  printf("gdt[0].base_middle: 0x%x\n", gdt[0].base_middle);
+  printf("gdt[0].access: 0x%x\n", gdt[0].access);
+  printf("gdt[0].granularity: 0x%x\n", gdt[0].granularity);
+  printf("gdt[0].base_high: 0x%x\n", gdt[0].base_high);
 
   // Kernel data segment
   gdt[1].limit_low = 0xFFFF;
@@ -27,8 +36,16 @@ void init_gdt() {
   gdt[1].granularity = 0xCF;
   gdt[1].base_high = 0x00;
 
-  term_writestr("GDT initializing\n");
+  printf("Kernel data segment\n");
+  printf("gdt[1].limit_low: 0x%x\n", gdt[1].limit_low);
+  printf("gdt[1].base_low: 0x%x\n", gdt[1].base_low);
+  printf("gdt[1].base_middle: 0x%x\n", gdt[1].base_middle);
+  printf("gdt[1].access: 0x%x\n", gdt[1].access);
+  printf("gdt[1].granularity: 0x%x\n", gdt[1].granularity);
+  printf("gdt[1].base_high: 0x%x\n", gdt[1].base_high);
+
   asm volatile("lgdt %0" : : "m"(gp));
+  printf("GDT built\n");
 
   // Whatever you do with the GDT has no effect on the CPU until
   // you load new Segment Selectors into Segment Registers.
@@ -40,5 +57,5 @@ void init_gdt() {
   // asm volatile("mov %ax, %ss\n");
   // asm volatile("ljmp $0x00, $next\n next:");
 
-  term_writestr("GDT initialized\n");
+  printf("GDT initialized\n");
 }

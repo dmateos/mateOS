@@ -2,6 +2,7 @@
 #include "arch/i686/gdt.h"
 #include "arch/i686/idt.h"
 #include "arch/i686/legacytty.h"
+#include "lib.h"
 
 void kernel_main(void) {
   init_term();
@@ -10,7 +11,9 @@ void kernel_main(void) {
   init_gdt();
   init_idt();
 
-  term_writestr("dmOS kernel started\n");
+  printf("dmOS kernel started\n");
+  int x = 0;
   while (1) {
+    // printf("dmOS kernel running %d\n", x++);
   }
 }
