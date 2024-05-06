@@ -15,6 +15,7 @@ void print_registers(void) {
   printf("EDX: 0x%x\n", edx);
 }
 
+// prob doesnt work
 void print_stack(int entries) {
   uint32_t *ebp;
 

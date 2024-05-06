@@ -4,6 +4,7 @@
 #include "arch/i686/gdt.h"
 #include "arch/i686/idt.h"
 #include "arch/i686/legacytty.h"
+#include "arch/i686/util.h"
 
 void kernel_main(void) {
   // temporary term output using VGA text mode
@@ -21,6 +22,7 @@ void kernel_main(void) {
     printf("loop test %d\n", i);
   }
 
+  print_registers();
   while (1) {
   }
 }
