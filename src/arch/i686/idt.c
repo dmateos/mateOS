@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "../../lib.h"
+#include "io.h"
 
 idt_entry_t idt_entries[256];
 idt_ptr_t idt_ptr;
@@ -64,11 +65,14 @@ void init_idt() {
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
   // Load the IDT
   asm volatile("lidt %0" : : "m"(idt_ptr));
+  // Remap the PIC so we can use interrupts
+  outb(0x21, 0xfd);
+  outb(0xa1, 0xff);
   // Enable interrupts
   asm volatile("sti");
 }
 
 void idt_exception_handler(int number) {
-  // printf("oh no! 0x%d\n", number);
+  printf("oh no! 0x%d\n", number);
   //  asm volatile("hlt");
 }
