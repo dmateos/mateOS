@@ -3,8 +3,8 @@
 
 #define GDT_ENTRY_COUNT 3
 
-static gdt_entry_t gdt[GDT_ENTRY_COUNT];
-static gdt_ptr_t gp_ptr;
+gdt_entry_t gdt[GDT_ENTRY_COUNT];
+gdt_ptr_t gp_ptr;
 
 static void print_gdt(int segment, char *name) {
   printf("%s\n", name);
@@ -60,13 +60,14 @@ void init_gdt() {
 
   // Whatever you do with the GDT has no effect on the CPU until
   // you load new Segment Selectors into Segment Registers.
-  asm volatile("mov $0x00, %ax\n");
+  asm volatile("mov $0x10, %ax\n");
   asm volatile("mov %ax, %ds\n");
   asm volatile("mov %ax, %es\n");
   asm volatile("mov %ax, %fs\n");
   asm volatile("mov %ax, %gs\n");
-  // asm volatile("mov %ax, %ss\n");
-  // asm volatile("ljmp $0x00, $next\n next:");
+  asm volatile("mov %ax, %ss\n");
+  asm volatile("ljmp $0x08, $next\n"
+               "next:\n");
 
   printf("GDT initialized at address 0x%x\n", &gdt);
 }

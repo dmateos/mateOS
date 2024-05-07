@@ -1,8 +1,8 @@
 #include "idt.h"
 #include "../../lib.h"
 
-static idt_entry_t idt_entries[256];
-static idt_ptr_t idt_ptr;
+idt_entry_t idt_entries[256];
+idt_ptr_t idt_ptr;
 
 void write_idt_entry(uint8_t num, uint32_t base, uint16_t selector,
                      uint8_t flags) {
@@ -69,6 +69,6 @@ void init_idt() {
 }
 
 void idt_exception_handler(int number) {
-  printf("oh no! 0x%d\n", number);
-  asm volatile("hlt");
+  // printf("oh no! 0x%d\n", number);
+  //  asm volatile("hlt");
 }
