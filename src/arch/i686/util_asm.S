@@ -16,3 +16,7 @@ test_assembly:
     movl %ebp, %esp
     popl %ebp
     ret
+
+.global halt_and_catch_fire
+halt_and_catch_fire:
+    hlt

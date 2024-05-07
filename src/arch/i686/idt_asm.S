@@ -19,7 +19,8 @@
 
 .global isr_common_stub
 isr_common_stub:
-    ret
+    call idt_exception_handler
+    iret
 
 isr_noerrorcode 0
 isr_noerrorcode 1
