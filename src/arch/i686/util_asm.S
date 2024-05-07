@@ -3,6 +3,7 @@ my_str:
     .string "hello world\n"
 
 .section .text
+
 .global test_assembly
 test_assembly:
     pushl %ebp
