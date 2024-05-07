@@ -55,9 +55,16 @@ void init_idt() {
   idt_ptr.base = (uint32_t)&idt_entries;
   init_idt_table();
 
+  // Load the IDT
+  asm volatile("lidt %0" : : "m"(idt_ptr));
+  asm volatile("sti");
+
   printf("IDT initialized with space for %d entries at address 0x%x\n",
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
 }
 
 //__attribute__((noreturn))
-void idt_exception_handler(void) { asm volatile("cli; hlt"); }
+void idt_exception_handler(void) {
+  printf("oh no!");
+  asm volatile("cli; hlt");
+}
