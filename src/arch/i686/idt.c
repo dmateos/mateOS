@@ -14,6 +14,8 @@ void write_idt_entry(uint8_t num, uint32_t base, uint16_t selector,
 }
 
 static void init_idt_table() {
+  // This is a dumb ass way to do this but i CBF writting a
+  // lookup table in assembly.
   write_idt_entry(0, (uint32_t)isr0, 0x08, 0x8E);
   write_idt_entry(1, (uint32_t)isr1, 0x08, 0x8E);
   write_idt_entry(2, (uint32_t)isr2, 0x08, 0x8E);
@@ -57,6 +59,8 @@ void init_idt() {
 
   // Load the IDT
   asm volatile("lidt %0" : : "m"(idt_ptr));
+
+  // Enable interrupts
   asm volatile("sti");
 
   printf("IDT initialized with space for %d entries at address 0x%x\n",
@@ -64,7 +68,7 @@ void init_idt() {
 }
 
 //__attribute__((noreturn))
-void idt_exception_handler(void) {
-  printf("oh no!");
-  asm volatile("cli; hlt");
+void idt_exception_handler(int number) {
+  printf("oh no! 0x%d\n", number);
+  return;
 }

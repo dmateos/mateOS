@@ -18,7 +18,7 @@ typedef struct idt_ptr {
 
 void init_idt();
 
-void idt_exception_handler(void);
+void idt_exception_handler(int number);
 
 // These are defined by the macro in idt_asm.s
 extern void isr0();
