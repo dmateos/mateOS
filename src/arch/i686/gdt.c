@@ -16,12 +16,7 @@ static void print_gdt(int segment, char *name) {
   printf("\tgranularity: 0x%x\n", gdt[segment].granularity);
 }
 
-void init_gdt() {
-  printf("GDT initializing for i686\n");
-
-  gp_ptr.limit = (sizeof(gdt_entry_t) * GDT_ENTRY_COUNT) - 1;
-  gp_ptr.base = (uint32_t)&gdt;
-
+static void init_gdt_table() {
   // Flat memory model
   // Were not really going to use segments.
   gdt[0].limit_low = 0x0000;
@@ -46,13 +41,22 @@ void init_gdt() {
   gdt[2].access = 0x92;
   gdt[2].granularity = 0xCF;
   gdt[2].base_high = 0x00;
+}
+
+void init_gdt() {
+  printf("GDT initializing for i686\n");
+
+  gp_ptr.limit = (sizeof(gdt_entry_t) * GDT_ENTRY_COUNT) - 1;
+  gp_ptr.base = (uint32_t)&gdt;
+
+  init_gdt_table();
 
   print_gdt(0, "Null segment");
   print_gdt(1, "Kernel code segment");
   print_gdt(2, "Kernel data segment");
 
+  // Load the GDT
   asm volatile("lgdt %0" : : "m"(gp_ptr));
-  printf("GDT built\n");
 
   // Whatever you do with the GDT has no effect on the CPU until
   // you load new Segment Selectors into Segment Registers.

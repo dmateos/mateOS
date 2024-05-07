@@ -19,7 +19,7 @@
 .global isr_common_stub
 isr_common_stub:
     call idt_exception_handler
-    add $12, %esp                #cleanup bytes pushed by push above
+    add $4, %esp                #cleanup bytes pushed by push above
     iret
 
 isr_noerrorcode 0
