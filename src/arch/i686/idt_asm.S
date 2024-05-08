@@ -16,12 +16,29 @@
     jmp isr_common_stub
 .endm
 
+.macro irq irq_num=0, isr_num=0
+  .global irq\irq_num
+  irq\irq_num:
+    cli
+    push $\irq_num
+    push $\isr_num
+    jmp irq_common_stub
+.endm
+
 .global isr_common_stub
 isr_common_stub:
     call idt_exception_handler
     add $4, %esp                #cleanup bytes pushed by push above
     sti
     iret
+
+.global irq_common_stub
+irq_common_stub:
+    call idt_exception_handler
+    add $8, %esp                #cleanup bytes pushed by push above
+    sti
+    iret
+
 
 isr_noerrorcode 0
 isr_noerrorcode 1
@@ -55,3 +72,20 @@ isr_noerrorcode 28
 isr_noerrorcode 29
 isr_noerrorcode 30
 isr_noerrorcode 31
+
+irq 0,32
+irq 1,33
+irq 2,34
+irq 3,35
+irq 4,36
+irq 5,37
+irq 6,38
+irq 7,39
+irq 8,40
+irq 9,41
+irq 10,42
+irq 11,43
+irq 12,44
+irq 13,45
+irq 14,46
+irq 15,47

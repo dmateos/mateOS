@@ -75,6 +75,24 @@ static void init_idt_table() {
   write_idt_entry(29, (uint32_t)isr29, segment, 0x8E);
   write_idt_entry(30, (uint32_t)isr30, segment, 0x8E);
   write_idt_entry(31, (uint32_t)isr31, segment, 0x8E);
+
+  // IRQs
+  write_idt_entry(32, (uint32_t)irq0, segment, 0x8E);
+  write_idt_entry(33, (uint32_t)irq1, segment, 0x8E);
+  write_idt_entry(34, (uint32_t)irq2, segment, 0x8E);
+  write_idt_entry(35, (uint32_t)irq3, segment, 0x8E);
+  write_idt_entry(36, (uint32_t)irq4, segment, 0x8E);
+  write_idt_entry(37, (uint32_t)irq5, segment, 0x8E);
+  write_idt_entry(38, (uint32_t)irq6, segment, 0x8E);
+  write_idt_entry(39, (uint32_t)irq7, segment, 0x8E);
+  write_idt_entry(40, (uint32_t)irq8, segment, 0x8E);
+  write_idt_entry(41, (uint32_t)irq9, segment, 0x8E);
+  write_idt_entry(42, (uint32_t)irq10, segment, 0x8E);
+  write_idt_entry(43, (uint32_t)irq11, segment, 0x8E);
+  write_idt_entry(44, (uint32_t)irq12, segment, 0x8E);
+  write_idt_entry(45, (uint32_t)irq13, segment, 0x8E);
+  write_idt_entry(46, (uint32_t)irq14, segment, 0x8E);
+  write_idt_entry(47, (uint32_t)irq15, segment, 0x8E);
 }
 
 void init_idt() {
@@ -92,10 +110,17 @@ void init_idt() {
   // Enable interrupts
   asm volatile("sti");
 
+  // pic_disable();
+  pic_remap();
   pic_disable();
 }
 
 void idt_exception_handler(int number) {
   printf("oh no! 0x%d\n", number);
+  //  asm volatile("hlt");
+}
+
+void idt_irq_handler(int number) {
+  printf("IRQ: 0x%d\n", number);
   //  asm volatile("hlt");
 }
