@@ -5,8 +5,32 @@
 idt_entry_t idt_entries[256];
 idt_ptr_t idt_ptr;
 
-void write_idt_entry(uint8_t num, uint32_t base, uint16_t selector,
-                     uint8_t flags) {
+#define MASTER_PIC_COMMAND 0x20
+#define MASTER_PIC_DATA 0x21
+#define SLAVE_PIC_COMMAND 0xA0
+#define SLAVE_PIC_DATA 0xA1
+
+static void pic_remap() {
+  // Remap the PIC so we can use interrupts
+  outb(MASTER_PIC_COMMAND, 0x11); // Start initialization sequence
+  outb(SLAVE_PIC_COMMAND, 0x11);  // Start initialization sequence
+  outb(MASTER_PIC_DATA, 0x20);    // Set master offset to 0x20
+  outb(SLAVE_PIC_DATA, 0x28);     // Set slave offset to 0x28
+  outb(MASTER_PIC_DATA, 0x04);    // Tell master there is a slave at IRQ2
+  outb(SLAVE_PIC_DATA, 0x02);     // Tell slave its cascade identity
+  outb(MASTER_PIC_DATA, 0x01);    // 8086 mode
+  outb(SLAVE_PIC_DATA, 0x01);     // 8086 mode
+  outb(MASTER_PIC_DATA, 0x00);    // Mask all interrupts
+  outb(SLAVE_PIC_DATA, 0x00);     // Mask all interrupts
+}
+
+static void pic_disable() {
+  outb(MASTER_PIC_DATA, 0xFF); // Mask all interrupts
+  outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
+}
+
+static void write_idt_entry(uint8_t num, uint32_t base, uint16_t selector,
+                            uint8_t flags) {
   idt_entries[num].base_low = base & 0xFFFF;
   idt_entries[num].base_high = (base >> 16) & 0xFFFF;
   idt_entries[num].selector = selector;
@@ -65,11 +89,10 @@ void init_idt() {
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
   // Load the IDT
   asm volatile("lidt %0" : : "m"(idt_ptr));
-  // Remap the PIC so we can use interrupts
-  outb(0x21, 0xfd);
-  outb(0xa1, 0xff);
   // Enable interrupts
   asm volatile("sti");
+
+  pic_disable();
 }
 
 void idt_exception_handler(int number) {
