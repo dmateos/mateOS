@@ -1,6 +1,20 @@
 #include "util.h"
 #include "../../lib.h"
 
+int check_protected_mode(void) {
+  uint32_t cr0;
+
+  asm volatile("mov %%cr0, %0" : "=r"(cr0));
+
+  if (cr0 & 0x1) {
+    printf("Protected mode enabled\n");
+    return 0;
+  } else {
+    printf("Protected mode disabled\n");
+    return 1;
+  }
+}
+
 void print_registers(void) {
   uint32_t eax, ebx, ecx, edx;
 

@@ -13,6 +13,7 @@ void kernel_main(void) {
   init_term();
 
   printf("mateOS kernel started\n");
+  check_protected_mode();
 
   // Global and Interrupt Descriptor Tables
   init_gdt();

@@ -98,6 +98,9 @@ static void init_idt_table() {
 void init_idt() {
   printf("IDT initializing\n");
 
+  pic_remap();
+  pic_disable();
+
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
@@ -109,18 +112,14 @@ void init_idt() {
   asm volatile("lidt %0" : : "m"(idt_ptr));
   // Enable interrupts
   asm volatile("sti");
-
-  // pic_disable();
-  pic_remap();
-  pic_disable();
 }
 
 void idt_exception_handler(int number) {
-  printf("oh no! 0x%d\n", number);
-  //  asm volatile("hlt");
+  printf("oh no! 0x%d %d\n", number);
+  // asm volatile("hlt");
 }
 
-void idt_irq_handler(int number) {
+void idt_irq_handler(int number, int number2) {
   printf("IRQ: 0x%d\n", number);
   //  asm volatile("hlt");
 }

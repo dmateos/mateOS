@@ -34,7 +34,7 @@ isr_common_stub:
 
 .global irq_common_stub
 irq_common_stub:
-    call idt_exception_handler
+    call idt_irq_handler
     add $8, %esp                #cleanup bytes pushed by push above
     sti
     iret
