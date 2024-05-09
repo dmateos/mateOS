@@ -7,11 +7,9 @@ int check_protected_mode(void) {
   asm volatile("mov %%cr0, %0" : "=r"(cr0));
 
   if (cr0 & 0x1) {
-    printf("Protected mode enabled\n");
-    return 0;
-  } else {
-    printf("Protected mode disabled\n");
     return 1;
+  } else {
+    return 0;
   }
 }
 

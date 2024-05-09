@@ -98,12 +98,11 @@ static void init_idt_table() {
 void init_idt() {
   printf("IDT initializing\n");
 
-  pic_remap();
-  pic_disable();
-
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
+  pic_remap();
+  pic_disable();
   init_idt_table();
 
   printf("IDT initialized with space for %d entries at address 0x%x\n",
@@ -115,11 +114,11 @@ void init_idt() {
 }
 
 void idt_exception_handler(int number) {
-  printf("oh no! 0x%d %d\n", number);
-  // asm volatile("hlt");
+  printf("oh no! 0x%d\n", number);
+  halt_and_catch_fire();
 }
 
 void idt_irq_handler(int number, int number2) {
-  printf("IRQ: 0x%d\n", number);
-  //  asm volatile("hlt");
+  printf("IRQ: 0x%d %d\n", number, number2);
+  halt_and_catch_fire();
 }
