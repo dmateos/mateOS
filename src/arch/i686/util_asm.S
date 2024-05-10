@@ -23,14 +23,16 @@ halt_and_catch_fire:
 
 .global flush_gdt
 flush_gdt:
-    lgdt gp_ptr
-    mov $0x10, %ax
-    mov %ax, %ds
-    mov %ax, %es
-    mov %ax, %fs
-    mov %ax, %gs
-    mov %ax, %ss
+    movl 4(%esp), %eax  #Load address of gdt into eax
+    lgdt (%eax)
     ljmp $0x08, $next
 next:
+    movw $0x10, %ax
+    movw %ax, %ds
+    movw %ax, %es
+    movw %ax, %fs
+    movw %ax, %gs
+    movw %ax, %ss
+    ret
 
 

@@ -20,7 +20,7 @@ void init_idt();
 void idt_exception_handler(int number, int noerror);
 void idt_irq_handler(int number, int number2);
 
-extern void flush_idt();
+extern void flush_idt(idt_ptr_t *idt_ptr);
 
 // These are defined by the macro in idt_asm.s
 extern void isr0();

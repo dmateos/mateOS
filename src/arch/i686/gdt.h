@@ -17,7 +17,7 @@ typedef struct gdt_ptr {
   uint32_t base;
 } __attribute__((packed)) gdt_ptr_t;
 
-extern void flush_gdt();
+extern void flush_gdt(gdt_ptr_t *gp_ptr);
 void init_gdt();
 
 #endif

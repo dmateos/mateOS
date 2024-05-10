@@ -2,7 +2,8 @@
 
 .global flush_idt
 flush_idt:
-    lidt idt_ptr
+    movl 4(%esp), %eax  #Load address of gdt into eax
+    lidt (%eax)
     sti
 
 .macro isr_errorcode num=0
@@ -58,11 +59,11 @@ isr_errorcode 13
 isr_errorcode 14
 isr_noerrorcode 15
 isr_noerrorcode 16
-isr_noerrorcode 17
+isr_errorcode 17
 isr_noerrorcode 18
 isr_noerrorcode 19
 isr_noerrorcode 20
-isr_noerrorcode 21
+isr_errorcode 21
 isr_noerrorcode 22
 isr_noerrorcode 23
 isr_noerrorcode 24

@@ -118,7 +118,7 @@ void init_idt() {
   //  pic_disable();
   pic_only_keyboard();
   init_idt_table();
-  flush_idt();
+  flush_idt(&idt_ptr);
 
   printf("IDT initialized with space for %d entries at address 0x%x\n",
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
@@ -127,12 +127,13 @@ void init_idt() {
 static unsigned long long ecount = 0;
 void idt_exception_handler(int number, int noerror) {
   printf("oh no! 0x%d, noerror: %d, count: %d\n", number, noerror, ecount);
+  ecount++;
   //    pic_acknowledge(number);
-  //   halt_and_catch_fire();
+  halt_and_catch_fire();
 }
 
 void idt_irq_handler(int number, int number2) {
   printf("IRQ: 0x%d %d\n", number, number2);
   // pic_acknowledge(number);
-  //  halt_and_catch_fire();
+  halt_and_catch_fire();
 }

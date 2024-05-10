@@ -50,7 +50,7 @@ void init_gdt() {
   gp_ptr.base = (uint32_t)&gdt;
 
   init_gdt_table();
-  flush_gdt();
+  flush_gdt(&gp_ptr);
 
   print_gdt(0, "Null segment");
   print_gdt(1, "Kernel code segment");
