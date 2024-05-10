@@ -32,7 +32,7 @@ flush_gdt:
     mov %ax, %fs
     mov %ax, %gs
     mov %ax, %ss
-    ljmp $0x08, $next
+    jmp $0x08, $next
 next:      
     ret
 

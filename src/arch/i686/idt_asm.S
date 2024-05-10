@@ -28,8 +28,8 @@ flush_idt:
 .macro irq irq_num=0, isr_num=0
   .global irq\irq_num
   irq\irq_num:
-    push $\irq_num
     push $\isr_num
+    push $\irq_num
     call idt_irq_handler
     add $8, %esp                #cleanup bytes pushed by push above
     iret

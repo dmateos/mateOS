@@ -114,8 +114,8 @@ void init_idt() {
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
-  // pic_remap();
-  //  pic_disable();
+  //   pic_disable();
+  pic_remap();
   pic_only_keyboard();
   init_idt_table();
   flush_idt(&idt_ptr);
@@ -124,14 +124,22 @@ void init_idt() {
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
 }
 
+static unsigned int count = 0;
 void idt_exception_handler(int number, int noerror) {
-  printf("oh no! 0x%d, noerror: %d\n", number, noerror);
-  //    pic_acknowledge(number);
-  // halt_and_catch_fire();
+  if (number == 13) {
+    // printf("oh no! 0x%d, noerror: %d, %d\n", number, noerror, count++);
+  } else {
+    printf("oh no! 0x%d, noerror: %d, %d\n", number, noerror, count++);
+    // halt_and_catch_fire();
+  }
 }
 
 void idt_irq_handler(int number, int number2) {
   printf("IRQ: 0x%d %d\n", number, number2);
-  // pic_acknowledge(number);
+  if (number == 1) {
+    int scancode = inb(0x60);
+    printf("Scancode: 0x%x\n", scancode);
+    pic_acknowledge(number);
+  }
   // halt_and_catch_fire();
 }
