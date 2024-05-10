@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "../../lib.h"
 #include "io.h"
+#include "util.h"
 
 idt_entry_t idt_entries[256];
 idt_ptr_t idt_ptr;
@@ -27,6 +28,18 @@ static void pic_remap() {
 static void pic_disable() {
   outb(MASTER_PIC_DATA, 0xFF); // Mask all interrupts
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
+}
+
+static void pic_only_keyboard() {
+  outb(MASTER_PIC_DATA, 0xFD); // Mask all interrupts except IRQ1
+  outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
+}
+
+static void pic_acknowledge(int irq) {
+  if (irq >= 8) {
+    outb(SLAVE_PIC_COMMAND, 0x20);
+  }
+  outb(MASTER_PIC_COMMAND, 0x20);
 }
 
 static void write_idt_entry(uint8_t num, uint32_t base, uint16_t selector,
@@ -101,24 +114,25 @@ void init_idt() {
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
-  pic_remap();
-  pic_disable();
+  // pic_remap();
+  //  pic_disable();
+  pic_only_keyboard();
   init_idt_table();
+  flush_idt();
 
   printf("IDT initialized with space for %d entries at address 0x%x\n",
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
-  // Load the IDT
-  asm volatile("lidt %0" : : "m"(idt_ptr));
-  // Enable interrupts
-  asm volatile("sti");
 }
 
-void idt_exception_handler(int number) {
-  printf("oh no! 0x%d\n", number);
-  halt_and_catch_fire();
+static unsigned long long ecount = 0;
+void idt_exception_handler(int number, int noerror) {
+  printf("oh no! 0x%d, noerror: %d, count: %d\n", number, noerror, ecount);
+  //    pic_acknowledge(number);
+  //   halt_and_catch_fire();
 }
 
 void idt_irq_handler(int number, int number2) {
   printf("IRQ: 0x%d %d\n", number, number2);
-  halt_and_catch_fire();
+  // pic_acknowledge(number);
+  //  halt_and_catch_fire();
 }

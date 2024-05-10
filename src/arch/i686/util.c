@@ -1,6 +1,11 @@
 #include "util.h"
 #include "../../lib.h"
 
+void cause_div_exception(void) {
+  asm volatile("div %0" : : "r"(0));
+  return;
+}
+
 int check_protected_mode(void) {
   uint32_t cr0;
 

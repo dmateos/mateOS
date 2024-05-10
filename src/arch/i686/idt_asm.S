@@ -1,9 +1,14 @@
 .section .text
 
+.global flush_idt
+flush_idt:
+    lidt idt_ptr
+    sti
+
 .macro isr_errorcode num=0
   .global isr\num
   isr\num:
-    cli
+    push $1
     push $\num
     jmp isr_common_stub
 .endm
@@ -11,15 +16,14 @@
 .macro isr_noerrorcode num=0
   .global isr\num
   isr\num:
-    cli
     push $0
+    push $\num
     jmp isr_common_stub
 .endm
 
 .macro irq irq_num=0, isr_num=0
   .global irq\irq_num
   irq\irq_num:
-    cli
     push $\irq_num
     push $\isr_num
     jmp irq_common_stub
@@ -28,17 +32,14 @@
 .global isr_common_stub
 isr_common_stub:
     call idt_exception_handler
-    add $4, %esp                #cleanup bytes pushed by push above
-    sti
+    add $8, %esp                #cleanup bytes pushed by push above
     iret
 
 .global irq_common_stub
 irq_common_stub:
     call idt_irq_handler
     add $8, %esp                #cleanup bytes pushed by push above
-    sti
     iret
-
 
 isr_noerrorcode 0
 isr_noerrorcode 1

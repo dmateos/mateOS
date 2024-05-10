@@ -50,24 +50,10 @@ void init_gdt() {
   gp_ptr.base = (uint32_t)&gdt;
 
   init_gdt_table();
+  flush_gdt();
 
   print_gdt(0, "Null segment");
   print_gdt(1, "Kernel code segment");
   print_gdt(2, "Kernel data segment");
-
-  // Load the GDT
-  asm volatile("lgdt %0" : : "m"(gp_ptr));
-
-  // Whatever you do with the GDT has no effect on the CPU until
-  // you load new Segment Selectors into Segment Registers.
-  asm volatile("mov $0x10, %ax\n");
-  asm volatile("mov %ax, %ds\n");
-  asm volatile("mov %ax, %es\n");
-  asm volatile("mov %ax, %fs\n");
-  asm volatile("mov %ax, %gs\n");
-  asm volatile("mov %ax, %ss\n");
-  asm volatile("ljmp $0x08, $next\n"
-               "next:\n");
-
   printf("GDT initialized at address 0x%x\n", &gdt);
 }

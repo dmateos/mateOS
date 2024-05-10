@@ -17,9 +17,10 @@ typedef struct idt_ptr {
 } __attribute__((packed)) idt_ptr_t;
 
 void init_idt();
-
-void idt_exception_handler(int number);
+void idt_exception_handler(int number, int noerror);
 void idt_irq_handler(int number, int number2);
+
+extern void flush_idt();
 
 // These are defined by the macro in idt_asm.s
 extern void isr0();
