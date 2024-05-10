@@ -9,9 +9,10 @@ flush_idt:
 .macro isr_errorcode num=0
   .global isr\num
   isr\num:
-    push $1
     push $\num
-    jmp isr_common_stub
+    call idt_exception_handler
+    add $8, %esp                #cleanup bytes pushed by push above
+    iret
 .endm
 
 .macro isr_noerrorcode num=0
@@ -19,7 +20,9 @@ flush_idt:
   isr\num:
     push $0
     push $\num
-    jmp isr_common_stub
+    call idt_exception_handler
+    add $8, %esp                #cleanup bytes pushed by push above
+    iret
 .endm
 
 .macro irq irq_num=0, isr_num=0
@@ -27,20 +30,10 @@ flush_idt:
   irq\irq_num:
     push $\irq_num
     push $\isr_num
-    jmp irq_common_stub
-.endm
-
-.global isr_common_stub
-isr_common_stub:
-    call idt_exception_handler
-    add $8, %esp                #cleanup bytes pushed by push above
-    iret
-
-.global irq_common_stub
-irq_common_stub:
     call idt_irq_handler
     add $8, %esp                #cleanup bytes pushed by push above
     iret
+.endm
 
 isr_noerrorcode 0
 isr_noerrorcode 1

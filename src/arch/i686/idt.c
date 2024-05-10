@@ -124,16 +124,14 @@ void init_idt() {
          sizeof(idt_entries) / sizeof(idt_entry_t), &idt_entries);
 }
 
-static unsigned long long ecount = 0;
 void idt_exception_handler(int number, int noerror) {
-  printf("oh no! 0x%d, noerror: %d, count: %d\n", number, noerror, ecount);
-  ecount++;
+  printf("oh no! 0x%d, noerror: %d\n", number, noerror);
   //    pic_acknowledge(number);
-  halt_and_catch_fire();
+  // halt_and_catch_fire();
 }
 
 void idt_irq_handler(int number, int number2) {
   printf("IRQ: 0x%d %d\n", number, number2);
   // pic_acknowledge(number);
-  halt_and_catch_fire();
+  // halt_and_catch_fire();
 }
