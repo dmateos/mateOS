@@ -30,6 +30,7 @@ static void pic_disable() {
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
 }
 
+// make sure you pic_remap() before calling this
 static void pic_only_keyboard() {
   outb(MASTER_PIC_DATA, 0xFD); // Mask all interrupts except IRQ1
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
@@ -114,7 +115,7 @@ void init_idt() {
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
-  //   pic_disable();
+  // pic_disable();
   pic_remap();
   pic_only_keyboard();
   init_idt_table();
@@ -126,20 +127,18 @@ void init_idt() {
 
 static unsigned int count = 0;
 void idt_exception_handler(int number, int noerror) {
-  if (number == 13) {
-    // printf("oh no! 0x%d, noerror: %d, %d\n", number, noerror, count++);
+  if (number == 0xD) {
+    // printf("oh no! 0x%x, noerror: %d, %d\n", number, noerror, count++);
   } else {
-    printf("oh no! 0x%d, noerror: %d, %d\n", number, noerror, count++);
-    // halt_and_catch_fire();
+    printf("oh no! 0x%x, noerror: %d, %d\n", number, noerror, count++);
   }
 }
 
 void idt_irq_handler(int number, int number2) {
   printf("IRQ: 0x%d %d\n", number, number2);
   if (number == 1) {
-    int scancode = inb(0x60);
-    printf("Scancode: 0x%x\n", scancode);
+    int scancode = inb(0x60); // read scancode from keyboard
+    printf("Scancode: %c\n", scancode);
     pic_acknowledge(number);
   }
-  // halt_and_catch_fire();
 }
