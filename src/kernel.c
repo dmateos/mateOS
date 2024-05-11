@@ -7,8 +7,9 @@
 void kernel_main(void) {
   init_686();
 
-  while (1) {
-    printf("Hello, World!\n");
+  // cause_div_exception();
+
+  for (;;) {
     halt_and_catch_fire();
   }
 }

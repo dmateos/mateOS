@@ -136,10 +136,12 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
          idt_entries);
 }
 
+static int count = 0;
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
+  return;
   switch (number) {
   case 0x0:
-    printf("Divide by zero\n");
+    printf("Divide by zero %d\n", count);
     break;
   case 0x6:
     printf("Invalid opcode\n");
@@ -154,15 +156,14 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
     printf("Page fault\n");
     break;
   default:
-    printf("Exception: 0x%x\n", number);
+    printf("Exception: 0x%x, %d\n", number, noerror);
   }
-  halt_and_catch_fire();
+  count++;
 }
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
   uint8_t scancode = 0;
   print_registers();
-  halt_and_catch_fire();
   printf("IRQ: 0x%d %d\n", number, number2);
   if (number == 0x1) {
     scancode = inb(0x60); // read scancode from keyboard

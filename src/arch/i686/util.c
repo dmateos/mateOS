@@ -22,6 +22,7 @@ void print_registers(void) {
   uint32_t eax, ebx, ecx, edx;
   uint32_t esp, ebp, esi, edi;
   uint32_t ds, es, fs, gs;
+  uint32_t cs, ss;
 
   asm volatile("mov %%eax, %0" : "=r"(eax));
   asm volatile("mov %%ebx, %0" : "=r"(ebx));
@@ -38,6 +39,9 @@ void print_registers(void) {
   asm volatile("mov %%fs, %0" : "=r"(fs));
   asm volatile("mov %%gs, %0" : "=r"(gs));
 
+  asm volatile("mov %%cs, %0" : "=r"(cs));
+  asm volatile("mov %%ss, %0" : "=r"(ss));
+
   printf("Registers:\n");
   printf("EAX: 0x%x ", eax);
   printf("EBX: 0x%x ", ebx);
@@ -53,6 +57,9 @@ void print_registers(void) {
   printf("ES: 0x%x ", es);
   printf("FS: 0x%x ", fs);
   printf("GS: 0x%x\n", gs);
+
+  printf("CS: 0x%x ", cs);
+  printf("SS: 0x%x\n", ss);
 }
 
 // prob doesnt work

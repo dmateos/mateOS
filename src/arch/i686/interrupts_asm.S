@@ -10,30 +10,35 @@ flush_idt:
 .macro isr_errorcode num=0
   .global isr\num
   isr\num:
+    pusha
     push $\num
     call idt_exception_handler
     add $8, %esp                #cleanup bytes pushed by push above
+    popa
     iret
 .endm
 
 .macro isr_noerrorcode num=0
   .global isr\num
   isr\num:
+    pusha
     push $0
     push $\num
     call idt_exception_handler
     add $8, %esp                #cleanup bytes pushed by push above
+    popa
     iret
 .endm
 
 .macro irq irq_num=0, isr_num=0
   .global irq\irq_num
   irq\irq_num:
-    cli
+    pusha
     push $\isr_num
     push $\irq_num
     call idt_irq_handler
     add $8, %esp                #cleanup bytes pushed by push above
+    popa
     iret
 .endm
 
