@@ -1,12 +1,7 @@
 #include "gdt.h"
 #include "../../lib.h"
 
-#define GDT_ENTRY_COUNT 3
-
-gdt_entry_t gdt[GDT_ENTRY_COUNT];
-gdt_ptr_t gp_ptr;
-
-static void print_gdt(int segment, char *name) {
+static void print_gdt(gdt_entry_t *gdt, int segment, char *name) {
   printf("%s\n", name);
   printf("\tbase_low: 0x%x", gdt[segment].base_low);
   printf("\tbase_middle: 0x%x", gdt[segment].base_middle);
@@ -16,7 +11,7 @@ static void print_gdt(int segment, char *name) {
   printf("\tgranularity: 0x%x\n", gdt[segment].granularity);
 }
 
-static void init_gdt_table(void) {
+static void init_gdt_table(gdt_entry_t *gdt) {
   // Flat memory model
   // Were not really going to use segments.
   gdt[0].limit_low = 0x0000;
@@ -43,17 +38,17 @@ static void init_gdt_table(void) {
   gdt[2].base_high = 0x00;
 }
 
-void init_gdt() {
+void init_gdt(gdt_ptr_t *gp_ptr, gdt_entry_t *gdt) {
   printf("GDT initializing for i686\n");
 
-  gp_ptr.limit = (sizeof(gdt_entry_t) * GDT_ENTRY_COUNT) - 1;
-  gp_ptr.base = (uint32_t)&gdt;
+  gp_ptr->limit = (sizeof(gdt_entry_t) * 3) - 1;
+  gp_ptr->base = (uint32_t)gdt;
 
-  init_gdt_table();
-  flush_gdt(&gp_ptr);
+  init_gdt_table(gdt);
+  flush_gdt(gp_ptr);
 
-  print_gdt(0, "Null segment");
-  print_gdt(1, "Kernel code segment");
-  print_gdt(2, "Kernel data segment");
-  printf("GDT initialized at address 0x%x\n", &gdt);
+  print_gdt(gdt, 0, "Null segment");
+  print_gdt(gdt, 1, "Kernel code segment");
+  print_gdt(gdt, 2, "Kernel data segment");
+  printf("GDT initialized at address 0x%x\n", gdt);
 }

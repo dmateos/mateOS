@@ -18,6 +18,6 @@ typedef struct gdt_ptr {
 } __attribute__((packed)) gdt_ptr_t;
 
 extern void flush_gdt(gdt_ptr_t *gp_ptr);
-void init_gdt(void);
+void init_gdt(gdt_ptr_t *gp_ptr, gdt_entry_t *gdt);
 
 #endif

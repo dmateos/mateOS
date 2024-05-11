@@ -5,6 +5,12 @@
 #include "legacytty.h"
 #include "util.h"
 
+gdt_entry_t gdt[3];
+gdt_ptr_t gp_ptr;
+
+idt_entry_t idt_entries[256];
+idt_ptr_t idt_ptr;
+
 void init_686(void) {
   init_term();
 
@@ -15,8 +21,8 @@ void init_686(void) {
   }
 
   // Global and Interrupt Descriptor Tables
-  init_gdt();
-  init_idt();
+  init_gdt(&gp_ptr, gdt);
+  init_idt(&idt_ptr, idt_entries);
 
   printf("mateOS init done\n");
   print_registers();
