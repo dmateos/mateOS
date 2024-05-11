@@ -1,4 +1,4 @@
-#include "idt.h"
+#include "interrupts.h"
 #include "../../lib.h"
 #include "io.h"
 #include "util.h"
@@ -25,7 +25,7 @@ static void pic_remap(void) {
   outb(SLAVE_PIC_DATA, 0x00);     // Mask all interrupts
 }
 
-static void pic_disable(void) {
+__attribute__((unused)) static void pic_disable(void) {
   outb(MASTER_PIC_DATA, 0xFF); // Mask all interrupts
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
 }

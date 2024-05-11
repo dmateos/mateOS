@@ -1,5 +1,5 @@
-#ifndef _IDT_H
-#define _IDT_H
+#ifndef _INTERRUPTS_H
+#define _INTERRUPTS_H
 
 #include "../../lib.h"
 

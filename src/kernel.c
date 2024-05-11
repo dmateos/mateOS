@@ -2,11 +2,11 @@
 #include "lib.h"
 
 #include "arch/i686/gdt.h"
-#include "arch/i686/idt.h"
+#include "arch/i686/interrupts.h"
 #include "arch/i686/legacytty.h"
 #include "arch/i686/util.h"
 
-extern void test_assembly();
+extern void test_assembly(void);
 
 void kernel_main(void) {
   // temporary term output using VGA text mode
