@@ -44,6 +44,17 @@ static void pic_acknowledge(int irq) {
   outb(MASTER_PIC_COMMAND, 0x20);
 }
 
+static void setup_timer(void) {
+  // Set the timer to 100Hz
+  uint32_t divisor = 1193180 / 100;
+  outb(0x43, 0x36);
+  outb(0x40, divisor & 0xFF);
+  outb(0x40, (divisor >> 8) & 0xFF);
+
+  // unmask the timer interrupt
+  outb(MASTER_PIC_DATA, 0xFC);
+}
+
 static void write_idt_entry(idt_entry_t *idt_entries, uint8_t num,
                             uint32_t base, uint16_t selector, uint8_t flags) {
   idt_entries[num].base_low = base & 0xFFFF;
@@ -116,12 +127,13 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
 
   pic_remap();
   pic_only_keyboard();
-  // pic_disable();
+  //  pic_disable();
   init_idt_table(idt_entries);
   flush_idt(idt_ptr);
+  // setup_timer();
 
-  printf("IDT initialized with space for %d entries at address 0x%x\n",
-         sizeof(*idt_entries) / sizeof(idt_entry_t), idt_entries);
+  printf("IDT initialized with space for %d entries at address 0x%x\n", 256,
+         idt_entries);
 }
 
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
@@ -144,13 +156,17 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   default:
     printf("Exception: 0x%x\n", number);
   }
+  halt_and_catch_fire();
 }
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
+  uint8_t scancode = 0;
+  print_registers();
+  halt_and_catch_fire();
   printf("IRQ: 0x%d %d\n", number, number2);
   if (number == 0x1) {
-    uint8_t scancode = inb(0x60); // read scancode from keyboard
+    scancode = inb(0x60); // read scancode from keyboard
     printf("Scancode: %c\n", scancode);
-    pic_acknowledge(number);
   }
+  pic_acknowledge(number);
 }

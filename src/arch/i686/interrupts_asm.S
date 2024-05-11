@@ -29,6 +29,7 @@ flush_idt:
 .macro irq irq_num=0, isr_num=0
   .global irq\irq_num
   irq\irq_num:
+    cli
     push $\isr_num
     push $\irq_num
     call idt_irq_handler
@@ -57,7 +58,7 @@ isr_errorcode 17
 isr_noerrorcode 18
 isr_noerrorcode 19
 isr_noerrorcode 20
-isr_errorcode 21
+isr_noerrorcode 21
 isr_noerrorcode 22
 isr_noerrorcode 23
 isr_noerrorcode 24
@@ -66,7 +67,7 @@ isr_noerrorcode 26
 isr_noerrorcode 27
 isr_noerrorcode 28
 isr_noerrorcode 29
-isr_noerrorcode 30
+isr_errorcode 30
 isr_noerrorcode 31
 
 irq 0,32

@@ -25,7 +25,7 @@ halt_and_catch_fire:
 flush_gdt:
     movl 4(%esp), %eax  #Load address of gdt into eax
     lgdt (%eax)
-    jmp $0x08, $next
+    ljmp $0x08, $next
 next:      
     mov $0x10, %ax
     mov %ax, %ds

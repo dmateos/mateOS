@@ -43,7 +43,7 @@ clean:
 	rm -rf out.iso
 
 test32:
-	qemu-system-i386 -display curses -kernel $(TARGET)
+	qemu-system-i386 -display curses -kernel $(TARGET) -no-reboot
 
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)

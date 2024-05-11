@@ -5,11 +5,11 @@
 #include "legacytty.h"
 #include "util.h"
 
-gdt_entry_t gdt[3];
-gdt_ptr_t gp_ptr;
+static gdt_entry_t gdt[3];
+static gdt_ptr_t gp_ptr;
 
-idt_entry_t idt_entries[256];
-idt_ptr_t idt_ptr;
+__attribute__((aligned(0x10))) static idt_entry_t idt_entries[256];
+static idt_ptr_t idt_ptr;
 
 void init_686(void) {
   init_term();
@@ -25,5 +25,4 @@ void init_686(void) {
   init_idt(&idt_ptr, idt_entries);
 
   printf("mateOS init done\n");
-  print_registers();
 }
