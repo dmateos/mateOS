@@ -34,13 +34,13 @@ void print_registers(void) {
 }
 
 // prob doesnt work
-void print_stack(int entries) {
+void print_stack(uint32_t entries) {
   uint32_t *ebp;
 
   asm volatile("mov %%ebp, %0" : "=r"(ebp));
 
   printf("Stack trace:\n");
-  for (int i = 0; i < entries; i++) {
+  for (uint32_t i = 0; i < entries; i++) {
     printf("0x%x\n", ebp[i]);
   }
 }

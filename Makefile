@@ -1,7 +1,7 @@
 CC = i686-elf-gcc
 AS = i686-elf-as
 LD = i686-elf-gcc
-CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra
+CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes
 LDFLAGS = -T src/linker.ld -ffreestanding -O2 -nostdlib -lgcc
 ARCH = i686
 

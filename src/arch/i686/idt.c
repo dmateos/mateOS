@@ -11,7 +11,7 @@ idt_ptr_t idt_ptr;
 #define SLAVE_PIC_COMMAND 0xA0
 #define SLAVE_PIC_DATA 0xA1
 
-static void pic_remap() {
+static void pic_remap(void) {
   // Remap the PIC so we can use interrupts
   outb(MASTER_PIC_COMMAND, 0x11); // Start initialization sequence
   outb(SLAVE_PIC_COMMAND, 0x11);  // Start initialization sequence
@@ -25,18 +25,19 @@ static void pic_remap() {
   outb(SLAVE_PIC_DATA, 0x00);     // Mask all interrupts
 }
 
-static void pic_disable() {
+static void pic_disable(void) {
   outb(MASTER_PIC_DATA, 0xFF); // Mask all interrupts
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
 }
 
 // make sure you pic_remap() before calling this
-static void pic_only_keyboard() {
+static void pic_only_keyboard(void) {
   outb(MASTER_PIC_DATA, 0xFD); // Mask all interrupts except IRQ1
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
 }
 
 static void pic_acknowledge(int irq) {
+  // Send both if its the slave
   if (irq >= 8) {
     outb(SLAVE_PIC_COMMAND, 0x20);
   }
@@ -52,7 +53,7 @@ static void write_idt_entry(uint8_t num, uint32_t base, uint16_t selector,
   idt_entries[num].flags = flags;
 }
 
-static void init_idt_table() {
+static void init_idt_table(void) {
   int segment = 0x08;
   // This is a dumb ass way to do this but i CBF writting a
   // lookup table in assembly.
@@ -109,15 +110,15 @@ static void init_idt_table() {
   write_idt_entry(47, (uint32_t)irq15, segment, 0x8E);
 }
 
-void init_idt() {
+void init_idt(void) {
   printf("IDT initializing\n");
 
   idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
   idt_ptr.base = (uint32_t)&idt_entries;
 
-  // pic_disable();
   pic_remap();
   pic_only_keyboard();
+  // pic_disable();
   init_idt_table();
   flush_idt(&idt_ptr);
 
@@ -126,7 +127,7 @@ void init_idt() {
 }
 
 static unsigned int count = 0;
-void idt_exception_handler(int number, int noerror) {
+void idt_exception_handler(uint32_t number, uint32_t noerror) {
   if (number == 0xD) {
     // printf("oh no! 0x%x, noerror: %d, %d\n", number, noerror, count++);
   } else {
@@ -134,10 +135,10 @@ void idt_exception_handler(int number, int noerror) {
   }
 }
 
-void idt_irq_handler(int number, int number2) {
+void idt_irq_handler(uint32_t number, uint32_t number2) {
   printf("IRQ: 0x%d %d\n", number, number2);
-  if (number == 1) {
-    int scancode = inb(0x60); // read scancode from keyboard
+  if (number == 0x1) {
+    uint8_t scancode = inb(0x60); // read scancode from keyboard
     printf("Scancode: %c\n", scancode);
     pic_acknowledge(number);
   }

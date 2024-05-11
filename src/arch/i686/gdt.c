@@ -16,7 +16,7 @@ static void print_gdt(int segment, char *name) {
   printf("\tgranularity: 0x%x\n", gdt[segment].granularity);
 }
 
-static void init_gdt_table() {
+static void init_gdt_table(void) {
   // Flat memory model
   // Were not really going to use segments.
   gdt[0].limit_low = 0x0000;
