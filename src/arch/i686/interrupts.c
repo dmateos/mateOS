@@ -38,7 +38,7 @@ static void pic_only_keyboard(void) {
 
 static void pic_acknowledge(int irq) {
   // Send both if its the slave
-  if (irq >= 8) {
+  if (irq >= 40) {
     outb(SLAVE_PIC_COMMAND, 0x20);
   }
   outb(MASTER_PIC_COMMAND, 0x20);
@@ -163,8 +163,8 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
   uint8_t scancode = 0;
-  print_registers();
   printf("IRQ: 0x%d %d\n", number, number2);
+  print_registers();
   if (number == 0x1) {
     scancode = inb(0x60); // read scancode from keyboard
     printf("Scancode: %c\n", scancode);

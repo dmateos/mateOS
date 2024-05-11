@@ -59,7 +59,7 @@ void print_registers(void) {
   printf("GS: 0x%x\n", gs);
 
   printf("CS: 0x%x ", cs);
-  printf("SS: 0x%x\n", ss);
+  printf("SS: 0x%x\n\n", ss);
 }
 
 // prob doesnt work

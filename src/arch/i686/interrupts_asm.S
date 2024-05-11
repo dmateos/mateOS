@@ -9,6 +9,7 @@ flush_idt:
 
 .macro isr_errorcode num=0
   .global isr\num
+  .align 4
   isr\num:
     pusha
     push $\num
@@ -20,6 +21,7 @@ flush_idt:
 
 .macro isr_noerrorcode num=0
   .global isr\num
+  .align 4
   isr\num:
     pusha
     push $0
@@ -32,6 +34,7 @@ flush_idt:
 
 .macro irq irq_num=0, isr_num=0
   .global irq\irq_num
+  .align 4
   irq\irq_num:
     pusha
     push $\isr_num

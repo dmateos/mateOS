@@ -20,6 +20,7 @@ test_assembly:
 .global halt_and_catch_fire
 halt_and_catch_fire:
     hlt
+    ret
 
 .global flush_gdt
 flush_gdt:
