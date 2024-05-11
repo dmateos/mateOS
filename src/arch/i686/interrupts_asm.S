@@ -5,6 +5,7 @@ flush_idt:
     movl 4(%esp), %eax  #Load address of gdt into eax
     lidt (%eax)
     sti
+    ret
 
 .macro isr_errorcode num=0
   .global isr\num

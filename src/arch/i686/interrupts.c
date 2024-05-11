@@ -56,7 +56,6 @@ static void write_idt_entry(idt_entry_t *idt_entries, uint8_t num,
 static void init_idt_table(idt_entry_t *ide) {
   // This is a dumb ass way to do this but i CBF writting a
   // lookup table in assembly.
-  // is the SEGMENT_OFFSET offset correct here? i dont know.
   write_idt_entry(ide, 0, (uint32_t)isr0, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 1, (uint32_t)isr1, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 2, (uint32_t)isr2, SEGMENT_OFFSET, PRIVILEGE);
@@ -125,12 +124,25 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
          sizeof(*idt_entries) / sizeof(idt_entry_t), idt_entries);
 }
 
-static unsigned int count = 0;
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
-  if (number == 0xD) {
-    // printf("oh no! 0x%x, noerror: %d, %d\n", number, noerror, count++);
-  } else {
-    printf("oh no! 0x%x, noerror: %d, %d\n", number, noerror, count++);
+  switch (number) {
+  case 0x0:
+    printf("Divide by zero\n");
+    break;
+  case 0x6:
+    printf("Invalid opcode\n");
+    break;
+  case 0x8:
+    printf("Double fault\n");
+    break;
+  case 0xD:
+    printf("General protection fault\n");
+    break;
+  case 0xE:
+    printf("Page fault\n");
+    break;
+  default:
+    printf("Exception: 0x%x\n", number);
   }
 }
 
