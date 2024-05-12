@@ -17,6 +17,7 @@ typedef struct idt_ptr {
 } __attribute__((packed)) idt_ptr_t;
 
 void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries);
+void idt_breakpoint(void);
 void idt_exception_handler(uint32_t, uint32_t);
 void idt_irq_handler(uint32_t, uint32_t);
 

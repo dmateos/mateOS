@@ -9,7 +9,7 @@ void kernel_main(void) {
 
   // cause_div_exception();
 
-  for (;;) {
+  while (1) {
     halt_and_catch_fire();
   }
 }

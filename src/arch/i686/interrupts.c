@@ -44,9 +44,8 @@ static void pic_acknowledge(int irq) {
   outb(MASTER_PIC_COMMAND, 0x20);
 }
 
-static void setup_timer(void) {
-  // Set the timer to 100Hz
-  uint32_t divisor = 1193180 / 100;
+static void pic_timer(uint32_t freq) {
+  uint32_t divisor = 1193180 / freq;
   outb(0x43, 0x36);
   outb(0x40, divisor & 0xFF);
   outb(0x40, (divisor >> 8) & 0xFF);
@@ -130,15 +129,16 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
   //  pic_disable();
   init_idt_table(idt_entries);
   flush_idt(idt_ptr);
-  // setup_timer();
+  pic_timer(1);
 
   printf("IDT initialized with space for %d entries at address 0x%x\n", 256,
          idt_entries);
 }
 
+void idt_breakpoint(void) { asm volatile("int $0x03"); }
+
 static int count = 0;
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
-  return;
   switch (number) {
   case 0x0:
     printf("Divide by zero %d\n", count);
@@ -155,6 +155,9 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   case 0xE:
     printf("Page fault\n");
     break;
+  case 0x03:
+    printf("Breakpoint\n");
+    break;
   default:
     printf("Exception: 0x%x, %d\n", number, noerror);
   }
@@ -163,11 +166,18 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
   uint8_t scancode = 0;
-  printf("IRQ: 0x%d %d\n", number, number2);
-  print_registers();
-  if (number == 0x1) {
+  printf("IRQ: 0x%x (%d) 0x%x (%d)\n", number, number, number2, number2);
+  switch (number) {
+  case 0x21:
+    printf("Keyboard\n");
     scancode = inb(0x60); // read scancode from keyboard
     printf("Scancode: %c\n", scancode);
+    break;
+  case 0x20:
+    printf("Timer\n");
+    break;
+  default:
+    printf("Unknown IRQ 0x%x 0x%x\n", number, number2);
   }
   pic_acknowledge(number);
 }

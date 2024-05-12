@@ -37,8 +37,8 @@ flush_idt:
   .align 4
   irq\irq_num:
     pusha
-    push $\isr_num
     push $\irq_num
+    push $\isr_num
     call idt_irq_handler
     add $8, %esp                #cleanup bytes pushed by push above
     popa
