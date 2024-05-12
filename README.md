@@ -8,7 +8,7 @@ Inspired by messing around with a little OS on the 6502.
 ## Project Directories
 
 ### 1. `src/`
-   - Description: Main kernel files
+   - Main kernel files
    - kernel.c contains main entry point
 
 ### 2. `src/arch/i686`
