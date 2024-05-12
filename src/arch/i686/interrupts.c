@@ -11,6 +11,9 @@
 #define SEGMENT_OFFSET 0x08
 #define PRIVILEGE 0x8E
 
+// Interrupt Service Routine (ISR) handlers
+void (*interruptPointers[256])(uint32_t, uint32_t) = {0};
+
 static void pic_remap(void) {
   // Remap the PIC so we can use interrupts
   outb(MASTER_PIC_COMMAND, 0x11); // Start initialization sequence
@@ -118,6 +121,10 @@ static void init_idt_table(idt_entry_t *ide) {
   write_idt_entry(ide, 47, (uint32_t)irq15, SEGMENT_OFFSET, PRIVILEGE);
 }
 
+void register_interrupt_handler(uint8_t n, void (*h)(uint32_t, uint32_t)) {
+  interruptPointers[n] = h;
+}
+
 void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
   printf("IDT initializing\n");
 
@@ -178,4 +185,7 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
     printf("Unknown IRQ 0x%x 0x%x\n", number, number2);
   }
   pic_acknowledge(number);
+  if (interruptPointers[number] != 0) {
+    interruptPointers[number](number, number2);
+  }
 }
