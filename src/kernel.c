@@ -3,10 +3,17 @@
 
 #include "arch/i686/686init.h"
 #include "arch/i686/interrupts.h"
+#include "arch/i686/io.h"
 #include "arch/i686/util.h"
+#include "keyboard.h"
 
 void test_interrupt_handler(uint32_t number, uint32_t error_code) {
-  printf("Interrupt number: %d\n", number);
+  // check if keydown
+  if (inb(IO_KB_DATA) & 0x80) {
+    return;
+  }
+  char c = keyboard_translate(inb(IO_KB_DATA));
+  printf("%c", c);
 }
 
 void kernel_main(void) {

@@ -171,15 +171,11 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
   uint8_t scancode = 0;
-  printf("IRQ: 0x%x (%d) 0x%x (%d)\n", number, number, number2, number2);
+  // printf("IRQ: 0x%x (%d) 0x%x (%d)\n", number, number, number2, number2);
   switch (number) {
   case 0x21:
-    printf("Keyboard\n");
-    scancode = inb(0x60); // read scancode from keyboard
-    printf("Scancode: %c\n", scancode);
     break;
   case 0x20:
-    printf("Timer\n");
     break;
   default:
     printf("Unknown IRQ 0x%x 0x%x\n", number, number2);

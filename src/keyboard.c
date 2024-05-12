@@ -15,7 +15,6 @@ uint8_t keyboard_translate(uint8_t scancode) {
 
   char c = kb_map[scancode] & 0x7F;
   if (c) {
-    printf("%c", c);
     return c;
   }
 
