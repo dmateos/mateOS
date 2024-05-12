@@ -7,8 +7,6 @@
 void kernel_main(void) {
   init_686();
 
-  // cause_div_exception();
-
   while (1) {
     halt_and_catch_fire();
   }

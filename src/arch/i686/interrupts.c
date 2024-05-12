@@ -129,7 +129,7 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
   //  pic_disable();
   init_idt_table(idt_entries);
   flush_idt(idt_ptr);
-  pic_timer(1);
+  // pic_timer(1);
 
   printf("IDT initialized with space for %d entries at address 0x%x\n", 256,
          idt_entries);
@@ -137,11 +137,10 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
 
 void idt_breakpoint(void) { asm volatile("int $0x03"); }
 
-static int count = 0;
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
   switch (number) {
   case 0x0:
-    printf("Divide by zero %d\n", count);
+    printf("Divide by zero %d\n");
     break;
   case 0x6:
     printf("Invalid opcode\n");
@@ -161,7 +160,6 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   default:
     printf("Exception: 0x%x, %d\n", number, noerror);
   }
-  count++;
 }
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {

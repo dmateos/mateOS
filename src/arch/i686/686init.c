@@ -8,7 +8,7 @@
 static gdt_entry_t gdt[3];
 static gdt_ptr_t gp_ptr;
 
-__attribute__((aligned(0x10))) static idt_entry_t idt_entries[256];
+static idt_entry_t idt_entries[256];
 static idt_ptr_t idt_ptr;
 
 void init_686(void) {
