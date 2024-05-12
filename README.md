@@ -7,4 +7,5 @@ Inspired by messing around with a little OS on the 6502.
 
 # 
 src/kernel.c < main entrypoint
+
 src/arch/i686/ < x86 specific code
