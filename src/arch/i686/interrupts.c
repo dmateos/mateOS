@@ -41,7 +41,7 @@ static void pic_only_keyboard(void) {
 
 static void pic_acknowledge(int irq) {
   // Send both if its the slave
-  if (irq >= 40) {
+  if (irq >= 8) {
     outb(SLAVE_PIC_COMMAND, 0x20);
   }
   outb(MASTER_PIC_COMMAND, 0x20);
