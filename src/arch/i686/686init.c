@@ -5,11 +5,11 @@
 #include "legacytty.h"
 #include "util.h"
 
-static gdt_entry_t gdt[3];
-static gdt_ptr_t gp_ptr;
+static gdt_entry_t gdt[3] = {0};
+static idt_entry_t idt_entries[256] = {0};
 
-static idt_entry_t idt_entries[256];
-static idt_ptr_t idt_ptr;
+static gdt_ptr_t gp_ptr = {0};
+static idt_ptr_t idt_ptr = {0};
 
 void init_686(void) {
   init_term();
