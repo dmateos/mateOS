@@ -30,4 +30,6 @@ typedef struct page_table_entry {
   uint32_t frame : 20;
 } page_table_entry_t;
 
+void init_paging(void);
+
 #endif
