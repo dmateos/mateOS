@@ -5,12 +5,10 @@
 
 typedef struct page_directory {
   uint32_t tables[1024];
-  __attribute__((aligned(4096)));
 } page_directory_t;
 
 typedef struct page_table {
   uint32_t pages[1024];
-  __attribute__((aligned(4096)));
 } page_table_t;
 
 typedef struct page_directory_entry {
