@@ -25,12 +25,12 @@ typedef struct {
 } vm_t;
 
 void assemble_file(const char *file) {
-  char opcode[32];
-  int parameter;
   FILE *fp, *new_fp;
-  uint32_t opcode_b;
   bool write_op = false;
   bool write_param = false;
+  char line[1024];
+  char *tok;
+  uint32_t opcode, parameter;
 
   fp = fopen(file, "r");
   if (!fp) {
@@ -46,42 +46,64 @@ void assemble_file(const char *file) {
   }
 
   printf("Assembler:\n");
-  while (fscanf(fp, "%s %d\n", opcode, &parameter) != EOF) {
-    printf("opcode: %s, parameter: %d\n", opcode, parameter);
-    if (strcmp(opcode, "ADD") == 0) {
-      opcode_b = ADD;
-      write_op = true;
-      write_param = true;
-    } else if (strcmp(opcode, "SUB") == 0) {
-      opcode_b = SUB;
-      write_op = true;
-      write_param = true;
-    } else if (strcmp(opcode, "PRINT") == 0) {
-      opcode_b = PRINT;
-      write_op = true;
-      write_param = false;
-    } else if (strcmp(opcode, "JMP") == 0) {
-      opcode_b = JMP;
-      write_op = true;
-      write_param = true;
-    } else if (strcmp(opcode, "PUSH") == 0) {
-      opcode_b = PUSH;
-      write_op = true;
-      write_param = false;
-    } else if (strcmp(opcode, "POP") == 0) {
-      opcode_b = POP;
-      write_op = true;
-      write_param = false;
-    } else if (strcmp(opcode, "SET") == 0) {
-      opcode_b = SET;
-      write_op = true;
-      write_param = true;
-    } else {
-      printf("unknown opcode\n");
+
+  while (fgets(line, sizeof(line), fp)) {
+    char *lptr = line;
+    lptr[strlen(lptr) - 1] = '\0';
+    write_op = false;
+    write_param = false;
+
+    while ((tok = strsep(&lptr, " "))) {
+      if (strncmp(tok, "ADD", 3) == 0) {
+        opcode = ADD;
+        printf("ADD\n");
+        if ((tok = strsep(&lptr, " "))) {
+          printf("PARAMETER: %s\n", tok);
+          parameter = atoi(tok);
+          write_op = true;
+          write_param = true;
+        }
+      } else if (strncmp(tok, "SUB", 3) == 0) {
+        opcode = SUB;
+        printf("SUB\n");
+        if ((tok = strsep(&lptr, " "))) {
+          printf("PARAMETER: %s\n", tok);
+          parameter = atoi(tok);
+          write_op = true;
+          write_param = true;
+        }
+      } else if (strncmp(tok, "PRINT", 5) == 0) {
+        opcode = PRINT;
+        write_op = true;
+        printf("PRINT\n");
+      } else if (strncmp(tok, "JMP", 3) == 0) {
+        opcode = JMP;
+        write_op = true;
+        printf("JMP\n");
+      } else if (strncmp(tok, "PUSH", 4) == 0) {
+        opcode = PUSH;
+        write_op = true;
+        printf("PUSH\n");
+      } else if (strncmp(tok, "POP", 3) == 0) {
+        opcode = POP;
+        write_op = true;
+        printf("POP\n");
+      } else if (strncmp(tok, "SET", 3) == 0) {
+        opcode = SET;
+        printf("SET\n");
+        if ((tok = strsep(&lptr, " "))) {
+          printf("PARAMETER: %s\n", tok);
+          parameter = atoi(tok);
+          write_op = true;
+          write_param = true;
+        }
+      } else {
+        printf("unknown opcode %s\n", tok);
+      }
     }
 
     if (write_op) {
-      fwrite(&opcode_b, sizeof(uint32_t), 1, new_fp);
+      fwrite(&opcode, sizeof(uint32_t), 1, new_fp);
     }
 
     if (write_param) {
