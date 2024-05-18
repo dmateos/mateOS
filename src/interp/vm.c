@@ -26,14 +26,14 @@ enum ASSEMLBER_DIRECTIVES {
 };
 
 typedef struct {
-  uint32_t *program_data, *stack;
-  uint32_t *ip, *sp;
-  uint32_t reg0;
+  int32_t *program_data, *stack;
+  int32_t ip, sp;
+  int32_t reg0;
 } vm_t;
 
 typedef struct label_t {
   char label_name[32];
-  uint32_t address;
+  int32_t address;
 } label_t;
 
 uint32_t find_label(label_t *labels, const char *str, uint32_t label_max) {
@@ -51,11 +51,11 @@ uint32_t assemble_file(const char *file) {
   bool write_param = false;
   char line[1024];
   char *tok;
-  uint32_t opcode, parameter;
+  int32_t opcode, parameter;
   label_t labels[MAX_LABELS];
-  uint32_t label_count = 0;
-  uint32_t curr_offset = 0;
-  uint32_t start_position = 0;
+  int32_t label_count = 0;
+  int32_t curr_offset = 0;
+  int32_t start_position = 0;
 
   fp = fopen(file, "r");
   if (!fp) {
@@ -128,7 +128,7 @@ uint32_t assemble_file(const char *file) {
         printf("CALL\n");
         if ((tok = strsep(&lptr, " "))) {
           printf("PARAMETER: %s\n", tok);
-          uint32_t addr = find_label(labels, tok, label_count);
+          int32_t addr = find_label(labels, tok, label_count);
           printf("FOUND LABEL: %d\n", addr);
           parameter = addr;
           write_op = true;
@@ -174,25 +174,23 @@ uint32_t assemble_file(const char *file) {
 void print_vm_state(vm_t *vm) {
   printf("\nVM State:\n");
   printf("reg0: %d\n", vm->reg0);
-  printf("ip: %p\n", vm->ip);
-  printf("*ip: %d\n", *vm->ip);
-  printf("sp: %p\n", vm->sp);
-  printf("*sp: %d\n\n", *vm->sp);
+  printf("ip: %d\n", vm->ip);
+  printf("sp: %d\n\n", vm->sp);
   return;
 }
 
 void run_vm(vm_t *vm) {
   printf("Running:\n");
   while (true) {
-    switch (*vm->ip) {
+    switch (vm->program_data[vm->ip]) {
     case ADD:
       vm->ip++;
-      vm->reg0 += *vm->ip;
+      vm->reg0 += vm->program_data[vm->ip];
       vm->ip++;
       break;
     case SUB:
       vm->ip++;
-      vm->reg0 -= *vm->ip;
+      vm->reg0 -= vm->program_data[vm->ip];
       vm->ip++;
       break;
     case PRINT:
@@ -202,38 +200,38 @@ void run_vm(vm_t *vm) {
     case JMP:
       break;
     case PUSH:
-      *vm->sp = vm->reg0;
+      vm->stack[vm->sp] = vm->reg0;
       vm->sp++;
       vm->ip++;
       break;
     case POP:
       vm->sp--;
-      vm->reg0 = *vm->sp;
+      vm->reg0 = vm->stack[vm->sp];
       vm->ip++;
       break;
     case SET:
       vm->ip++;
-      vm->reg0 = *vm->ip;
+      vm->reg0 = vm->program_data[vm->ip];
       vm->ip++;
       break;
     case CALL:
       vm->ip++;
-      *vm->sp = (uint32_t)vm->ip + 1;
+      vm->stack[vm->sp] = vm->ip + 1;
       vm->sp++;
-      vm->ip = (uint32_t *)vm->program_data + *vm->ip;
-      // printf("jumping to %d\n", (uint32_t)*vm->ip);
+      vm->ip = vm->program_data[vm->ip];
+      //  printf("jumping to %d\n", (uint32_t)*vm->ip);
       break;
     case RET:
       vm->sp--;
-      vm->ip = (uint32_t *)*vm->sp;
+      vm->ip = vm->stack[vm->sp];
       break;
     }
   }
 }
 
-void init_vm(vm_t *vm, const char *file, uint32_t start_offset) {
+void init_vm(vm_t *vm, const char *file, int32_t start_offset) {
   FILE *fp = fopen(file, "rb");
-  uint32_t length;
+  int32_t length;
 
   if (!fp) {
     printf("could not open file %s\n", file);
@@ -242,18 +240,18 @@ void init_vm(vm_t *vm, const char *file, uint32_t start_offset) {
 
   memset(vm, 0, sizeof(vm_t));
 
-  vm->program_data = malloc(PROGRAM_SIZE * sizeof(uint32_t));
-  memset(vm->program_data, 0, PROGRAM_SIZE * sizeof(uint32_t));
-  vm->ip = vm->program_data + start_offset;
+  vm->program_data = malloc(PROGRAM_SIZE * sizeof(int32_t));
+  memset(vm->program_data, 0, PROGRAM_SIZE * sizeof(int32_t));
+  vm->ip = start_offset;
 
-  vm->stack = malloc(sizeof(uint32_t) * STACK_SIZE);
-  memset(vm->stack, 0, sizeof(uint32_t) * STACK_SIZE);
-  vm->sp = vm->stack;
+  vm->stack = malloc(sizeof(int32_t) * STACK_SIZE);
+  memset(vm->stack, 0, sizeof(int32_t) * STACK_SIZE);
+  vm->sp = 0;
 
   fseek(fp, 0, SEEK_END);
   length = ftell(fp);
   fseek(fp, 0, SEEK_SET);
-  fread(vm->program_data, sizeof(uint32_t), length / sizeof(uint32_t), fp);
+  fread(vm->program_data, sizeof(int32_t), length / sizeof(int32_t), fp);
   fclose(fp);
 }
 
@@ -264,7 +262,7 @@ void free_vm(vm_t *vm) {
 
 int main() {
   vm_t vm;
-  uint32_t start_offset;
+  int32_t start_offset;
 
   if ((start_offset = assemble_file("test.s")) == 0) {
     printf("no start found\n");
