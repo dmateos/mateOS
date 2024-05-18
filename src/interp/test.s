@@ -1,5 +1,5 @@
 @LABEL test
-SET 69
+SET 99
 PRINT
 RET
 
@@ -10,5 +10,5 @@ RET
 
 @LABEL start
 CALL test
-CALL test
 CALL test2
+CALL test
