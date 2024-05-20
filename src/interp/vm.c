@@ -19,6 +19,7 @@ enum INSTRUCTIONS {
   SET,
   CALL,
   RET,
+  LSB,
 };
 
 enum ASSEMLBER_DIRECTIVES {
@@ -26,9 +27,9 @@ enum ASSEMLBER_DIRECTIVES {
 };
 
 typedef struct {
-  uint32_t *program_data, *stack;
-  uint32_t ip, sp;
+  uint32_t *text, *stack;
   uint32_t reg0;
+  int32_t ip, sp, sbp;
 } vm_t;
 
 typedef struct label_t {
@@ -183,21 +184,22 @@ void print_vm_state(vm_t *vm) {
   printf("reg0: %d\n", vm->reg0);
   printf("ip: %d\n", vm->ip);
   printf("sp: %d\n\n", vm->sp);
+  printf("sbp: %d\n\n", vm->sbp);
   return;
 }
 
 void run_vm(vm_t *vm) {
   printf("Running:\n");
   while (true) {
-    switch (vm->program_data[vm->ip]) {
+    switch (vm->text[vm->ip]) {
     case ADD:
       vm->ip++;
-      vm->reg0 += vm->program_data[vm->ip];
+      vm->reg0 += vm->text[vm->ip];
       vm->ip++;
       break;
     case SUB:
       vm->ip++;
-      vm->reg0 -= vm->program_data[vm->ip];
+      vm->reg0 -= vm->text[vm->ip];
       vm->ip++;
       break;
     case PRINT:
@@ -206,7 +208,7 @@ void run_vm(vm_t *vm) {
       break;
     case JMP:
       vm->ip++;
-      vm->ip = vm->program_data[vm->ip];
+      vm->ip = vm->text[vm->ip];
       break;
     case PUSH:
       vm->stack[vm->sp] = vm->reg0;
@@ -220,18 +222,24 @@ void run_vm(vm_t *vm) {
       break;
     case SET:
       vm->ip++;
-      vm->reg0 = vm->program_data[vm->ip];
+      vm->reg0 = vm->text[vm->ip];
       vm->ip++;
       break;
     case CALL:
       vm->ip++;
+      vm->sbp = vm->sp;
       vm->stack[vm->sp] = vm->ip + 1;
       vm->sp++;
-      vm->ip = vm->program_data[vm->ip];
+      vm->ip = vm->text[vm->ip];
       break;
     case RET:
       vm->sp--;
       vm->ip = vm->stack[vm->sp];
+      break;
+    case LSB:
+      vm->ip++;
+      vm->reg0 = vm->stack[vm->sbp + vm->text[vm->ip]];
+      vm->ip++;
       break;
     }
   }
@@ -248,23 +256,24 @@ void init_vm(vm_t *vm, const char *file, uint32_t start_offset) {
 
   memset(vm, 0, sizeof(vm_t));
 
-  vm->program_data = malloc(PROGRAM_SIZE * sizeof(uint32_t));
-  memset(vm->program_data, 0, PROGRAM_SIZE * sizeof(uint32_t));
+  vm->text = malloc(PROGRAM_SIZE * sizeof(uint32_t));
+  memset(vm->text, 0, PROGRAM_SIZE * sizeof(uint32_t));
   vm->ip = start_offset;
 
   vm->stack = malloc(sizeof(uint32_t) * STACK_SIZE);
   memset(vm->stack, 0, sizeof(uint32_t) * STACK_SIZE);
   vm->sp = 0;
+  vm->sbp = 0;
 
   fseek(fp, 0, SEEK_END);
   length = ftell(fp);
   fseek(fp, 0, SEEK_SET);
-  fread(vm->program_data, sizeof(uint32_t), length / sizeof(uint32_t), fp);
+  fread(vm->text, sizeof(uint32_t), length / sizeof(uint32_t), fp);
   fclose(fp);
 }
 
 void free_vm(vm_t *vm) {
-  free(vm->program_data);
+  free(vm->text);
   free(vm->stack);
   return;
 }
