@@ -1,3 +1,8 @@
+@LABEL dont
+SET 69
+PRINT
+RET
+
 @LABEL test
 SET 99
 PRINT
