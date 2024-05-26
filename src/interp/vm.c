@@ -33,14 +33,14 @@ typedef struct {
 } vm_t;
 
 typedef struct label_t {
-  char label_name[32];
+  char name[32];
   uint32_t address;
 } label_t;
 
 uint32_t find_label(const label_t *labels, const char *str,
                     uint32_t label_max) {
   for (int i = 0; i < label_max; i++) {
-    if (strcmp(labels[i].label_name, str) == 0) {
+    if (strcmp(labels[i].name, str) == 0) {
       return labels[i].address;
     }
   }
@@ -149,14 +149,14 @@ uint32_t assemble_file(const char *file) {
         printf("RET\n");
       } else if (strncmp(tok, "@LABEL", 6) == 0) {
         if ((tok = strsep(&lptr, " "))) {
-          strcpy(labels[label_count].label_name, tok);
+          strcpy(labels[label_count].name, tok);
           labels[label_count].address = curr_offset;
           if (strncmp(tok, "start", 5) == 0) {
             start_position = curr_offset;
           }
         }
         printf("pushed new label %s with address 0x%x\n",
-               labels[label_count].label_name, labels[label_count].address);
+               labels[label_count].name, labels[label_count].address);
         label_count++;
       } else {
         // printf("unknown opcode %s\n", tok);
