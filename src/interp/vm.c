@@ -37,9 +37,8 @@ typedef struct label_t {
   uint32_t address;
 } label_t;
 
-uint32_t find_label(const label_t *labels, const char *str,
-                    uint32_t label_max) {
-  for (int i = 0; i < label_max; i++) {
+uint32_t find_label(const label_t *labels, const char *str, uint32_t max) {
+  for (int i = 0; i < max; i++) {
     if (strcmp(labels[i].name, str) == 0) {
       return labels[i].address;
     }
