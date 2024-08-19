@@ -40,12 +40,21 @@ impl VirtualMachine {
         loop {
             let op = self.text[self.ip as usize];
             match op {
-                0 => break,
+                Instructions::ADD => break,
+                Instructions::SUB => break,
                 _ => {
                     self.ip += 1;
                 }
             }
         }
+    }
+
+    fn print_state(&self) {
+        println!("VM State");
+        println!("{}", self.reg0);
+        println!("{}", self.ip);
+        println!("{}", self.sp);
+        println!("{}", self.sbp);
     }
 }
 
