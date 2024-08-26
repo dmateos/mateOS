@@ -19,34 +19,23 @@ struct VirtualMachine {
     text: Vec<u32>,
     stack: Vec<u32>,
     reg0: u32,
-    ip: i32,
-    sp: i32,
-    sbp: i32,
+    ip: usize,
+    sp: usize,
+    sbp: usize,
 }
 
 impl VirtualMachine {
-    fn new() -> VirtualMachine {
-        VirtualMachine {
+    fn new(filename: &str, offset: i32) -> VirtualMachine {
+        let file = File::open(filename).expect("file not found");
+
+        return VirtualMachine {
             text: Vec::new(),
             stack: Vec::new(),
             reg0: 0,
             ip: 0,
             sp: 0,
             sbp: 0,
-        }
-    }
-
-    fn run_vm(&mut self) {
-        loop {
-            let op = self.text[self.ip as usize];
-            match op {
-                Instructions::ADD => break,
-                Instructions::SUB => break,
-                _ => {
-                    self.ip += 1;
-                }
-            }
-        }
+        };
     }
 
     fn print_state(&self) {
@@ -55,6 +44,60 @@ impl VirtualMachine {
         println!("{}", self.ip);
         println!("{}", self.sp);
         println!("{}", self.sbp);
+    }
+
+    fn run_vm(&mut self) {
+        println!("Running:");
+        loop {
+            match self.text[self.ip] {
+                0x1 => {
+                    self.ip += 1;
+                    self.reg0 += self.text[self.ip];
+                    self.ip += 1;
+                }
+                0x02 => {
+                    self.ip += 1;
+                    self.reg0 -= self.text[self.ip];
+                    self.ip += 1;
+                }
+                0x03 => {
+                    self.ip += 1;
+                    println!("{}", self.reg0);
+                }
+                0x04 => {
+                    self.ip += 1;
+                    self.ip = self.text[self.ip] as usize;
+                }
+                0x05 => {
+                    self.ip += 1;
+                    self.sp += 1;
+                    self.stack.push(self.reg0);
+                }
+                0x06 => {
+                    self.ip += 1;
+                    self.sp -= 1;
+                    self.reg0 = self.stack.pop().unwrap();
+                }
+                0x07 => {
+                    self.ip += 1;
+                    self.reg0 = self.text[self.ip];
+                    self.ip += 1;
+                }
+                0x08 => {
+                    self.ip += 1;
+                    self.sbp = self.sp;
+                    self.stack[self.sp] = (self.ip + 1) as u32;
+                    self.sp += 1;
+                    self.ip = self.text[self.ip] as usize;
+                }
+                0x09 => {
+                    self.sp -= 1;
+                    self.ip = self.stack[self.sp] as usize;
+                }
+                0x0A => break,
+                _ => {}
+            }
+        }
     }
 }
 
@@ -85,7 +128,8 @@ fn assemble_file(filename: &str) {
 }
 
 fn main() {
-    assemble_file("test.s");
-    let mut vm = VirtualMachine::new();
-    //vm.run_vm();
+    //assemble_file("test.s");
+    let mut vm = VirtualMachine::new("output", 100);
+    vm.run_vm();
+    vm.print_state();
 }
