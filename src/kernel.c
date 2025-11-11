@@ -6,6 +6,7 @@
 #include "arch/i686/io.h"
 #include "arch/i686/timer.h"
 #include "arch/i686/util.h"
+#include "console.h"
 #include "keyboard.h"
 
 typedef struct {
@@ -21,9 +22,11 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
-  // Process key press
+  // Process key press and send to console
   char c = keyboard_translate(scancode);
-  printf("%c", c);
+  if (c) {
+    console_handle_key(c);
+  }
 }
 
 void kernel_main(void) {
@@ -34,21 +37,11 @@ void kernel_main(void) {
 
   test.register_interrupt_handler(0x21, test_interrupt_handler);
 
-  printf("\nSystem running. Press keys to test keyboard input.\n");
-  printf("System will display uptime every second.\n\n");
+  // Initialize console
+  console_init();
 
-  uint32_t last_second = 0;
-
+  // Main loop - just halt and wait for interrupts
   while (1) {
-    uint32_t current_second = get_uptime_seconds();
-
-    // Display uptime every second
-    if (current_second != last_second) {
-      last_second = current_second;
-      printf("Uptime: %d seconds (ticks: %d)\n", current_second,
-             get_tick_count());
-    }
-
     halt_and_catch_fire();
   }
 }
