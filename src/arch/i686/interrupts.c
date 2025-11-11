@@ -33,12 +33,6 @@ __attribute__((unused)) static void pic_disable(void) {
   outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
 }
 
-// make sure you pic_remap() before calling this
-static void pic_only_keyboard(void) {
-  outb(MASTER_PIC_DATA, 0xFD); // Mask all interrupts except IRQ1
-  outb(SLAVE_PIC_DATA, 0xFF);  // Mask all interrupts
-}
-
 static void pic_acknowledge(int irq) {
   // Send both if its the slave
   if (irq >= 8) {
@@ -47,15 +41,6 @@ static void pic_acknowledge(int irq) {
   outb(MASTER_PIC_COMMAND, 0x20);
 }
 
-__attribute__((unused)) static void pic_timer(uint32_t freq) {
-  uint32_t divisor = 1193180 / freq;
-  outb(0x43, 0x36);
-  outb(0x40, divisor & 0xFF);
-  outb(0x40, (divisor >> 8) & 0xFF);
-
-  // unmask the timer interrupt
-  outb(MASTER_PIC_DATA, 0xFC);
-}
 
 static void write_idt_entry(idt_entry_t *idt_entries, uint8_t num,
                             uint32_t base, uint16_t selector, uint8_t flags) {
@@ -132,11 +117,12 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
   idt_ptr->base = (uint32_t)idt_entries;
 
   pic_remap();
-  pic_only_keyboard();
-  //  pic_disable();
+  // Initially mask all interrupts - specific handlers will unmask as needed
+  outb(MASTER_PIC_DATA, 0xFF);
+  outb(SLAVE_PIC_DATA, 0xFF);
+
   init_idt_table(idt_entries);
   flush_idt(idt_ptr);
-  // pic_timer(1);
 
   printf("IDT initialized with space for %d entries at address 0x%x\n", 256,
          idt_entries);
@@ -158,9 +144,17 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   case 0xD:
     printf("General protection fault\n");
     break;
-  case 0xE:
-    printf("Page fault\n");
+  case 0xE: {
+    extern uint32_t get_cr2(void);
+    uint32_t fault_addr = get_cr2();
+    printf("Page fault at address 0x%x\n", fault_addr);
+    printf("Error code: 0x%x (", noerror);
+    if (noerror & 0x1) printf("present "); else printf("not-present ");
+    if (noerror & 0x2) printf("write "); else printf("read ");
+    if (noerror & 0x4) printf("user"); else printf("supervisor");
+    printf(")\n");
     break;
+  }
   case 0x03:
     printf("Breakpoint\n");
     break;

@@ -4,6 +4,7 @@
 #include "arch/i686/686init.h"
 #include "arch/i686/interrupts.h"
 #include "arch/i686/io.h"
+#include "arch/i686/timer.h"
 #include "arch/i686/util.h"
 #include "keyboard.h"
 
@@ -33,9 +34,21 @@ void kernel_main(void) {
 
   test.register_interrupt_handler(0x21, test_interrupt_handler);
 
-  // register_interrupt_handler(0x21, test_interrupt_handler);
+  printf("\nSystem running. Press keys to test keyboard input.\n");
+  printf("System will display uptime every second.\n\n");
+
+  uint32_t last_second = 0;
 
   while (1) {
+    uint32_t current_second = get_uptime_seconds();
+
+    // Display uptime every second
+    if (current_second != last_second) {
+      last_second = current_second;
+      printf("Uptime: %d seconds (ticks: %d)\n", current_second,
+             get_tick_count());
+    }
+
     halt_and_catch_fire();
   }
 }

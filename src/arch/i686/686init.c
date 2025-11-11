@@ -4,6 +4,7 @@
 #include "interrupts.h"
 #include "legacytty.h"
 #include "paging.h"
+#include "timer.h"
 #include "util.h"
 
 static gdt_entry_t gdt[3] = {0};
@@ -12,8 +13,9 @@ static idt_entry_t idt_entries[256] = {0};
 static gdt_ptr_t gp_ptr = {0};
 static idt_ptr_t idt_ptr = {0};
 
-static page_directory_t page_dir = {0};
-static page_table_t page_table = {0};
+// Page directory and table must be 4KB (0x1000) aligned
+static page_directory_t page_dir __attribute__((aligned(4096))) = {0};
+static page_table_t page_table __attribute__((aligned(4096))) = {0};
 
 void init_686(void) {
   init_term();
@@ -27,6 +29,12 @@ void init_686(void) {
   // Global and Interrupt Descriptor Tables
   init_gdt(&gp_ptr, gdt);
   init_idt(&idt_ptr, idt_entries);
+
+  // Initialize paging with identity mapping
+  init_paging(&page_dir, &page_table);
+
+  // Initialize system timer (100 Hz)
+  init_timer(100);
 
   printf("mateOS init done\n");
 }
