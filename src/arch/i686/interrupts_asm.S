@@ -16,6 +16,7 @@ flush_idt:
     call idt_exception_handler
     add $8, %esp                #cleanup bytes pushed by push above
     popa
+    add $4, %esp                #cleanup CPU-pushed error code
     iret
 .endm
 

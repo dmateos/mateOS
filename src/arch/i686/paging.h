@@ -1,5 +1,5 @@
 #ifndef _PAGING_H
-#define _PAGING_
+#define _PAGING_H
 
 #include "../../lib.h"
 

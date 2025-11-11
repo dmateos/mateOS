@@ -47,7 +47,7 @@ static void pic_acknowledge(int irq) {
   outb(MASTER_PIC_COMMAND, 0x20);
 }
 
-static void pic_timer(uint32_t freq) {
+__attribute__((unused)) static void pic_timer(uint32_t freq) {
   uint32_t divisor = 1193180 / freq;
   outb(0x43, 0x36);
   outb(0x40, divisor & 0xFF);
@@ -147,7 +147,7 @@ void idt_breakpoint(void) { asm volatile("int $0x03"); }
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
   switch (number) {
   case 0x0:
-    printf("Divide by zero %d\n");
+    printf("Divide by zero\n");
     break;
   case 0x6:
     printf("Invalid opcode\n");
@@ -170,8 +170,22 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
 }
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
-  uint8_t scancode = 0;
   // printf("IRQ: 0x%x (%d) 0x%x (%d)\n", number, number, number2, number2);
+
+  // Check for spurious IRQs on IRQ7 and IRQ15
+  if (number == 0x27) {  // IRQ7
+    uint8_t isr = inb(MASTER_PIC_COMMAND);
+    if (!(isr & 0x80)) {
+      return;  // Spurious IRQ7, don't acknowledge
+    }
+  } else if (number == 0x2F) {  // IRQ15
+    uint8_t isr = inb(SLAVE_PIC_COMMAND);
+    if (!(isr & 0x80)) {
+      outb(MASTER_PIC_COMMAND, 0x20);  // Acknowledge master only
+      return;
+    }
+  }
+
   switch (number) {
   case 0x21:
     break;
@@ -180,7 +194,11 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
   default:
     printf("Unknown IRQ 0x%x 0x%x\n", number, number2);
   }
-  pic_acknowledge(number);
+
+  // Convert interrupt vector to IRQ number (0-15)
+  uint8_t irq = number - 0x20;
+  pic_acknowledge(irq);
+
   if (interruptPointers[number] != 0) {
     interruptPointers[number](number, number2);
   }

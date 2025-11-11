@@ -11,12 +11,17 @@ typedef struct {
   void (*register_interrupt_handler)(uint8_t, void (*h)(uint32_t, uint32_t));
 } kernel_interrupt_t;
 
-void test_interrupt_handler(uint32_t number, uint32_t error_code) {
-  // check if keydown
-  if (inb(IO_KB_DATA) & 0x80) {
+void test_interrupt_handler(uint32_t number __attribute__((unused)),
+                            uint32_t error_code __attribute__((unused))) {
+  uint8_t scancode = inb(IO_KB_DATA);
+
+  // 0x80 bit indicates key release, so ignore it
+  if (scancode & 0x80) {
     return;
   }
-  char c = keyboard_translate(inb(IO_KB_DATA));
+
+  // Process key press
+  char c = keyboard_translate(scancode);
   printf("%c", c);
 }
 

@@ -1,8 +1,9 @@
-CC = i686-elf-gcc
-AS = i686-elf-as
-LD = i686-elf-gcc
-CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes
-LDFLAGS = -T src/linker.ld -ffreestanding -O2 -nostdlib -lgcc
+TARGET_ARCH = i686-unknown-none-elf
+CC = clang --target=$(TARGET_ARCH)
+AS = clang --target=$(TARGET_ARCH)
+LD = clang --target=$(TARGET_ARCH)
+CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes -fno-pie
+LDFLAGS = -T src/linker.ld -ffreestanding -O2 -nostdlib -static -Wl,--build-id=none
 ARCH = i686
 
 SRCDIR = src
