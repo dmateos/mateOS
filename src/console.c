@@ -42,7 +42,7 @@ static void cmd_help(int argc __attribute__((unused)),
                      char **argv __attribute__((unused))) {
   printf("Available commands:\n");
   for (size_t i = 0; i < command_count; i++) {
-    printf("  %-10s - %s\n", commands[i].name, commands[i].description);
+    printf("  %s - %s\n", commands[i].name, commands[i].description);
   }
 }
 
