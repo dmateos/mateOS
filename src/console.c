@@ -6,6 +6,8 @@
 static char line_buffer[CONSOLE_LINE_MAX];
 static size_t line_position = 0;
 
+extern void kb_reboot(void);
+
 // Command handler function type
 typedef void (*command_handler_t)(int argc, char **argv);
 
@@ -73,7 +75,7 @@ static void cmd_uptime(int argc __attribute__((unused)),
   uint32_t minutes = (seconds % 3600) / 60;
   uint32_t secs = seconds % 60;
 
-  printf("Uptime: %d:%02d:%02d (%d seconds, %d ticks)\n", hours, minutes, secs,
+  printf("Uptime: %d:%d:%d (%d seconds, %d ticks)\n", hours, minutes, secs,
          seconds, ticks);
 }
 
@@ -84,12 +86,10 @@ static void cmd_reboot(int argc __attribute__((unused)),
   for (volatile int i = 0; i < 10000000; i++)
     ;
 
-  // Reboot via keyboard controller
-  __asm__ volatile("movb $0xFE, %al\n"
-                   "outb %al, $0x64\n");
+  kb_reboot();
 
   // If that didn't work, triple fault
-  __asm__ volatile("lidt 0");
+//  __asm__ volatile("lidt 0");
 }
 
 // Parse command line into argc/argv

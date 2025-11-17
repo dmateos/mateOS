@@ -60,3 +60,8 @@ get_cr2:
 get_cr3:
     movl %cr3, %eax
     ret
+
+.global kb_reboot
+kb_reboot:
+    movb $0xFE, %al
+    outb %al, $0x64
