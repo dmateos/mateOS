@@ -2,3 +2,7 @@
 *.iso
 *.o
 */*.o
+
+# Rust build artifacts
+rust/target/
+rust/Cargo.lock

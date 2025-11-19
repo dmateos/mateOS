@@ -24,6 +24,7 @@ static void cmd_clear(int argc, char **argv);
 static void cmd_echo(int argc, char **argv);
 static void cmd_uptime(int argc, char **argv);
 static void cmd_reboot(int argc, char **argv);
+static void cmd_rust(int argc, char **argv);
 
 // Command table
 static const command_t commands[] = {
@@ -32,6 +33,7 @@ static const command_t commands[] = {
     {"echo", "Print arguments", cmd_echo},
     {"uptime", "Show system uptime", cmd_uptime},
     {"reboot", "Reboot the system", cmd_reboot},
+    {"rust", "Test Rust integration", cmd_rust},
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -90,6 +92,31 @@ static void cmd_reboot(int argc __attribute__((unused)),
 
   // If that didn't work, triple fault
 //  __asm__ volatile("lidt 0");
+}
+
+// External Rust functions
+extern void rust_hello(void);
+extern int rust_add(int a, int b);
+extern unsigned int rust_factorial(unsigned int n);
+extern void rust_fizzbuzz(unsigned int n);
+extern unsigned int rust_sum_of_squares(unsigned int n);
+
+static void cmd_rust(int argc __attribute__((unused)),
+                     char **argv __attribute__((unused))) {
+  printf("Testing Rust integration:\n\n");
+
+  // Test 1: Hello
+  rust_hello();
+
+  // Test 2: Math operations
+  printf("Rust add(2, 3) = %d\n", rust_add(2, 3));
+  printf("Rust factorial(5) = %d\n", rust_factorial(5));
+  printf("Rust sum_of_squares(5) = %d\n", rust_sum_of_squares(5));
+
+  printf("\nFizzBuzz (1-15):\n");
+  rust_fizzbuzz(15);
+
+  printf("\nRust integration working!\n");
 }
 
 // Parse command line into argc/argv

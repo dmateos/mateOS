@@ -10,6 +10,11 @@ SRCDIR = src
 BUILDDIR = build
 TARGET = dmos.bin
 
+# Rust configuration
+RUST_TARGET = rust/i686-unknown-none.json
+RUST_TARGET_DIR = i686-unknown-none
+RUST_LIB = rust/target/$(RUST_TARGET_DIR)/debug/libmateos_rust.a
+
 SRC_C = $(wildcard $(SRCDIR)/*.c)
 SRC_C_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.c)
 SRC_S = $(wildcard $(SRCDIR)/*.S)
@@ -20,8 +25,18 @@ OBJ_C_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.c,$(BUILDDIR)/%.o,$(SRC_C_ARCH)
 OBJ_S = $(patsubst $(SRCDIR)/%.S,$(BUILDDIR)/%.o,$(SRC_S))
 OBJ_S_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.S,$(BUILDDIR)/%.o,$(SRC_S_ARCH))
 
-$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH)
-	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_S) $(OBJ_S_ARCH) -o $(TARGET)
+# Default target
+all: $(TARGET)
+
+# Build Rust library
+rust:
+	@echo "Building Rust library..."
+	@cd rust && cargo +nightly build --target i686-unknown-none.json -Z build-std=core,compiler_builtins -Z build-std-features=compiler-builtins-mem
+
+$(RUST_LIB): rust
+
+$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(RUST_LIB)
+	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(BUILDDIR)
@@ -42,6 +57,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.S
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
 	rm -rf out.iso
+	@cd rust && cargo clean 2>/dev/null || true
 
 test32:
 	qemu-system-i386 -display curses -kernel $(TARGET) -no-reboot
@@ -59,4 +75,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean
+.PHONY: clean rust

@@ -9,6 +9,10 @@
 #include "console.h"
 #include "keyboard.h"
 
+// External Rust functions
+extern void rust_hello(void);
+extern int rust_add(int a, int b);
+
 typedef struct {
   void (*register_interrupt_handler)(uint8_t, void (*h)(uint32_t, uint32_t));
 } kernel_interrupt_t;
@@ -36,6 +40,11 @@ void kernel_main(void) {
                                  register_interrupt_handler};
 
   test.register_interrupt_handler(0x21, test_interrupt_handler);
+
+  // Test Rust integration on boot
+  printf("\n");
+  rust_hello();
+  printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
 
   // Initialize console
   console_init();
