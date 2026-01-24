@@ -1,5 +1,6 @@
 #include "legacytty.h"
 #include "../../lib.h"
+#include "io.h"
 
 static uint16_t *terminal_buffer = (uint16_t *)0xB8000;
 
@@ -49,6 +50,8 @@ void init_term(void) {
       terminal_buffer[index] = vga_entry(' ', terminal_color);
     }
   }
+  // Initialize serial port for debug output
+  serial_init();
 }
 
 void terminal_setcolor(uint8_t color) { terminal_color = color; }
@@ -59,6 +62,9 @@ void terminal_putentryat(char c, uint8_t color, size_t x, size_t y) {
 }
 
 void term_putchar(char c) {
+  // Also output to serial for debugging
+  serial_putchar(c);
+
   if (c == '\n') {
     // Newline - go to start of next line
     terminal_column = 0;
@@ -131,3 +137,11 @@ void terminal_write(const char *data, size_t size) {
 }
 
 void term_writestr(const char *data) { terminal_write(data, strlen(data)); }
+
+// Debug output to serial only
+void serial_writestr(const char *data) {
+  while (*data) {
+    serial_putchar(*data);
+    data++;
+  }
+}

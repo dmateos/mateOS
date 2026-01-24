@@ -1,6 +1,7 @@
 #include "console.h"
 #include "lib.h"
 #include "arch/i686/timer.h"
+#include "liballoc/liballoc_1_1.h"
 
 // Console state
 static char line_buffer[CONSOLE_LINE_MAX];
@@ -25,6 +26,7 @@ static void cmd_echo(int argc, char **argv);
 static void cmd_uptime(int argc, char **argv);
 static void cmd_reboot(int argc, char **argv);
 static void cmd_rust(int argc, char **argv);
+static void cmd_memtest(int argc, char **argv);
 
 // Command table
 static const command_t commands[] = {
@@ -34,6 +36,7 @@ static const command_t commands[] = {
     {"uptime", "Show system uptime", cmd_uptime},
     {"reboot", "Reboot the system", cmd_reboot},
     {"rust", "Test Rust integration", cmd_rust},
+    {"memtest", "Test memory allocator", cmd_memtest},
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -117,6 +120,79 @@ static void cmd_rust(int argc __attribute__((unused)),
   rust_fizzbuzz(15);
 
   printf("\nRust integration working!\n");
+}
+
+static void cmd_memtest(int argc __attribute__((unused)),
+                        char **argv __attribute__((unused))) {
+  printf("Testing memory allocator (liballoc):\n\n");
+
+  // Test 1: Simple allocation
+  printf("Test 1: Allocating 64 bytes... ");
+  void *ptr1 = kmalloc(64);
+  if (ptr1) {
+    printf("OK at 0x%x\n", (uint32_t)ptr1);
+  } else {
+    printf("FAILED\n");
+    return;
+  }
+
+  // Test 2: Write to allocated memory
+  printf("Test 2: Writing to memory... ");
+  char *str = (char *)ptr1;
+  str[0] = 'H';
+  str[1] = 'i';
+  str[2] = '!';
+  str[3] = '\0';
+  printf("wrote '%s', ", str);
+  if (str[0] == 'H' && str[1] == 'i' && str[2] == '!') {
+    printf("read back OK\n");
+  } else {
+    printf("FAILED\n");
+  }
+
+  // Test 3: Multiple allocations
+  printf("Test 3: Multiple allocations...\n");
+  void *ptr2 = kmalloc(128);
+  void *ptr3 = kmalloc(256);
+  void *ptr4 = kmalloc(512);
+  printf("  128 bytes at 0x%x\n", (uint32_t)ptr2);
+  printf("  256 bytes at 0x%x\n", (uint32_t)ptr3);
+  printf("  512 bytes at 0x%x\n", (uint32_t)ptr4);
+
+  if (ptr2 && ptr3 && ptr4) {
+    printf("  All allocations succeeded\n");
+  } else {
+    printf("  Some allocations FAILED\n");
+    return;
+  }
+
+  // Test 4: Free and reallocate
+  printf("Test 4: Free and reallocate... ");
+  kfree(ptr2);
+  kfree(ptr3);
+  void *ptr5 = kmalloc(100);
+  if (ptr5) {
+    printf("OK at 0x%x\n", (uint32_t)ptr5);
+  } else {
+    printf("FAILED\n");
+  }
+
+  // Test 5: Large allocation
+  printf("Test 5: Large allocation (4KB)... ");
+  void *ptr6 = kmalloc(4096);
+  if (ptr6) {
+    printf("OK at 0x%x\n", (uint32_t)ptr6);
+  } else {
+    printf("FAILED\n");
+  }
+
+  // Clean up
+  kfree(ptr1);
+  kfree(ptr4);
+  kfree(ptr5);
+  kfree(ptr6);
+
+  printf("\nMemory allocator tests complete!\n");
 }
 
 // Parse command line into argc/argv

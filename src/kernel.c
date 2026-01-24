@@ -8,6 +8,7 @@
 #include "arch/i686/util.h"
 #include "console.h"
 #include "keyboard.h"
+#include "liballoc/liballoc_1_1.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -45,6 +46,26 @@ void kernel_main(void) {
   printf("\n");
   rust_hello();
   printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
+
+  // Test memory allocator on boot
+  printf("Testing memory allocator...\n");
+  void *ptr1 = kmalloc(64);
+  if (ptr1) {
+    printf("  kmalloc(64) = 0x%x - OK\n", (uint32_t)ptr1);
+    // Write and read back
+    char *str = (char *)ptr1;
+    str[0] = 'A';
+    str[1] = 'B';
+    str[2] = 'C';
+    str[3] = '\0';
+    printf("  Write/read test: '%s' - %s\n", str,
+           (str[0] == 'A' && str[1] == 'B') ? "OK" : "FAIL");
+    kfree(ptr1);
+    printf("  kfree() - OK\n");
+  } else {
+    printf("  kmalloc FAILED!\n");
+  }
+  printf("\n");
 
   // Initialize console
   console_init();

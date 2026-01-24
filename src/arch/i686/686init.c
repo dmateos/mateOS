@@ -13,9 +13,10 @@ static idt_entry_t idt_entries[256] = {0};
 static gdt_ptr_t gp_ptr = {0};
 static idt_ptr_t idt_ptr = {0};
 
-// Page directory and table must be 4KB (0x1000) aligned
+// Page directory and tables must be 4KB (0x1000) aligned
+// We need 2 page tables: one for 0-4MB, one for 4MB-8MB (heap)
 static page_directory_t page_dir __attribute__((aligned(4096))) = {0};
-static page_table_t page_table __attribute__((aligned(4096))) = {0};
+static page_table_t page_tables[2] __attribute__((aligned(4096))) = {0};
 
 void init_686(void) {
   init_term();
@@ -30,8 +31,8 @@ void init_686(void) {
   init_gdt(&gp_ptr, gdt);
   init_idt(&idt_ptr, idt_entries);
 
-  // Initialize paging with identity mapping
-  init_paging(&page_dir, &page_table);
+  // Initialize paging with identity mapping (0-8MB)
+  init_paging(&page_dir, page_tables);
 
   // Initialize system timer (100 Hz)
   init_timer(100);
