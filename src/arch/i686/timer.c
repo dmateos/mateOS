@@ -1,17 +1,36 @@
 #include "timer.h"
 #include "../../lib.h"
+#include "../../task.h"
 #include "io.h"
 #include "interrupts.h"
 
+#define MASTER_PIC_COMMAND 0x20
 #define MASTER_PIC_DATA 0x21
 
 // System tick counter
 static volatile uint32_t system_ticks = 0;
 static uint32_t timer_frequency = 0;
 
+// Original timer handler (for non-multitasking mode)
 void timer_handler(uint32_t irq __attribute__((unused)),
                    uint32_t error_code __attribute__((unused))) {
   system_ticks++;
+}
+
+// Timer handler with context switch support
+// Called from assembly, returns new ESP
+uint32_t *timer_handler_switch(uint32_t *esp) {
+  system_ticks++;
+
+  // Acknowledge the interrupt
+  outb(MASTER_PIC_COMMAND, 0x20);
+
+  // Call scheduler if multitasking is enabled
+  if (task_is_enabled()) {
+    return schedule(esp);
+  }
+
+  return esp;
 }
 
 void init_timer(uint32_t frequency) {

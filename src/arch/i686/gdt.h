@@ -3,6 +3,9 @@
 
 #include "../../lib.h"
 
+// GDT entry count: null, kernel code, kernel data, user code, user data, TSS
+#define GDT_ENTRY_COUNT 6
+
 typedef struct gdt_entry {
   uint16_t limit_low;
   uint16_t base_low;
@@ -19,5 +22,8 @@ typedef struct gdt_ptr {
 
 extern void flush_gdt(gdt_ptr_t *gp_ptr);
 void init_gdt(gdt_ptr_t *gp_ptr, gdt_entry_t *gdt);
+
+// Set up TSS descriptor in GDT (called by tss_init)
+void gdt_set_tss(uint32_t base, uint32_t limit);
 
 #endif

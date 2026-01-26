@@ -65,3 +65,11 @@ get_cr3:
 kb_reboot:
     movb $0xFE, %al
     outb %al, $0x64
+
+# Load the Task State Segment register
+# Argument: TSS selector (on stack)
+.global flush_tss
+flush_tss:
+    movw 4(%esp), %ax    # Get TSS selector from stack
+    ltr %ax              # Load Task Register
+    ret

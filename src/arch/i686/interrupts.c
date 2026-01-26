@@ -10,6 +10,7 @@
 
 #define SEGMENT_OFFSET 0x08
 #define PRIVILEGE 0x8E
+#define PRIVILEGE_USER 0xEE  // DPL=3, allow user mode to trigger this interrupt
 
 // Interrupt Service Routine (ISR) handlers
 void (*interruptPointers[256])(uint32_t, uint32_t) = {0};
@@ -87,8 +88,8 @@ static void init_idt_table(idt_entry_t *ide) {
   write_idt_entry(ide, 30, (uint32_t)isr30, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 31, (uint32_t)isr31, SEGMENT_OFFSET, PRIVILEGE);
 
-  // IRQs
-  write_idt_entry(ide, 32, (uint32_t)irq0, SEGMENT_OFFSET, PRIVILEGE);
+  // IRQs - use task-switching handler for timer (IRQ0)
+  write_idt_entry(ide, 32, (uint32_t)irq0_task, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 33, (uint32_t)irq1, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 34, (uint32_t)irq2, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 35, (uint32_t)irq3, SEGMENT_OFFSET, PRIVILEGE);
@@ -104,6 +105,9 @@ static void init_idt_table(idt_entry_t *ide) {
   write_idt_entry(ide, 45, (uint32_t)irq13, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 46, (uint32_t)irq14, SEGMENT_OFFSET, PRIVILEGE);
   write_idt_entry(ide, 47, (uint32_t)irq15, SEGMENT_OFFSET, PRIVILEGE);
+
+  // Syscall interrupt (int 0x80) - accessible from user mode (DPL=3)
+  write_idt_entry(ide, 128, (uint32_t)isr128, SEGMENT_OFFSET, PRIVILEGE_USER);
 }
 
 void register_interrupt_handler(uint8_t n, void (*h)(uint32_t, uint32_t)) {
@@ -142,7 +146,16 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
     printf("Double fault\n");
     break;
   case 0xD:
-    printf("General protection fault\n");
+    printf("General protection fault (error=0x%x)\n", noerror);
+    // Error code format for GPF: segment selector index
+    if (noerror != 0) {
+      printf("  Segment index: %d, ", (noerror >> 3) & 0x1FFF);
+      if (noerror & 0x1) printf("external ");
+      if (noerror & 0x2) printf("IDT ");
+      else if (noerror & 0x4) printf("LDT ");
+      else printf("GDT ");
+      printf("\n");
+    }
     break;
   case 0xE: {
     extern uint32_t get_cr2(void);

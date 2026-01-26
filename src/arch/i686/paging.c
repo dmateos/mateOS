@@ -12,8 +12,16 @@ extern void enable_paging(uint32_t page_directory_physical);
 // Number of page tables we use (each covers 4MB)
 #define NUM_PAGE_TABLES 2
 
+// Store pointers for later modification
+static page_directory_t *current_page_dir = NULL;
+static page_table_t *current_page_tables = NULL;
+
 void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
   printf("Paging initialization starting\n");
+
+  // Store pointers for later modification
+  current_page_dir = page_dir;
+  current_page_tables = page_tables;
 
   // Verify alignment - page directory must be 4KB aligned
   uint32_t pd_addr = (uint32_t)page_dir;
@@ -61,4 +69,35 @@ void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
 
   printf("Paging enabled successfully!\n");
   printf("CR3 = 0x%x\n", get_cr3());
+}
+
+// Mark a page as user-accessible
+void paging_set_user(uint32_t virtual_addr) {
+  if (!current_page_tables) {
+    printf("ERROR: Paging not initialized\n");
+    return;
+  }
+
+  // Calculate which page table and which page within it
+  uint32_t table_idx = virtual_addr / 0x400000;  // Each table covers 4MB
+  uint32_t page_idx = (virtual_addr % 0x400000) / 0x1000;  // 4KB pages
+
+  if (table_idx >= NUM_PAGE_TABLES) {
+    printf("ERROR: Address 0x%x outside mapped region\n", virtual_addr);
+    return;
+  }
+
+  // Add PAGE_USER flag to the page table entry
+  current_page_tables[table_idx].pages[page_idx] |= PAGE_USER;
+
+  // Also need to mark the page directory entry as user-accessible
+  current_page_dir->tables[table_idx] |= PAGE_USER;
+
+  // Invalidate TLB entry for this page
+  __asm__ volatile("invlpg (%0)" : : "r"(virtual_addr) : "memory");
+}
+
+// Get current page tables
+page_table_t *paging_get_tables(void) {
+  return current_page_tables;
 }

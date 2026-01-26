@@ -2,6 +2,8 @@
 #include "lib.h"
 #include "arch/i686/timer.h"
 #include "liballoc/liballoc_1_1.h"
+#include "task.h"
+#include "syscall.h"
 
 // Console state
 static char line_buffer[CONSOLE_LINE_MAX];
@@ -27,6 +29,10 @@ static void cmd_uptime(int argc, char **argv);
 static void cmd_reboot(int argc, char **argv);
 static void cmd_rust(int argc, char **argv);
 static void cmd_memtest(int argc, char **argv);
+static void cmd_tasks(int argc, char **argv);
+static void cmd_spawn(int argc, char **argv);
+static void cmd_usertest(int argc, char **argv);
+static void cmd_demo(int argc, char **argv);
 
 // Command table
 static const command_t commands[] = {
@@ -37,6 +43,10 @@ static const command_t commands[] = {
     {"reboot", "Reboot the system", cmd_reboot},
     {"rust", "Test Rust integration", cmd_rust},
     {"memtest", "Test memory allocator", cmd_memtest},
+    {"tasks", "List running tasks", cmd_tasks},
+    {"spawn", "Spawn kernel-mode test tasks", cmd_spawn},
+    {"usertest", "Spawn a user-mode test task", cmd_usertest},
+    {"demo", "Run mixed Ring 0 + Ring 3 multitasking demo", cmd_demo},
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -193,6 +203,218 @@ static void cmd_memtest(int argc __attribute__((unused)),
   kfree(ptr6);
 
   printf("\nMemory allocator tests complete!\n");
+}
+
+static void cmd_tasks(int argc __attribute__((unused)),
+                      char **argv __attribute__((unused))) {
+  task_list();
+}
+
+// Test task functions
+static volatile int task_a_counter = 0;
+static volatile int task_b_counter = 0;
+static volatile int task_c_counter = 0;
+
+static void test_task_a(void) {
+  while (1) {
+    task_a_counter++;
+    // Busy wait a bit
+    for (volatile int i = 0; i < 50000; i++)
+      ;
+  }
+}
+
+static void test_task_b(void) {
+  while (1) {
+    task_b_counter++;
+    // Busy wait a bit
+    for (volatile int i = 0; i < 50000; i++)
+      ;
+  }
+}
+
+static void test_task_c(void) {
+  // This task counts to 500 then exits
+  for (int i = 0; i < 500; i++) {
+    task_c_counter++;
+    for (volatile int j = 0; j < 50000; j++)
+      ;
+  }
+  // Task will exit automatically when function returns
+}
+
+static void cmd_spawn(int argc __attribute__((unused)),
+                      char **argv __attribute__((unused))) {
+  printf("Creating test tasks...\n");
+
+  // Reset counters
+  task_a_counter = 0;
+  task_b_counter = 0;
+  task_c_counter = 0;
+
+  // Create test tasks
+  task_t *a = task_create("task_a", test_task_a);
+  task_t *b = task_create("task_b", test_task_b);
+  task_t *c = task_create("task_c", test_task_c);
+
+  if (a && b && c) {
+    printf("Tasks created successfully!\n");
+    printf("Enabling preemptive multitasking...\n");
+    task_enable();
+    printf("Multitasking is now active.\n");
+    printf("Watch the output - tasks A, B, C are running concurrently!\n");
+    printf("Task C will exit after counting to 500.\n\n");
+  } else {
+    printf("Failed to create some tasks\n");
+  }
+}
+
+// Callable from kernel for auto-testing
+void test_spawn_tasks(void) {
+  cmd_spawn(0, NULL);
+}
+
+// User mode test task entry points
+// These functions run in Ring 3 and can only use syscalls to interact with kernel
+// IMPORTANT: User tasks cannot access ANY global variables (they're in kernel memory)
+
+// Helper to write a number - all data must be on stack (local variables)
+static void user_write_num(char label, int val) {
+  char buf[16];
+  int pos = 0;
+  buf[pos++] = '[';
+  buf[pos++] = label;
+  buf[pos++] = ':';
+  // Convert number to string (simple approach)
+  if (val >= 10000) buf[pos++] = '0' + (val / 10000) % 10;
+  if (val >= 1000)  buf[pos++] = '0' + (val / 1000) % 10;
+  if (val >= 100)   buf[pos++] = '0' + (val / 100) % 10;
+  if (val >= 10)    buf[pos++] = '0' + (val / 10) % 10;
+  buf[pos++] = '0' + val % 10;
+  buf[pos++] = ']';
+  buf[pos++] = ' ';
+  sys_write(1, buf, pos);
+}
+
+// User task X - runs continuously (quiet mode)
+static void user_task_x_entry(void) {
+  int counter = 0;  // Local variable on user stack
+  while (1) {
+    counter++;
+    // Busy wait
+    for (volatile int i = 0; i < 30000; i++)
+      ;
+    // Yield occasionally
+    if (counter % 25 == 0) {
+      sys_yield();
+    }
+  }
+}
+
+// User task Y - runs for 300 iterations then exits (quiet mode)
+static void user_task_y_entry(void) {
+  int counter = 0;  // Local variable on user stack
+  for (int i = 0; i < 300; i++) {
+    counter++;
+    for (volatile int j = 0; j < 30000; j++)
+      ;
+    if (counter % 25 == 0) {
+      sys_yield();
+    }
+  }
+  sys_exit(0);
+}
+
+// Simple user test task (original)
+static void user_test_entry(void) {
+  // Use syscalls to write to console
+  const char *msg1 = "Hello from user mode!\n";
+  sys_write(1, msg1, 22);
+
+  // Loop a few times, yielding each iteration
+  for (int i = 0; i < 5; i++) {
+    const char *msg2 = "[User task running...]\n";
+    sys_write(1, msg2, 23);
+
+    // Yield to other tasks
+    sys_yield();
+
+    // Small delay
+    for (volatile int j = 0; j < 1000000; j++)
+      ;
+  }
+
+  const char *msg3 = "User task exiting via syscall\n";
+  sys_write(1, msg3, 30);
+
+  // Exit via syscall
+  sys_exit(0);
+}
+
+static void cmd_usertest(int argc __attribute__((unused)),
+                         char **argv __attribute__((unused))) {
+  printf("Creating user-mode test task...\n");
+
+  // Create user mode task
+  task_t *user_task = task_create_user("user_test", user_test_entry);
+
+  if (user_task) {
+    printf("User task created successfully!\n");
+
+    // Enable multitasking if not already enabled
+    if (!task_is_enabled()) {
+      printf("Enabling preemptive multitasking...\n");
+      task_enable();
+    }
+
+    printf("User task is now scheduled to run in Ring 3.\n");
+    printf("Watch for syscall messages from user mode!\n\n");
+  } else {
+    printf("Failed to create user task\n");
+  }
+}
+
+// Combined demo: kernel threads (Ring 0) + user processes (Ring 3)
+static void cmd_demo(int argc __attribute__((unused)),
+                     char **argv __attribute__((unused))) {
+  printf("=== mateOS Multitasking Demo ===\n");
+  printf("Creating mixed Ring 0 (kernel) and Ring 3 (user) tasks...\n\n");
+
+  // Reset kernel task counters
+  task_a_counter = 0;
+  task_b_counter = 0;
+  task_c_counter = 0;
+
+  // Create kernel-mode tasks (Ring 0)
+  printf("Kernel tasks (Ring 0):\n");
+  task_t *ka = task_create("kern_A", test_task_a);
+  task_t *kb = task_create("kern_B", test_task_b);
+  task_t *kc = task_create("kern_C", test_task_c);
+
+  if (ka) printf("  - kern_A: infinite loop, prints [A:n]\n");
+  if (kb) printf("  - kern_B: infinite loop, prints [B:n]\n");
+  if (kc) printf("  - kern_C: counts to 500, prints [C:n], then exits\n");
+
+  // Create user-mode tasks (Ring 3)
+  printf("\nUser tasks (Ring 3):\n");
+  task_t *ux = task_create_user("user_X", user_task_x_entry);
+  task_t *uy = task_create_user("user_Y", user_task_y_entry);
+
+  if (ux) printf("  - user_X: infinite loop, prints [X:n] via syscall\n");
+  if (uy) printf("  - user_Y: counts to 300, prints [Y:n], then exits\n");
+
+  // Check if all tasks were created
+  int success = (ka && kb && kc && ux && uy);
+
+  if (success) {
+    printf("\nAll tasks created! Starting scheduler...\n");
+    printf("Tasks C and Y will exit after completion.\n");
+    printf("Use 'tasks' command to see running tasks.\n\n");
+
+    task_enable();
+  } else {
+    printf("\nFailed to create some tasks!\n");
+  }
 }
 
 // Parse command line into argc/argv

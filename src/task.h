@@ -1,0 +1,108 @@
+#ifndef _TASK_H
+#define _TASK_H
+
+#include "lib.h"
+
+// Task states
+typedef enum {
+  TASK_READY = 0,
+  TASK_RUNNING = 1,
+  TASK_BLOCKED = 2,
+  TASK_TERMINATED = 3
+} task_state_t;
+
+// CPU registers saved during context switch (kernel mode)
+typedef struct {
+  // Pushed by pusha
+  uint32_t edi;
+  uint32_t esi;
+  uint32_t ebp;
+  uint32_t esp_dummy;  // Ignored by popa
+  uint32_t ebx;
+  uint32_t edx;
+  uint32_t ecx;
+  uint32_t eax;
+
+  // Pushed by interrupt handler
+  uint32_t eip;
+  uint32_t cs;
+  uint32_t eflags;
+} __attribute__((packed)) cpu_state_t;
+
+// Extended CPU state for user mode (includes user SS and ESP for ring transition)
+typedef struct {
+  // Pushed by pusha
+  uint32_t edi;
+  uint32_t esi;
+  uint32_t ebp;
+  uint32_t esp_dummy;  // Ignored by popa
+  uint32_t ebx;
+  uint32_t edx;
+  uint32_t ecx;
+  uint32_t eax;
+
+  // Pushed by CPU on interrupt from user mode
+  uint32_t eip;
+  uint32_t cs;
+  uint32_t eflags;
+  uint32_t user_esp;   // Only present on ring transition (user->kernel)
+  uint32_t user_ss;    // Only present on ring transition (user->kernel)
+} __attribute__((packed)) cpu_state_user_t;
+
+// Task Control Block
+#define TASK_NAME_MAX 32
+#define TASK_STACK_SIZE 4096
+
+typedef struct task {
+  uint32_t id;                    // Task ID
+  char name[TASK_NAME_MAX];       // Task name
+  task_state_t state;             // Current state
+
+  uint32_t *stack;                // Stack base (allocated memory)
+  uint32_t *stack_top;            // Current stack pointer (ESP)
+
+  void (*entry)(void);            // Entry point function
+
+  struct task *next;              // Next task in list (circular)
+
+  // User mode support
+  int is_kernel;                  // 1 = kernel mode task, 0 = user mode task
+  uint32_t *kernel_stack;         // Kernel stack for user mode tasks (for TSS)
+  uint32_t kernel_stack_top;      // Top of kernel stack (for TSS ESP0)
+} task_t;
+
+// Maximum number of tasks
+#define MAX_TASKS 16
+
+// Initialize the task system
+void task_init(void);
+
+// Create a new kernel-mode task
+task_t *task_create(const char *name, void (*entry)(void));
+
+// Create a new user-mode task
+task_t *task_create_user(const char *name, void (*entry)(void));
+
+// Get current running task
+task_t *task_current(void);
+
+// Yield CPU to next task (cooperative)
+void task_yield(void);
+
+// Called from timer interrupt for preemptive scheduling
+// Returns new stack pointer to switch to
+uint32_t *schedule(uint32_t *current_esp);
+
+// Terminate current task
+void task_exit(void);
+
+// Print task list
+void task_list(void);
+
+// Check if multitasking is enabled
+int task_is_enabled(void);
+
+// Enable preemptive multitasking
+void task_enable(void);
+
+#endif

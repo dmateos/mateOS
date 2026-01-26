@@ -9,6 +9,11 @@
 #include "console.h"
 #include "keyboard.h"
 #include "liballoc/liballoc_1_1.h"
+#include "task.h"
+#include "syscall.h"
+
+// Define to auto-run demo on boot (uncomment to enable)
+// #define AUTO_USERTEST
 
 // External Rust functions
 extern void rust_hello(void);
@@ -67,8 +72,20 @@ void kernel_main(void) {
   }
   printf("\n");
 
+  // Initialize task system
+  task_init();
+
+  // Initialize syscall handler
+  syscall_init();
+
   // Initialize console
   console_init();
+
+#ifdef AUTO_USERTEST
+  // Auto-test demo on boot
+  printf("\n");
+  console_execute_command("demo");
+#endif
 
   // Main loop - just halt and wait for interrupts
   while (1) {

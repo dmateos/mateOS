@@ -11,12 +11,18 @@ flush_idt:
   .global isr\num
   .align 4
   isr\num:
+    # CPU already pushed error code at [ESP]
+    # Stack: [error_code] [EIP] [CS] [EFLAGS] (possibly [ESP] [SS] for user mode)
     pusha
-    push $\num
+    # Now stack: [pusha regs 32 bytes] [error_code] [EIP] [CS] [EFLAGS]
+    # Error code is at ESP+32
+    mov 32(%esp), %eax          # Get error code from stack
+    push %eax                   # Push error code as second arg
+    push $\num                  # Push interrupt number as first arg
     call idt_exception_handler
-    add $8, %esp                #cleanup bytes pushed by push above
+    add $8, %esp                # Cleanup both pushed args
     popa
-    add $4, %esp                #cleanup CPU-pushed error code
+    add $4, %esp                # Cleanup CPU-pushed error code
     iret
 .endm
 
@@ -45,6 +51,40 @@ flush_idt:
     popa
     iret
 .endm
+
+# Special handler for IRQ0 (timer) that supports context switching
+.global irq0_task
+.align 4
+irq0_task:
+    pusha                       # Save all general registers
+
+    # Save segment registers
+    push %ds
+    push %es
+    push %fs
+    push %gs
+
+    # Load kernel data segment into segment registers
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+
+    # Call the timer handler with context switch support
+    # Pass current ESP as argument
+    push %esp
+    call timer_handler_switch
+    mov %eax, %esp              # Switch to new stack if needed
+
+    # Restore segment registers (may be user or kernel)
+    pop %gs
+    pop %fs
+    pop %es
+    pop %ds
+
+    popa                        # Restore registers (possibly from new task)
+    iret                        # Return from interrupt
 
 isr_noerrorcode 0
 isr_noerrorcode 1
@@ -95,3 +135,33 @@ irq 12,44
 irq 13,45
 irq 14,46
 irq 15,47
+
+# Syscall handler (int 0x80)
+# User mode can call this because IDT entry has DPL=3
+# Arguments in registers: eax=syscall#, ebx=arg1, ecx=arg2, edx=arg3
+# Return value in eax
+.global isr128
+.align 4
+isr128:
+    # Save all registers
+    pusha
+
+    # Push syscall arguments for C handler
+    # syscall_handler(eax, ebx, ecx, edx)
+    push %edx           # arg4: edx
+    push %ecx           # arg3: ecx
+    push %ebx           # arg2: ebx
+    push %eax           # arg1: syscall number
+
+    call syscall_handler
+
+    # Clean up pushed arguments
+    add $16, %esp
+
+    # Store return value where popa will restore it to eax
+    # After pusha, stack is: EDI ESI EBP ESP EBX EDX ECX EAX (from top)
+    # EAX is at offset 28 from current ESP (7 * 4 bytes)
+    mov %eax, 28(%esp)
+
+    popa
+    iret

@@ -75,4 +75,10 @@ extern void irq13(void);
 extern void irq14(void);
 extern void irq15(void);
 
+// Task-switching timer handler
+extern void irq0_task(void);
+
+// Syscall handler (int 0x80)
+extern void isr128(void);
+
 #endif
