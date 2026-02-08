@@ -5,10 +5,17 @@
 #include "ramfs.h"
 #include "task.h"
 #include "syscall.h"
+#include "arch/i686/vga.h"
+#include "arch/i686/io.h"
+#include "arch/i686/paging.h"
 
 // Console state
 static char line_buffer[CONSOLE_LINE_MAX];
 static size_t line_position = 0;
+
+// Flag for graphics mode - keyboard handler checks this
+static volatile int gfx_waiting = 0;
+static volatile int gfx_key_pressed = 0;
 
 extern void kb_reboot(void);
 
@@ -36,7 +43,7 @@ static void cmd_usertest(int argc, char **argv);
 static void cmd_demo(int argc, char **argv);
 static void cmd_ls(int argc, char **argv);
 static void cmd_exec(int argc, char **argv);
-static void cmd_test(int argc, char **argv);
+static void cmd_gfx(int argc, char **argv);
 
 // Command table
 static const command_t commands[] = {
@@ -52,8 +59,8 @@ static const command_t commands[] = {
     {"usertest", "Spawn a user-mode test task", cmd_usertest},
     {"demo", "Run mixed Ring 0 + Ring 3 multitasking demo", cmd_demo},
     {"ls", "List files in ramfs", cmd_ls},
-    {"exec", "Execute ELF binary from ramfs", cmd_exec},
-    {"test", "Run comprehensive userland test suite", cmd_test},
+    {"exec", "Run ELF binary from ramfs (usage: exec <filename>)", cmd_exec},
+    {"gfx", "Switch to VGA Mode 13h graphics demo", cmd_gfx},
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -225,7 +232,6 @@ static volatile int task_c_counter = 0;
 static void test_task_a(void) {
   while (1) {
     task_a_counter++;
-    // Busy wait a bit
     for (volatile int i = 0; i < 50000; i++)
       ;
   }
@@ -234,42 +240,35 @@ static void test_task_a(void) {
 static void test_task_b(void) {
   while (1) {
     task_b_counter++;
-    // Busy wait a bit
     for (volatile int i = 0; i < 50000; i++)
       ;
   }
 }
 
 static void test_task_c(void) {
-  // This task counts to 500 then exits
   for (int i = 0; i < 500; i++) {
     task_c_counter++;
     for (volatile int j = 0; j < 50000; j++)
       ;
   }
-  // Task will exit automatically when function returns
 }
 
 static void cmd_spawn(int argc __attribute__((unused)),
                       char **argv __attribute__((unused))) {
   printf("Creating test tasks...\n");
 
-  // Reset counters
   task_a_counter = 0;
   task_b_counter = 0;
   task_c_counter = 0;
 
-  // Create test tasks
   task_t *a = task_create("task_a", test_task_a);
   task_t *b = task_create("task_b", test_task_b);
   task_t *c = task_create("task_c", test_task_c);
 
   if (a && b && c) {
     printf("Tasks created successfully!\n");
-    printf("Enabling preemptive multitasking...\n");
     task_enable();
     printf("Multitasking is now active.\n");
-    printf("Watch the output - tasks A, B, C are running concurrently!\n");
     printf("Task C will exit after counting to 500.\n\n");
   } else {
     printf("Failed to create some tasks\n");
@@ -281,46 +280,21 @@ void test_spawn_tasks(void) {
   cmd_spawn(0, NULL);
 }
 
-// User mode test task entry points
-// These functions run in Ring 3 and can only use syscalls to interact with kernel
-// IMPORTANT: User tasks cannot access ANY global variables (they're in kernel memory)
-
-// Helper to write a number - all data must be on stack (local variables)
-static void user_write_num(char label, int val) {
-  char buf[16];
-  int pos = 0;
-  buf[pos++] = '[';
-  buf[pos++] = label;
-  buf[pos++] = ':';
-  // Convert number to string (simple approach)
-  if (val >= 10000) buf[pos++] = '0' + (val / 10000) % 10;
-  if (val >= 1000)  buf[pos++] = '0' + (val / 1000) % 10;
-  if (val >= 100)   buf[pos++] = '0' + (val / 100) % 10;
-  if (val >= 10)    buf[pos++] = '0' + (val / 10) % 10;
-  buf[pos++] = '0' + val % 10;
-  buf[pos++] = ']';
-  buf[pos++] = ' ';
-  sys_write(1, buf, pos);
-}
-
-// User task X - runs continuously (quiet mode)
+// User mode task entry points for demo
 static void user_task_x_entry(void) {
-  int counter = 0;  // Local variable on user stack
+  int counter = 0;
   while (1) {
     counter++;
-    // Busy wait
     for (volatile int i = 0; i < 30000; i++)
       ;
-    // Yield occasionally
     if (counter % 25 == 0) {
       sys_yield();
     }
   }
 }
 
-// User task Y - runs for 300 iterations then exits (quiet mode)
 static void user_task_y_entry(void) {
-  int counter = 0;  // Local variable on user stack
+  int counter = 0;
   for (int i = 0; i < 300; i++) {
     counter++;
     for (volatile int j = 0; j < 30000; j++)
@@ -332,29 +306,20 @@ static void user_task_y_entry(void) {
   sys_exit(0);
 }
 
-// Simple user test task (original)
 static void user_test_entry(void) {
-  // Use syscalls to write to console
   const char *msg1 = "Hello from user mode!\n";
   sys_write(1, msg1, 22);
 
-  // Loop a few times, yielding each iteration
   for (int i = 0; i < 5; i++) {
     const char *msg2 = "[User task running...]\n";
     sys_write(1, msg2, 23);
-
-    // Yield to other tasks
     sys_yield();
-
-    // Small delay
     for (volatile int j = 0; j < 1000000; j++)
       ;
   }
 
   const char *msg3 = "User task exiting via syscall\n";
   sys_write(1, msg3, 30);
-
-  // Exit via syscall
   sys_exit(0);
 }
 
@@ -362,62 +327,44 @@ static void cmd_usertest(int argc __attribute__((unused)),
                          char **argv __attribute__((unused))) {
   printf("Creating user-mode test task...\n");
 
-  // Create user mode task
   task_t *user_task = task_create_user("user_test", user_test_entry);
 
   if (user_task) {
     printf("User task created successfully!\n");
-
-    // Enable multitasking if not already enabled
     if (!task_is_enabled()) {
-      printf("Enabling preemptive multitasking...\n");
       task_enable();
     }
-
-    printf("User task is now scheduled to run in Ring 3.\n");
-    printf("Watch for syscall messages from user mode!\n\n");
+    printf("User task is now scheduled to run in Ring 3.\n\n");
   } else {
     printf("Failed to create user task\n");
   }
 }
 
-// Combined demo: kernel threads (Ring 0) + user processes (Ring 3)
 static void cmd_demo(int argc __attribute__((unused)),
                      char **argv __attribute__((unused))) {
   printf("=== mateOS Multitasking Demo ===\n");
   printf("Creating mixed Ring 0 (kernel) and Ring 3 (user) tasks...\n\n");
 
-  // Reset kernel task counters
   task_a_counter = 0;
   task_b_counter = 0;
   task_c_counter = 0;
 
-  // Create kernel-mode tasks (Ring 0)
-  printf("Kernel tasks (Ring 0):\n");
   task_t *ka = task_create("kern_A", test_task_a);
   task_t *kb = task_create("kern_B", test_task_b);
   task_t *kc = task_create("kern_C", test_task_c);
 
-  if (ka) printf("  - kern_A: infinite loop, prints [A:n]\n");
-  if (kb) printf("  - kern_B: infinite loop, prints [B:n]\n");
-  if (kc) printf("  - kern_C: counts to 500, prints [C:n], then exits\n");
+  if (ka) printf("  - kern_A: infinite loop\n");
+  if (kb) printf("  - kern_B: infinite loop\n");
+  if (kc) printf("  - kern_C: counts to 500, then exits\n");
 
-  // Create user-mode tasks (Ring 3)
-  printf("\nUser tasks (Ring 3):\n");
   task_t *ux = task_create_user("user_X", user_task_x_entry);
   task_t *uy = task_create_user("user_Y", user_task_y_entry);
 
-  if (ux) printf("  - user_X: infinite loop, prints [X:n] via syscall\n");
-  if (uy) printf("  - user_Y: counts to 300, prints [Y:n], then exits\n");
+  if (ux) printf("  - user_X: infinite loop (Ring 3)\n");
+  if (uy) printf("  - user_Y: counts to 300, then exits (Ring 3)\n");
 
-  // Check if all tasks were created
-  int success = (ka && kb && kc && ux && uy);
-
-  if (success) {
-    printf("\nAll tasks created! Starting scheduler...\n");
-    printf("Tasks C and Y will exit after completion.\n");
-    printf("Use 'tasks' command to see running tasks.\n\n");
-
+  if (ka && kb && kc && ux && uy) {
+    printf("\nAll tasks created! Starting scheduler...\n\n");
     task_enable();
   } else {
     printf("\nFailed to create some tasks!\n");
@@ -429,72 +376,130 @@ static void cmd_ls(int argc __attribute__((unused)),
   ramfs_list();
 }
 
-// User task that execs hello.elf
-static void exec_test_entry(void) {
-  const char *msg = "About to exec hello.elf...\n";
-  sys_write(1, msg, 28);
+// Generic exec: filename passed via static buffer so it's in kernel memory
+// (accessible when the user task calls sys_exec)
+static char exec_filename[64];
 
-  // This should replace this task with hello.elf
-  int ret = sys_exec("hello.elf");
-
-  // Should only get here if exec failed
-  const char *fail = "exec() failed!\n";
-  sys_write(1, fail, 15);
-  sys_exit(ret);
+static void exec_entry(void) {
+  sys_exec(exec_filename);
+  sys_exit(1);
 }
 
-static void cmd_exec(int argc __attribute__((unused)),
-                     char **argv __attribute__((unused))) {
-  printf("Creating user task that will exec hello.elf...\n");
-
-  task_t *exec_task = task_create_user("exec_test", exec_test_entry);
-
-  if (!exec_task) {
-    printf("Failed to create exec test task\n");
+static void cmd_exec(int argc, char **argv) {
+  if (argc < 2) {
+    printf("Usage: exec <filename>\n");
+    printf("Run an ELF binary from the ramfs.\n");
+    printf("Use 'ls' to see available files.\n");
     return;
   }
 
-  printf("Exec test task created\n");
+  // Check file exists in ramfs
+  ramfs_file_t *file = ramfs_lookup(argv[1]);
+  if (!file) {
+    printf("File not found: %s\n", argv[1]);
+    return;
+  }
 
-  // Enable multitasking if not already enabled
+  // Copy filename to static buffer
+  size_t i;
+  for (i = 0; i < sizeof(exec_filename) - 1 && argv[1][i]; i++) {
+    exec_filename[i] = argv[1][i];
+  }
+  exec_filename[i] = '\0';
+
+  // Mark exec_filename page as user-accessible so user task can pass it to syscall
+  paging_set_user((uint32_t)exec_filename & ~0xFFF);
+
+  printf("Loading %s...\n", exec_filename);
+
+  task_t *t = task_create_user("exec", exec_entry);
+  if (!t) {
+    printf("Failed to create task\n");
+    return;
+  }
+
   if (!task_is_enabled()) {
     task_enable();
   }
 }
 
-// User task that execs test.elf (comprehensive test suite)
-// Note: String constants need to be in user-accessible memory
-static char test_filename[] = "test.elf";
-static void test_suite_entry(void) {
-  const char *msg = "About to exec test.elf (comprehensive test suite)...\n";
-  sys_write(1, msg, 54);
+// VGA Mode 13h graphics demo
+static void cmd_gfx(int argc __attribute__((unused)),
+                    char **argv __attribute__((unused))) {
+  printf("Switching to VGA Mode 13h (320x200x256)...\n");
 
-  // This should replace this task with test.elf
-  int ret = sys_exec(test_filename);
+  // Enter graphics mode
+  vga_enter_mode13h();
 
-  // Should only get here if exec failed
-  const char *fail = "exec() failed!\n";
-  sys_write(1, fail, 15);
-  sys_exit(ret);
+  // Clear to dark blue
+  vga_clear(1);
+
+  // Draw border
+  vga_fill_rect(0, 0, VGA_WIDTH, 2, 15);           // Top
+  vga_fill_rect(0, VGA_HEIGHT - 2, VGA_WIDTH, 2, 15); // Bottom
+  vga_fill_rect(0, 0, 2, VGA_HEIGHT, 15);           // Left
+  vga_fill_rect(VGA_WIDTH - 2, 0, 2, VGA_HEIGHT, 15); // Right
+
+  // Title
+  vga_draw_string(100, 10, "mateOS Graphics", 15);
+  vga_draw_string(88, 24, "VGA Mode 13h - 320x200", 14);
+
+  // Color palette display - show first 16 colors as squares
+  vga_draw_string(10, 45, "Palette:", 15);
+  for (int i = 0; i < 16; i++) {
+    vga_fill_rect(10 + i * 18, 58, 16, 16, (uint8_t)i);
+  }
+
+  // Draw some shapes
+  vga_draw_string(10, 85, "Shapes:", 15);
+
+  // Filled rectangles
+  vga_fill_rect(10, 98, 40, 30, 4);   // Red
+  vga_fill_rect(60, 98, 40, 30, 2);   // Green
+  vga_fill_rect(110, 98, 40, 30, 9);  // Light blue
+
+  // Lines
+  vga_draw_string(10, 135, "Lines:", 15);
+  for (int i = 0; i < 8; i++) {
+    vga_draw_line(10, 148 + i * 2, 150, 148 + 14 - i * 2,
+                  (uint8_t)(8 + i));
+  }
+
+  // Diagonal cross
+  vga_draw_line(200, 85, 300, 185, 12);  // Red diagonal
+  vga_draw_line(300, 85, 200, 185, 10);  // Green diagonal
+
+  // Instructions
+  vga_draw_string(60, 188, "Press any key to return", 14);
+
+  // Wait for keypress using interrupt-driven approach
+  // The keyboard IRQ handler will set gfx_key_pressed when it sees a key
+  // Note: cmd_gfx is called from inside the keyboard IRQ handler chain,
+  // but the PIC EOI was already sent before our handler was called.
+  // We need to re-enable CPU interrupts so new IRQs can be delivered.
+  gfx_key_pressed = 0;
+  gfx_waiting = 1;
+  __asm__ volatile("sti");
+
+  while (!gfx_key_pressed) {
+    __asm__ volatile("hlt");  // Sleep until next interrupt
+  }
+
+  gfx_waiting = 0;
+
+  // Return to text mode
+  vga_enter_text_mode();
+
+  printf("Returned to text mode.\n");
 }
 
-static void cmd_test(int argc __attribute__((unused)),
-                     char **argv __attribute__((unused))) {
-  printf("Running comprehensive userland test suite...\n");
-
-  task_t *test_task = task_create_user("test_suite", test_suite_entry);
-
-  if (!test_task) {
-    printf("Failed to create test task\n");
-    return;
+// Called from keyboard IRQ handler - returns 1 if key was consumed
+int console_gfx_check_key(void) {
+  if (gfx_waiting) {
+    gfx_key_pressed = 1;
+    return 1;  // Consumed, don't pass to console
   }
-
-  printf("Test suite task created\n");
-
-  // Enable multitasking if not already enabled
-  if (!task_is_enabled()) {
-    task_enable();
-  }
+  return 0;
 }
 
 // Parse command line into argc/argv

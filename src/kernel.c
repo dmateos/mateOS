@@ -34,6 +34,11 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
+  // If in graphics mode, signal the gfx wait loop instead of console
+  if (console_gfx_check_key()) {
+    return;
+  }
+
   // Process key press and send to console
   char c = keyboard_translate(scancode);
   if (c) {

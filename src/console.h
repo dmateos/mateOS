@@ -9,5 +9,6 @@ void console_init(void);
 void console_putchar(char c);
 void console_handle_key(char c);
 void console_execute_command(const char *line);
+int console_gfx_check_key(void);
 
 #endif
