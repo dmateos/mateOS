@@ -20,3 +20,46 @@ uint8_t keyboard_translate(uint8_t scancode) {
 
   return 0;
 }
+
+// Ring buffer for user-mode keyboard input
+static uint8_t key_buffer[KEY_BUFFER_SIZE];
+static volatile int kb_head = 0;
+static volatile int kb_tail = 0;
+static volatile int kb_enabled = 0;
+
+void keyboard_buffer_init(void) {
+  kb_head = 0;
+  kb_tail = 0;
+}
+
+void keyboard_buffer_enable(int enable) {
+  kb_enabled = enable;
+  if (enable) {
+    kb_head = 0;
+    kb_tail = 0;
+  }
+}
+
+int keyboard_buffer_is_enabled(void) {
+  return kb_enabled;
+}
+
+int keyboard_buffer_push(uint8_t key) {
+  if (!kb_enabled) return -1;
+  int next = (kb_head + 1) % KEY_BUFFER_SIZE;
+  if (next == kb_tail) return -1;  // Full
+  key_buffer[kb_head] = key;
+  kb_head = next;
+  return 0;
+}
+
+uint8_t keyboard_buffer_pop(void) {
+  if (kb_head == kb_tail) return 0;  // Empty
+  uint8_t key = key_buffer[kb_tail];
+  kb_tail = (kb_tail + 1) % KEY_BUFFER_SIZE;
+  return key;
+}
+
+int keyboard_buffer_empty(void) {
+  return kb_head == kb_tail;
+}

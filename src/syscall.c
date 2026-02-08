@@ -3,8 +3,13 @@
 #include "lib.h"
 #include "ramfs.h"
 #include "task.h"
+#include "keyboard.h"
 #include "arch/i686/paging.h"
+#include "arch/i686/vga.h"
 #include "liballoc/liballoc_1_1.h"
+
+// Track whether a user program is in graphics mode
+static int user_gfx_active = 0;
 
 // Forward declaration for interrupt registration
 extern void isr128(void);
@@ -37,6 +42,12 @@ static int sys_do_write(int fd __attribute__((unused)),
 
 // Exit current task
 static void sys_do_exit(int code) {
+  // Auto-cleanup graphics mode if this task had it active
+  if (user_gfx_active) {
+    keyboard_buffer_enable(0);
+    vga_enter_text_mode();
+    user_gfx_active = 0;
+  }
   printf("[syscall] Task exiting with code %d\n", code);
   task_exit();
   // Should never return
@@ -162,6 +173,40 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
   return 0;
 }
 
+// Enter VGA Mode 13h and map framebuffer for user access
+static uint32_t sys_do_gfx_init(void) {
+  if (user_gfx_active) {
+    return 0xA0000;  // Already active
+  }
+
+  vga_enter_mode13h();
+
+  // Mark VGA framebuffer pages as user-accessible (0xA0000-0xAFFFF, 16 pages)
+  for (uint32_t addr = 0xA0000; addr < 0xB0000; addr += 0x1000) {
+    paging_set_user(addr);
+  }
+
+  keyboard_buffer_init();
+  keyboard_buffer_enable(1);
+  user_gfx_active = 1;
+
+  return 0xA0000;
+}
+
+// Return to text mode
+static void sys_do_gfx_exit(void) {
+  if (!user_gfx_active) return;
+
+  keyboard_buffer_enable(0);
+  vga_enter_text_mode();
+  user_gfx_active = 0;
+}
+
+// Read key from buffer (non-blocking)
+static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
+  return (uint32_t)keyboard_buffer_pop();
+}
+
 // Main syscall dispatcher - called from assembly
 // frame_ptr points to the iret frame on the kernel stack
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
@@ -180,6 +225,16 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_EXEC:
       return (uint32_t)sys_do_exec((const char *)ebx, (iret_frame_t *)frame);
+
+    case SYS_GFX_INIT:
+      return sys_do_gfx_init();
+
+    case SYS_GFX_EXIT:
+      sys_do_gfx_exit();
+      return 0;
+
+    case SYS_GETKEY:
+      return sys_do_getkey(ebx);
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

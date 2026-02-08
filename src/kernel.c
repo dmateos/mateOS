@@ -39,6 +39,15 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
+  // If user gfx key buffer is active, push to it instead of console
+  if (keyboard_buffer_is_enabled()) {
+    char c = keyboard_translate(scancode);
+    if (c) {
+      keyboard_buffer_push((uint8_t)c);
+    }
+    return;
+  }
+
   // Process key press and send to console
   char c = keyboard_translate(scancode);
   if (c) {

@@ -32,3 +32,33 @@ void yield(void) {
         : "a"(SYS_YIELD)
     );
 }
+
+unsigned char *gfx_init(void) {
+    unsigned int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_GFX_INIT)
+        : "memory"
+    );
+    return (unsigned char *)ret;
+}
+
+void gfx_exit(void) {
+    __asm__ volatile(
+        "int $0x80"
+        :
+        : "a"(SYS_GFX_EXIT)
+    );
+}
+
+unsigned char getkey(unsigned int flags) {
+    unsigned int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_GETKEY), "b"(flags)
+        : "memory"
+    );
+    return (unsigned char)ret;
+}
