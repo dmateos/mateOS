@@ -66,7 +66,7 @@ clean:
 	@cd rust && cargo clean 2>/dev/null || true
 
 test32:
-	qemu-system-i386 -display curses -kernel $(TARGET) -no-reboot
+	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img -no-reboot
 
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)

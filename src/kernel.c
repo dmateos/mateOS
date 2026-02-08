@@ -9,6 +9,8 @@
 #include "console.h"
 #include "keyboard.h"
 #include "liballoc/liballoc_1_1.h"
+#include "multiboot.h"
+#include "ramfs.h"
 #include "task.h"
 #include "syscall.h"
 
@@ -39,8 +41,22 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
   }
 }
 
-void kernel_main(void) {
+void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
+
+  // Parse multiboot info (if provided by bootloader)
+  printf("\n");
+  multiboot_init(multiboot_magic, multiboot_info);
+
+  // Initialize ramfs from initrd module
+  multiboot_module_t *initrd = multiboot_get_initrd();
+  if (initrd) {
+    ramfs_init((void *)initrd->mod_start,
+               initrd->mod_end - initrd->mod_start);
+  } else {
+    ramfs_init(NULL, 0);
+  }
+  printf("\n");
 
   kernel_interrupt_t test = {.register_interrupt_handler =
                                  register_interrupt_handler};

@@ -160,8 +160,7 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   case 0xE: {
     extern uint32_t get_cr2(void);
     uint32_t fault_addr = get_cr2();
-    printf("Page fault at address 0x%x\n", fault_addr);
-    printf("Error code: 0x%x (", noerror);
+    printf("Page fault at 0x%x err=0x%x (", fault_addr, noerror);
     if (noerror & 0x1) printf("present "); else printf("not-present ");
     if (noerror & 0x2) printf("write "); else printf("read ");
     if (noerror & 0x4) printf("user"); else printf("supervisor");

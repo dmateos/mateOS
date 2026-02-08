@@ -19,6 +19,10 @@ stack_top:
 /*
 The bootloader has loaded us into 32-bit protected mode on a x86
 machine. Interrupts are disabled. Paging is disabled.
+
+On entry:
+  EAX = Multiboot magic value (0x2BADB002)
+  EBX = Pointer to multiboot info structure
 */
 
 .section .text
@@ -27,7 +31,16 @@ machine. Interrupts are disabled. Paging is disabled.
 _start:
 	cli
 	mov $stack_top, %esp
+
+	# Save multiboot info pointer and pass to kernel
+	# kernel_main(uint32_t magic, uint32_t multiboot_info)
+	push %ebx    # multiboot info pointer
+	push %eax    # multiboot magic
+
 	call kernel_main
+
+	# kernel_main should never return, but just in case
+	add $8, %esp
 1:	hlt
 	jmp 1b
 

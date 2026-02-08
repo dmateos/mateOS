@@ -2,6 +2,7 @@
 #include "lib.h"
 #include "arch/i686/timer.h"
 #include "liballoc/liballoc_1_1.h"
+#include "ramfs.h"
 #include "task.h"
 #include "syscall.h"
 
@@ -33,6 +34,9 @@ static void cmd_tasks(int argc, char **argv);
 static void cmd_spawn(int argc, char **argv);
 static void cmd_usertest(int argc, char **argv);
 static void cmd_demo(int argc, char **argv);
+static void cmd_ls(int argc, char **argv);
+static void cmd_exec(int argc, char **argv);
+static void cmd_test(int argc, char **argv);
 
 // Command table
 static const command_t commands[] = {
@@ -47,6 +51,9 @@ static const command_t commands[] = {
     {"spawn", "Spawn kernel-mode test tasks", cmd_spawn},
     {"usertest", "Spawn a user-mode test task", cmd_usertest},
     {"demo", "Run mixed Ring 0 + Ring 3 multitasking demo", cmd_demo},
+    {"ls", "List files in ramfs", cmd_ls},
+    {"exec", "Execute ELF binary from ramfs", cmd_exec},
+    {"test", "Run comprehensive userland test suite", cmd_test},
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -414,6 +421,79 @@ static void cmd_demo(int argc __attribute__((unused)),
     task_enable();
   } else {
     printf("\nFailed to create some tasks!\n");
+  }
+}
+
+static void cmd_ls(int argc __attribute__((unused)),
+                   char **argv __attribute__((unused))) {
+  ramfs_list();
+}
+
+// User task that execs hello.elf
+static void exec_test_entry(void) {
+  const char *msg = "About to exec hello.elf...\n";
+  sys_write(1, msg, 28);
+
+  // This should replace this task with hello.elf
+  int ret = sys_exec("hello.elf");
+
+  // Should only get here if exec failed
+  const char *fail = "exec() failed!\n";
+  sys_write(1, fail, 15);
+  sys_exit(ret);
+}
+
+static void cmd_exec(int argc __attribute__((unused)),
+                     char **argv __attribute__((unused))) {
+  printf("Creating user task that will exec hello.elf...\n");
+
+  task_t *exec_task = task_create_user("exec_test", exec_test_entry);
+
+  if (!exec_task) {
+    printf("Failed to create exec test task\n");
+    return;
+  }
+
+  printf("Exec test task created\n");
+
+  // Enable multitasking if not already enabled
+  if (!task_is_enabled()) {
+    task_enable();
+  }
+}
+
+// User task that execs test.elf (comprehensive test suite)
+// Note: String constants need to be in user-accessible memory
+static char test_filename[] = "test.elf";
+static void test_suite_entry(void) {
+  const char *msg = "About to exec test.elf (comprehensive test suite)...\n";
+  sys_write(1, msg, 54);
+
+  // This should replace this task with test.elf
+  int ret = sys_exec(test_filename);
+
+  // Should only get here if exec failed
+  const char *fail = "exec() failed!\n";
+  sys_write(1, fail, 15);
+  sys_exit(ret);
+}
+
+static void cmd_test(int argc __attribute__((unused)),
+                     char **argv __attribute__((unused))) {
+  printf("Running comprehensive userland test suite...\n");
+
+  task_t *test_task = task_create_user("test_suite", test_suite_entry);
+
+  if (!test_task) {
+    printf("Failed to create test task\n");
+    return;
+  }
+
+  printf("Test suite task created\n");
+
+  // Enable multitasking if not already enabled
+  if (!task_is_enabled()) {
+    task_enable();
   }
 }
 

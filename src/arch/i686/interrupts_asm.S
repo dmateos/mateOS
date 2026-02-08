@@ -140,6 +140,21 @@ irq 15,47
 # User mode can call this because IDT entry has DPL=3
 # Arguments in registers: eax=syscall#, ebx=arg1, ecx=arg2, edx=arg3
 # Return value in eax
+#
+# Stack layout after pusha (ring 3 caller):
+#   ESP+0:  EDI  \
+#   ESP+4:  ESI   |
+#   ESP+8:  EBP   |
+#   ESP+12: ESP   | pusha
+#   ESP+16: EBX   |
+#   ESP+20: EDX   |
+#   ESP+24: ECX   |
+#   ESP+28: EAX  /
+#   ESP+32: EIP  \
+#   ESP+36: CS    |
+#   ESP+40: EFLAGS| iret frame (ring transition)
+#   ESP+44: ESP   |
+#   ESP+48: SS   /
 .global isr128
 .align 4
 isr128:
@@ -147,20 +162,21 @@ isr128:
     pusha
 
     # Push syscall arguments for C handler
-    # syscall_handler(eax, ebx, ecx, edx)
-    push %edx           # arg4: edx
-    push %ecx           # arg3: ecx
-    push %ebx           # arg2: ebx
-    push %eax           # arg1: syscall number
+    # syscall_handler(eax, ebx, ecx, edx, frame_ptr)
+    mov %esp, %esi
+    add $32, %esi        # frame_ptr: points past pusha to iret frame
+    push %esi            # arg5: frame pointer
+    push %edx            # arg4: edx
+    push %ecx            # arg3: ecx
+    push %ebx            # arg2: ebx
+    push %eax            # arg1: syscall number
 
     call syscall_handler
 
     # Clean up pushed arguments
-    add $16, %esp
+    add $20, %esp
 
     # Store return value where popa will restore it to eax
-    # After pusha, stack is: EDI ESI EBP ESP EBX EDX ECX EAX (from top)
-    # EAX is at offset 28 from current ESP (7 * 4 bytes)
     mov %eax, 28(%esp)
 
     popa
