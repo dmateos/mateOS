@@ -5,17 +5,11 @@
 #include "ramfs.h"
 #include "task.h"
 #include "syscall.h"
-#include "arch/i686/vga.h"
-#include "arch/i686/io.h"
 #include "arch/i686/paging.h"
 
 // Console state
 static char line_buffer[CONSOLE_LINE_MAX];
 static size_t line_position = 0;
-
-// Flag for graphics mode - keyboard handler checks this
-static volatile int gfx_waiting = 0;
-static volatile int gfx_key_pressed = 0;
 
 extern void kb_reboot(void);
 
@@ -38,12 +32,8 @@ static void cmd_reboot(int argc, char **argv);
 static void cmd_rust(int argc, char **argv);
 static void cmd_memtest(int argc, char **argv);
 static void cmd_tasks(int argc, char **argv);
-static void cmd_spawn(int argc, char **argv);
-static void cmd_usertest(int argc, char **argv);
-static void cmd_demo(int argc, char **argv);
 static void cmd_ls(int argc, char **argv);
 static void cmd_exec(int argc, char **argv);
-static void cmd_gfx(int argc, char **argv);
 
 // Command table
 static const command_t commands[] = {
@@ -55,12 +45,8 @@ static const command_t commands[] = {
     {"rust", "Test Rust integration", cmd_rust},
     {"memtest", "Test memory allocator", cmd_memtest},
     {"tasks", "List running tasks", cmd_tasks},
-    {"spawn", "Spawn kernel-mode test tasks", cmd_spawn},
-    {"usertest", "Spawn a user-mode test task", cmd_usertest},
-    {"demo", "Run mixed Ring 0 + Ring 3 multitasking demo", cmd_demo},
     {"ls", "List files in ramfs", cmd_ls},
     {"exec", "Run ELF binary from ramfs (usage: exec <filename>)", cmd_exec},
-    {"gfx", "Switch to VGA Mode 13h graphics demo", cmd_gfx},
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -224,153 +210,6 @@ static void cmd_tasks(int argc __attribute__((unused)),
   task_list();
 }
 
-// Test task functions
-static volatile int task_a_counter = 0;
-static volatile int task_b_counter = 0;
-static volatile int task_c_counter = 0;
-
-static void test_task_a(void) {
-  while (1) {
-    task_a_counter++;
-    for (volatile int i = 0; i < 50000; i++)
-      ;
-  }
-}
-
-static void test_task_b(void) {
-  while (1) {
-    task_b_counter++;
-    for (volatile int i = 0; i < 50000; i++)
-      ;
-  }
-}
-
-static void test_task_c(void) {
-  for (int i = 0; i < 500; i++) {
-    task_c_counter++;
-    for (volatile int j = 0; j < 50000; j++)
-      ;
-  }
-}
-
-static void cmd_spawn(int argc __attribute__((unused)),
-                      char **argv __attribute__((unused))) {
-  printf("Creating test tasks...\n");
-
-  task_a_counter = 0;
-  task_b_counter = 0;
-  task_c_counter = 0;
-
-  task_t *a = task_create("task_a", test_task_a);
-  task_t *b = task_create("task_b", test_task_b);
-  task_t *c = task_create("task_c", test_task_c);
-
-  if (a && b && c) {
-    printf("Tasks created successfully!\n");
-    task_enable();
-    printf("Multitasking is now active.\n");
-    printf("Task C will exit after counting to 500.\n\n");
-  } else {
-    printf("Failed to create some tasks\n");
-  }
-}
-
-// Callable from kernel for auto-testing
-void test_spawn_tasks(void) {
-  cmd_spawn(0, NULL);
-}
-
-// User mode task entry points for demo
-static void user_task_x_entry(void) {
-  int counter = 0;
-  while (1) {
-    counter++;
-    for (volatile int i = 0; i < 30000; i++)
-      ;
-    if (counter % 25 == 0) {
-      sys_yield();
-    }
-  }
-}
-
-static void user_task_y_entry(void) {
-  int counter = 0;
-  for (int i = 0; i < 300; i++) {
-    counter++;
-    for (volatile int j = 0; j < 30000; j++)
-      ;
-    if (counter % 25 == 0) {
-      sys_yield();
-    }
-  }
-  sys_exit(0);
-}
-
-static void user_test_entry(void) {
-  const char *msg1 = "Hello from user mode!\n";
-  sys_write(1, msg1, 22);
-
-  for (int i = 0; i < 5; i++) {
-    const char *msg2 = "[User task running...]\n";
-    sys_write(1, msg2, 23);
-    sys_yield();
-    for (volatile int j = 0; j < 1000000; j++)
-      ;
-  }
-
-  const char *msg3 = "User task exiting via syscall\n";
-  sys_write(1, msg3, 30);
-  sys_exit(0);
-}
-
-static void cmd_usertest(int argc __attribute__((unused)),
-                         char **argv __attribute__((unused))) {
-  printf("Creating user-mode test task...\n");
-
-  task_t *user_task = task_create_user("user_test", user_test_entry);
-
-  if (user_task) {
-    printf("User task created successfully!\n");
-    if (!task_is_enabled()) {
-      task_enable();
-    }
-    printf("User task is now scheduled to run in Ring 3.\n\n");
-  } else {
-    printf("Failed to create user task\n");
-  }
-}
-
-static void cmd_demo(int argc __attribute__((unused)),
-                     char **argv __attribute__((unused))) {
-  printf("=== mateOS Multitasking Demo ===\n");
-  printf("Creating mixed Ring 0 (kernel) and Ring 3 (user) tasks...\n\n");
-
-  task_a_counter = 0;
-  task_b_counter = 0;
-  task_c_counter = 0;
-
-  task_t *ka = task_create("kern_A", test_task_a);
-  task_t *kb = task_create("kern_B", test_task_b);
-  task_t *kc = task_create("kern_C", test_task_c);
-
-  if (ka) printf("  - kern_A: infinite loop\n");
-  if (kb) printf("  - kern_B: infinite loop\n");
-  if (kc) printf("  - kern_C: counts to 500, then exits\n");
-
-  task_t *ux = task_create_user("user_X", user_task_x_entry);
-  task_t *uy = task_create_user("user_Y", user_task_y_entry);
-
-  if (ux) printf("  - user_X: infinite loop (Ring 3)\n");
-  if (uy) printf("  - user_Y: counts to 300, then exits (Ring 3)\n");
-
-  if (ka && kb && kc && ux && uy) {
-    printf("\nAll tasks created! Starting scheduler...\n\n");
-    task_enable();
-  } else {
-    printf("\nFailed to create some tasks!\n");
-  }
-}
-
 static void cmd_ls(int argc __attribute__((unused)),
                    char **argv __attribute__((unused))) {
   ramfs_list();
@@ -421,85 +260,6 @@ static void cmd_exec(int argc, char **argv) {
   if (!task_is_enabled()) {
     task_enable();
   }
-}
-
-// VGA Mode 13h graphics demo
-static void cmd_gfx(int argc __attribute__((unused)),
-                    char **argv __attribute__((unused))) {
-  printf("Switching to VGA Mode 13h (320x200x256)...\n");
-
-  // Enter graphics mode
-  vga_enter_mode13h();
-
-  // Clear to dark blue
-  vga_clear(1);
-
-  // Draw border
-  vga_fill_rect(0, 0, VGA_WIDTH, 2, 15);           // Top
-  vga_fill_rect(0, VGA_HEIGHT - 2, VGA_WIDTH, 2, 15); // Bottom
-  vga_fill_rect(0, 0, 2, VGA_HEIGHT, 15);           // Left
-  vga_fill_rect(VGA_WIDTH - 2, 0, 2, VGA_HEIGHT, 15); // Right
-
-  // Title
-  vga_draw_string(100, 10, "mateOS Graphics", 15);
-  vga_draw_string(88, 24, "VGA Mode 13h - 320x200", 14);
-
-  // Color palette display - show first 16 colors as squares
-  vga_draw_string(10, 45, "Palette:", 15);
-  for (int i = 0; i < 16; i++) {
-    vga_fill_rect(10 + i * 18, 58, 16, 16, (uint8_t)i);
-  }
-
-  // Draw some shapes
-  vga_draw_string(10, 85, "Shapes:", 15);
-
-  // Filled rectangles
-  vga_fill_rect(10, 98, 40, 30, 4);   // Red
-  vga_fill_rect(60, 98, 40, 30, 2);   // Green
-  vga_fill_rect(110, 98, 40, 30, 9);  // Light blue
-
-  // Lines
-  vga_draw_string(10, 135, "Lines:", 15);
-  for (int i = 0; i < 8; i++) {
-    vga_draw_line(10, 148 + i * 2, 150, 148 + 14 - i * 2,
-                  (uint8_t)(8 + i));
-  }
-
-  // Diagonal cross
-  vga_draw_line(200, 85, 300, 185, 12);  // Red diagonal
-  vga_draw_line(300, 85, 200, 185, 10);  // Green diagonal
-
-  // Instructions
-  vga_draw_string(60, 188, "Press any key to return", 14);
-
-  // Wait for keypress using interrupt-driven approach
-  // The keyboard IRQ handler will set gfx_key_pressed when it sees a key
-  // Note: cmd_gfx is called from inside the keyboard IRQ handler chain,
-  // but the PIC EOI was already sent before our handler was called.
-  // We need to re-enable CPU interrupts so new IRQs can be delivered.
-  gfx_key_pressed = 0;
-  gfx_waiting = 1;
-  __asm__ volatile("sti");
-
-  while (!gfx_key_pressed) {
-    __asm__ volatile("hlt");  // Sleep until next interrupt
-  }
-
-  gfx_waiting = 0;
-
-  // Return to text mode
-  vga_enter_text_mode();
-
-  printf("Returned to text mode.\n");
-}
-
-// Called from keyboard IRQ handler - returns 1 if key was consumed
-int console_gfx_check_key(void) {
-  if (gfx_waiting) {
-    gfx_key_pressed = 1;
-    return 1;  // Consumed, don't pass to console
-  }
-  return 0;
 }
 
 // Parse command line into argc/argv

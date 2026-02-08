@@ -34,11 +34,6 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
-  // If in graphics mode, signal the gfx wait loop instead of console
-  if (console_gfx_check_key()) {
-    return;
-  }
-
   // If user gfx key buffer is active, push to it instead of console
   if (keyboard_buffer_is_enabled()) {
     char c = keyboard_translate(scancode);
