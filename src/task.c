@@ -3,6 +3,7 @@
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/tss.h"
 #include "arch/i686/paging.h"
+#include "pmm.h"
 
 // Task array and management
 static task_t tasks[MAX_TASKS];
@@ -47,6 +48,8 @@ void task_init(void) {
   idle->is_kernel = 1;
   idle->kernel_stack = NULL;
   idle->kernel_stack_top = 0;
+  idle->page_dir = NULL;
+  idle->pending_exec[0] = '\0';
 
   current_task = idle;
   task_list_head = idle;
@@ -120,6 +123,8 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->is_kernel = 1;
   task->kernel_stack = NULL;
   task->kernel_stack_top = 0;
+  task->page_dir = NULL;
+  task->pending_exec[0] = '\0';
 
   // Add to circular task list
   if (task_list_head == NULL) {
@@ -136,7 +141,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   return task;
 }
 
-// Create a user-mode task
+// Create a user-mode task with its own address space
 task_t *task_create_user(const char *name, void (*entry)(void)) {
   // Find free task slot
   task_t *task = NULL;
@@ -152,40 +157,52 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
     return NULL;
   }
 
+  // Create per-process address space
+  page_directory_t *page_dir = paging_create_address_space();
+  if (!page_dir) {
+    printf("Error: Failed to create address space\n");
+    return NULL;
+  }
+
   // Allocate kernel stack (for interrupts/syscalls when in user mode)
   uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
   if (!kernel_stack) {
     printf("Error: Failed to allocate kernel stack\n");
+    paging_destroy_address_space(page_dir);
     return NULL;
   }
 
-  // Allocate user stack
-  uint32_t *user_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
-  if (!user_stack) {
-    printf("Error: Failed to allocate user stack\n");
+  // Allocate user stack from PMM and map into process address space
+  uint32_t user_stack_phys = pmm_alloc_frame();
+  if (!user_stack_phys) {
+    printf("Error: Failed to allocate user stack frame\n");
     kfree(kernel_stack);
+    paging_destroy_address_space(page_dir);
     return NULL;
   }
 
-  // Mark user stack pages as user-accessible
-  // The stack grows down from the TOP of the allocated region
-  // We need to mark pages from the base address through to the top (inclusive)
-  uint32_t user_stack_addr = (uint32_t)user_stack;
-  uint32_t user_stack_top = user_stack_addr + TASK_STACK_SIZE;
-  // Mark from the start page to the page containing the top address
-  for (uint32_t page = user_stack_addr & ~0xFFF; page < user_stack_top; page += 0x1000) {
-    paging_set_user(page);
-  }
-  // Also mark the page that contains the top address (ESP starts here)
-  paging_set_user(user_stack_top & ~0xFFF);
+  // Map user stack at virtual 0x7F0000 in the process's address space
+  // Stack grows down, so ESP will start at 0x7F1000
+  uint32_t user_stack_virt = 0x7F0000;
+  paging_map_page(page_dir, user_stack_virt, user_stack_phys,
+                  PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
 
-  // Mark user code pages as user-accessible
-  // The entry point function is in kernel memory, so mark those pages too
+  // Mark entry point pages as user-accessible in the process's page table
+  // The entry is a kernel-space trampoline (e.g. spawn_entry) that will
+  // call sys_exec to load the real ELF. Mark those pages in the per-process
+  // page table 1 copy as user-accessible.
   uint32_t entry_addr = (uint32_t)entry;
-  uint32_t entry_page = entry_addr & ~0xFFF;  // Align to page boundary
-  // Mark a few pages around the entry point to cover the function
+  uint32_t entry_page = entry_addr & ~0xFFF;
   for (uint32_t i = 0; i < 4; i++) {
-    paging_set_user(entry_page + i * 0x1000);
+    // Set user bit on the per-process page table for these pages
+    uint32_t addr = entry_page + i * 0x1000;
+    uint32_t dir_idx = addr >> 22;
+    uint32_t tbl_idx = (addr >> 12) & 0x3FF;
+    if (page_dir->tables[dir_idx] & 0x1) {
+      page_table_t *pt = (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
+      pt->pages[tbl_idx] |= PAGE_USER;
+      page_dir->tables[dir_idx] |= PAGE_USER;
+    }
   }
 
   // Initialize task
@@ -197,39 +214,37 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
   memcpy(task->name, name, name_len);
   task->name[name_len] = '\0';
   task->state = TASK_READY;
-  task->stack = user_stack;  // User stack
+  task->stack = (uint32_t *)user_stack_phys;  // Track physical addr for cleanup
   task->entry = entry;
+  task->page_dir = page_dir;
+  task->pending_exec[0] = '\0';
 
   // User mode task
   task->is_kernel = 0;
   task->kernel_stack = kernel_stack;
-  // Kernel stack top is at the end of allocated memory
   task->kernel_stack_top = (uint32_t)kernel_stack + TASK_STACK_SIZE;
 
   // Set up initial kernel stack for first context switch
-  // When the timer interrupt fires and we switch to this task,
-  // iret will pop the user mode context from this stack
   uint32_t *sp = (uint32_t *)task->kernel_stack_top;
 
-  // User mode iret frame - these are popped by iret when returning to user mode
-  // For ring transition (kernel->user), CPU pops: EIP, CS, EFLAGS, ESP, SS
-  *(--sp) = USER_DATA_SEL;                           // SS (user data segment with RPL=3)
-  *(--sp) = (uint32_t)user_stack + TASK_STACK_SIZE;  // ESP (user stack pointer)
-  *(--sp) = 0x202;                                    // EFLAGS (IF=1, reserved bit 1 = 1)
-  *(--sp) = USER_CODE_SEL;                           // CS (user code segment with RPL=3)
-  *(--sp) = (uint32_t)entry;                         // EIP (entry point)
+  // User mode iret frame
+  *(--sp) = USER_DATA_SEL;                             // SS
+  *(--sp) = user_stack_virt + 0x1000;                  // ESP (top of user stack page)
+  *(--sp) = 0x202;                                      // EFLAGS (IF=1)
+  *(--sp) = USER_CODE_SEL;                             // CS
+  *(--sp) = (uint32_t)entry;                           // EIP
 
-  // Pushed by pusha (in reverse order since stack grows down)
+  // Pushed by pusha
   *(--sp) = 0;  // EAX
   *(--sp) = 0;  // ECX
   *(--sp) = 0;  // EDX
   *(--sp) = 0;  // EBX
-  *(--sp) = 0;  // ESP (ignored by popa)
+  *(--sp) = 0;  // ESP (ignored)
   *(--sp) = 0;  // EBP
   *(--sp) = 0;  // ESI
   *(--sp) = 0;  // EDI
 
-  // Segment registers (for user task, use user data segment)
+  // Segment registers
   *(--sp) = USER_DATA_SEL;  // GS
   *(--sp) = USER_DATA_SEL;  // FS
   *(--sp) = USER_DATA_SEL;  // ES
@@ -242,12 +257,9 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
     task->next = task;
     task_list_head = task;
   } else {
-    // Insert after current task
     task->next = current_task->next;
     current_task->next = task;
   }
-
-  // task created silently
 
   return task;
 }
@@ -302,6 +314,13 @@ uint32_t *schedule(uint32_t *current_esp) {
     tss_set_kernel_stack(current_task->kernel_stack_top);
   }
 
+  // Switch address space (CR3)
+  if (current_task->page_dir) {
+    paging_switch(current_task->page_dir);
+  } else {
+    paging_switch(paging_get_kernel_dir());
+  }
+
   return current_task->stack_top;
 }
 
@@ -326,15 +345,22 @@ void task_exit_with_code(int code) {
       }
     }
 
-    // Free the stack(s)
-    if (current_task->stack) {
-      kfree(current_task->stack);
-      current_task->stack = NULL;
+    // Switch to kernel page directory before freeing process pages
+    paging_switch(paging_get_kernel_dir());
+
+    // Destroy per-process address space (frees PMM frames + page tables)
+    if (current_task->page_dir) {
+      paging_destroy_address_space(current_task->page_dir);
+      current_task->page_dir = NULL;
     }
+
+    // Free the kernel stack (allocated from kernel heap)
     if (current_task->kernel_stack) {
       kfree(current_task->kernel_stack);
       current_task->kernel_stack = NULL;
     }
+    // User stack was PMM-allocated and freed by paging_destroy_address_space
+    current_task->stack = NULL;
   }
 
   // Yield to let scheduler pick next task

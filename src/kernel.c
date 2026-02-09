@@ -14,6 +14,7 @@
 #include "ramfs.h"
 #include "task.h"
 #include "syscall.h"
+#include "pmm.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -82,6 +83,9 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   printf("\n");
   rust_hello();
   printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
+
+  // Initialize physical memory manager
+  pmm_init();
 
   // Initialize task system
   task_init();

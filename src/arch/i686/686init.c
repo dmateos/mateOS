@@ -15,9 +15,9 @@ static gdt_ptr_t gp_ptr = {0};
 static idt_ptr_t idt_ptr = {0};
 
 // Page directory and tables must be 4KB (0x1000) aligned
-// We need 2 page tables: one for 0-4MB, one for 4MB-8MB (heap)
+// 8 page tables identity-map 0-32MB (kernel, heap, PMM frames)
 static page_directory_t page_dir __attribute__((aligned(4096))) = {0};
-static page_table_t page_tables[2] __attribute__((aligned(4096))) = {0};
+static page_table_t page_tables[8] __attribute__((aligned(4096))) = {0};
 
 // Initial kernel stack for TSS (used when first interrupt comes from user mode)
 // This is a temporary stack; each task will have its own kernel stack
@@ -37,7 +37,7 @@ void init_686(void) {
   init_gdt(&gp_ptr, gdt);
   init_idt(&idt_ptr, idt_entries);
 
-  // Initialize paging with identity mapping (0-8MB)
+  // Initialize paging with identity mapping (0-32MB)
   init_paging(&page_dir, page_tables);
 
   // Initialize TSS for user mode support

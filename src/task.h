@@ -2,6 +2,7 @@
 #define _TASK_H
 
 #include "lib.h"
+#include "arch/i686/paging.h"
 
 // Task states
 typedef enum {
@@ -73,6 +74,10 @@ typedef struct task {
   // Process management
   int exit_code;                  // Exit code set by sys_exit
   uint32_t waiting_for;           // Task ID this task is blocked waiting for (0 = not waiting)
+
+  // Per-process address space
+  page_directory_t *page_dir;     // Per-process page directory (NULL for kernel tasks)
+  char pending_exec[64];          // Filename for spawn trampoline
 } task_t;
 
 // Maximum number of tasks

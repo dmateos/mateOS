@@ -8,6 +8,7 @@
 #include "arch/i686/io.h"
 #include "arch/i686/vga.h"
 #include "liballoc/liballoc_1_1.h"
+#include "pmm.h"
 
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
@@ -59,8 +60,10 @@ static void sys_do_yield(void) {
 }
 
 // Execute ELF binary from ramfs - replaces current process
+// Uses per-process page tables: allocates physical frames from PMM,
+// maps them at the ELF's virtual addresses in the task's page directory,
+// and copies data via identity mapping.
 static int sys_do_exec(const char *filename, iret_frame_t *frame) {
-  // Validate filename pointer (in user space)
   if (!filename) {
     printf("[syscall] exec: NULL filename\n");
     return -1;
@@ -80,75 +83,79 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     return -1;
   }
 
-  // Get current task
   task_t *current = task_current();
-  if (!current || current->is_kernel) {
+  if (!current || current->is_kernel || !current->page_dir) {
     return -1;
   }
 
-  // Load program segments
+  // Load program segments into per-process physical frames
   elf32_phdr_t *phdr = (elf32_phdr_t *)((uint8_t *)elf + elf->e_phoff);
 
   for (int i = 0; i < elf->e_phnum; i++) {
-    if (phdr[i].p_type != PT_LOAD) {
-      continue;
-    }
+    if (phdr[i].p_type != PT_LOAD) continue;
 
     uint32_t vaddr = phdr[i].p_vaddr;
     uint32_t memsz = phdr[i].p_memsz;
     uint32_t filesz = phdr[i].p_filesz;
     uint32_t offset = phdr[i].p_offset;
 
-    // Mark pages as user-accessible
-    for (uint32_t addr = vaddr; addr < vaddr + memsz; addr += 0x1000) {
-      paging_set_user(addr & ~0xFFF);
-    }
-
-    // Copy segment data
     uint8_t *src = (uint8_t *)elf + offset;
-    uint8_t *dst = (uint8_t *)vaddr;
 
-    for (uint32_t j = 0; j < filesz; j++) {
-      dst[j] = src[j];
-    }
+    // Process page by page
+    uint32_t seg_start = vaddr & ~0xFFF;
+    uint32_t seg_end = (vaddr + memsz + 0xFFF) & ~0xFFF;
 
-    // Zero BSS
-    for (uint32_t j = filesz; j < memsz; j++) {
-      dst[j] = 0;
+    for (uint32_t page_vaddr = seg_start; page_vaddr < seg_end; page_vaddr += 0x1000) {
+      // Allocate a physical frame
+      uint32_t phys = pmm_alloc_frame();
+      if (!phys) {
+        printf("[exec] out of physical frames\n");
+        return -1;
+      }
+
+      // Zero the frame (via identity mapping - phys < 32MB)
+      memset((void *)phys, 0, 0x1000);
+
+      // Copy ELF data that falls within this page
+      // Calculate overlap between [vaddr, vaddr+filesz) and [page_vaddr, page_vaddr+0x1000)
+      uint32_t copy_start = (page_vaddr > vaddr) ? page_vaddr : vaddr;
+      uint32_t copy_end = (page_vaddr + 0x1000 < vaddr + filesz)
+                            ? page_vaddr + 0x1000 : vaddr + filesz;
+
+      if (copy_start < copy_end) {
+        uint32_t dst_offset = copy_start - page_vaddr;
+        uint32_t src_offset = copy_start - vaddr;
+        memcpy((void *)(phys + dst_offset), src + src_offset, copy_end - copy_start);
+      }
+
+      // Map physical frame at virtual address in process page directory
+      paging_map_page(current->page_dir, page_vaddr, phys,
+                      PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
     }
   }
 
-  // Allocate new user stack for the loaded program
-  uint32_t *new_user_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
-  if (!new_user_stack) {
-    printf("[syscall] exec: failed to allocate user stack\n");
+  // Allocate a new user stack frame from PMM
+  uint32_t stack_phys = pmm_alloc_frame();
+  if (!stack_phys) {
+    printf("[exec] failed to allocate stack frame\n");
     return -1;
   }
+  memset((void *)stack_phys, 0, 0x1000);
 
-  // Mark stack pages as user-accessible
-  // Must mark all pages from base through top (inclusive of page containing top)
-  uint32_t stack_addr = (uint32_t)new_user_stack;
-  uint32_t stack_top = stack_addr + TASK_STACK_SIZE;
-  for (uint32_t addr = stack_addr & ~0xFFF; addr <= (stack_top & ~0xFFF); addr += 0x1000) {
-    paging_set_user(addr);
-  }
+  // Map user stack at virtual 0x7F0000
+  uint32_t stack_virt = 0x7F0000;
+  paging_map_page(current->page_dir, stack_virt, stack_phys,
+                  PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
 
-  uint32_t new_user_esp = stack_top;
+  // Flush TLB by reloading CR3 with our page directory
+  paging_switch(current->page_dir);
 
-  // Free old user stack
-  if (current->stack) {
-    kfree(current->stack);
-  }
-  current->stack = new_user_stack;
-
-  // Modify the iret frame directly on the kernel stack.
-  // When isr128 does popa + iret, it will return to the ELF entry point
-  // in user mode with the new stack.
-  frame->eip    = elf->e_entry;  // Jump to ELF entry
-  frame->cs     = 0x1B;          // User code segment (RPL=3)
-  frame->eflags = 0x202;         // IF=1, reserved bit 1
-  frame->esp    = new_user_esp;  // New user stack
-  frame->ss     = 0x23;          // User data segment (RPL=3)
+  // Modify the iret frame to jump to ELF entry with new stack
+  frame->eip    = elf->e_entry;
+  frame->cs     = 0x1B;           // User code segment (RPL=3)
+  frame->eflags = 0x202;          // IF=1, reserved bit 1
+  frame->esp    = stack_virt + 0x1000;  // Top of stack page
+  frame->ss     = 0x23;           // User data segment (RPL=3)
 
   return 0;
 }
@@ -188,55 +195,34 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
 }
 
 // Spawn: create a child process from an ELF in ramfs
-// Since all user ELFs are linked to 0x700000, we save the parent's code
-// region before loading the child and restore it when the child exits.
-#define USER_CODE_BASE  0x700000
-#define USER_CODE_SIZE  0x10000   // 64KB should cover any user program
-
-static char spawn_filename[64];
-static uint8_t *code_backup = NULL;  // Backup of parent's code region
-
+// Each child gets its own address space, so no code backup needed.
 static void spawn_entry(void) {
-  sys_exec(spawn_filename);
+  task_t *me = task_current();
+  sys_exec(me->pending_exec);
   sys_exit(127);  // exec failed
 }
 
 static int sys_do_spawn(const char *filename) {
   if (!filename) return -1;
 
-  // Copy filename to static buffer
-  size_t i;
-  for (i = 0; i < sizeof(spawn_filename) - 1 && filename[i]; i++) {
-    spawn_filename[i] = filename[i];
-  }
-  spawn_filename[i] = '\0';
-
-  // Check file exists
-  ramfs_file_t *file = ramfs_lookup(spawn_filename);
-  if (!file) {
-    return -1;
-  }
-
-  // Save parent's code region before child overwrites it
-  if (code_backup) {
-    kfree(code_backup);
-  }
-  code_backup = (uint8_t *)kmalloc(USER_CODE_SIZE);
-  if (!code_backup) {
-    printf("[spawn] failed to allocate backup\n");
-    return -1;
-  }
-  memcpy(code_backup, (void *)USER_CODE_BASE, USER_CODE_SIZE);
-
-  // Mark spawn_filename page as user-accessible
-  paging_set_user((uint32_t)spawn_filename & ~0xFFF);
+  // Check file exists first
+  ramfs_file_t *file = ramfs_lookup(filename);
+  if (!file) return -1;
 
   task_t *t = task_create_user("child", spawn_entry);
-  if (!t) {
-    kfree(code_backup);
-    code_backup = NULL;
-    return -1;
+  if (!t) return -1;
+
+  // Copy filename into child's pending_exec (race-safe per-task buffer)
+  size_t i;
+  for (i = 0; i < sizeof(t->pending_exec) - 1 && filename[i]; i++) {
+    t->pending_exec[i] = filename[i];
   }
+  t->pending_exec[i] = '\0';
+
+  // Mark pending_exec buffer as user-accessible in child's address space
+  // The buffer is in kernel BSS, which is in page table 0 (shared)
+  uint32_t buf_addr = (uint32_t)t->pending_exec;
+  paging_set_user(buf_addr & ~0xFFF);
 
   if (!task_is_enabled()) {
     task_enable();
@@ -250,14 +236,7 @@ static int sys_do_wait(uint32_t task_id) {
   task_t *child = task_get_by_id(task_id);
   if (!child) return -1;
 
-  // If child already exited, return immediately
   if (child->state == TASK_TERMINATED) {
-    // Restore parent's code region
-    if (code_backup) {
-      memcpy((void *)USER_CODE_BASE, code_backup, USER_CODE_SIZE);
-      kfree(code_backup);
-      code_backup = NULL;
-    }
     return child->exit_code;
   }
 
@@ -265,15 +244,9 @@ static int sys_do_wait(uint32_t task_id) {
   task_t *current = task_current();
   current->waiting_for = task_id;
   current->state = TASK_BLOCKED;
-  task_yield();  // trigger reschedule
+  task_yield();
 
-  // When we resume, child has exited - restore parent's code
   current->waiting_for = 0;
-  if (code_backup) {
-    memcpy((void *)USER_CODE_BASE, code_backup, USER_CODE_SIZE);
-    kfree(code_backup);
-    code_backup = NULL;
-  }
   return child->exit_code;
 }
 
