@@ -25,4 +25,17 @@ void ugfx_string_bg(int x, int y, const char *str, unsigned char fg, unsigned ch
 unsigned char ugfx_getkey(void);    // Non-blocking, returns 0 if no key
 unsigned char ugfx_waitkey(void);   // Blocking, polls with yield
 
+// Buffer-mode drawing (for windowed apps drawing into pixel buffers)
+void ugfx_buf_pixel(unsigned char *buf, int bw, int bh,
+                    int x, int y, unsigned char color);
+void ugfx_buf_rect(unsigned char *buf, int bw, int bh,
+                   int x, int y, int w, int h, unsigned char color);
+void ugfx_buf_clear(unsigned char *buf, int bw, int bh, unsigned char color);
+void ugfx_buf_char(unsigned char *buf, int bw, int bh,
+                   int x, int y, char c, unsigned char fg);
+void ugfx_buf_string(unsigned char *buf, int bw, int bh,
+                     int x, int y, const char *str, unsigned char fg);
+void ugfx_buf_hline(unsigned char *buf, int bw, int bh,
+                    int x, int y, int w, unsigned char color);
+
 #endif

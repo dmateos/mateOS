@@ -121,3 +121,81 @@ void shutdown(void) {
         : "a"(SYS_SHUTDOWN)
     );
 }
+
+int win_create(int width, int height, const char *title) {
+    unsigned int packed = ((unsigned int)width << 16) | ((unsigned int)height & 0xFFFF);
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_CREATE), "b"(packed), "c"(title)
+        : "memory"
+    );
+    return ret;
+}
+
+int win_destroy(int wid) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_DESTROY), "b"(wid)
+        : "memory"
+    );
+    return ret;
+}
+
+int win_write(int wid, const unsigned char *data, unsigned int len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_WRITE), "b"(wid), "c"(data), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+int win_read(int wid, unsigned char *dest, unsigned int len) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_READ), "b"(wid), "c"(dest), "d"(len)
+        : "memory"
+    );
+    return ret;
+}
+
+int win_getkey(int wid) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_GETKEY), "b"(wid)
+        : "memory"
+    );
+    return ret;
+}
+
+int win_sendkey(int wid, unsigned char key) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_SENDKEY), "b"(wid), "c"(key)
+        : "memory"
+    );
+    return ret;
+}
+
+int win_list(win_info_t *out, int max_count) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WIN_LIST), "b"(out), "c"(max_count)
+        : "memory"
+    );
+    return ret;
+}

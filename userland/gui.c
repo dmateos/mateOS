@@ -1,224 +1,211 @@
+// mateOS Window Manager
+// Compositing WM that owns VGA Mode 13h, spawns child apps in windows
+
 #include "ugfx.h"
 #include "syscalls.h"
 
-// Color palette indices (CGA colors)
-#define COL_BLACK     0
-#define COL_BLUE      1
-#define COL_GREEN     2
-#define COL_CYAN      3
-#define COL_RED       4
-#define COL_MAGENTA   5
-#define COL_BROWN     6
-#define COL_LGRAY     7
-#define COL_DGRAY     8
-#define COL_LBLUE     9
-#define COL_LGREEN   10
-#define COL_LCYAN    11
-#define COL_LRED     12
-#define COL_LMAGENTA 13
-#define COL_YELLOW   14
-#define COL_WHITE    15
+// Layout constants
+#define TASKBAR_H    14
+#define TITLE_BAR_H  12
+#define BORDER       1
+#define CONTENT_W    148
+#define CONTENT_H    78
+#define WM_MAX_SLOTS 4
 
-// Button structure
+// Colors (CGA palette indices)
+#define COL_DESKTOP    1   // Blue
+#define COL_TASKBAR    8   // Dark gray
+#define COL_TASKBAR_TXT 15 // White
+#define COL_TITLE_ACT  9   // Light blue
+#define COL_TITLE_INACT 8  // Dark gray
+#define COL_TITLE_TXT  15  // White
+#define COL_BORDER_ACT 15  // White
+#define COL_BORDER_INACT 7 // Light gray
+
+// Window slot - WM-side tracking
 typedef struct {
-    int x, y, w, h;
-    const char *label;
-    unsigned char bg, fg;
-    unsigned char bg_sel, fg_sel;
-} button_t;
+    int x, y;       // Content area position on screen
+    int wid;        // Kernel window ID (-1 if empty)
+    int pid;        // Child process PID
+    char title[32];
+} wm_slot_t;
 
-// String length helper
-static int slen(const char *s) {
-    int n = 0;
-    while (*s++) n++;
-    return n;
+static wm_slot_t slots[WM_MAX_SLOTS];
+static int focus = 0;
+static int num_slots = 0;
+
+// Slot positions (content area top-left)
+static const int slot_x[] = {3, 165, 3, 165};
+static const int slot_y[] = {
+    TASKBAR_H + 2 + BORDER + TITLE_BAR_H,
+    TASKBAR_H + 2 + BORDER + TITLE_BAR_H,
+    TASKBAR_H + 2 + BORDER + TITLE_BAR_H + CONTENT_H + TITLE_BAR_H + 2 * BORDER + 4,
+    TASKBAR_H + 2 + BORDER + TITLE_BAR_H + CONTENT_H + TITLE_BAR_H + 2 * BORDER + 4
+};
+
+// Buffer for reading window content
+static unsigned char read_buf[CONTENT_W * CONTENT_H];
+
+static void wm_strcpy(char *dst, const char *src, int max) {
+    int i;
+    for (i = 0; i < max - 1 && src[i]; i++)
+        dst[i] = src[i];
+    dst[i] = '\0';
 }
 
-// Draw a button
-static void draw_button(const button_t *btn, int selected) {
-    unsigned char bg = selected ? btn->bg_sel : btn->bg;
-    unsigned char fg = selected ? btn->fg_sel : btn->fg;
-    ugfx_rect(btn->x, btn->y, btn->w, btn->h, bg);
-    ugfx_rect_outline(btn->x, btn->y, btn->w, btn->h,
-                      selected ? COL_WHITE : COL_DGRAY);
-    // Center label
-    int tx = btn->x + (btn->w - slen(btn->label) * 8) / 2;
-    int ty = btn->y + (btn->h - 8) / 2;
-    ugfx_string(tx, ty, btn->label, fg);
-}
+// Draw the taskbar
+static void draw_taskbar(void) {
+    ugfx_rect(0, 0, 320, TASKBAR_H, COL_TASKBAR);
+    ugfx_string(4, 3, "mateOS WM", COL_TASKBAR_TXT);
 
-// Text input state
-static char text_buf[26];
-static int text_len = 0;
-
-static void draw_text_input(int x, int y, int w, int active) {
-    ugfx_rect(x, y, w, 12, COL_WHITE);
-    ugfx_rect_outline(x, y, w, 12, active ? COL_LBLUE : COL_DGRAY);
-    if (text_len > 0) {
-        ugfx_string(x + 2, y + 2, text_buf, COL_BLACK);
+    // Show focused window title on right side
+    if (num_slots > 0 && slots[focus].wid >= 0) {
+        ugfx_string(120, 3, slots[focus].title, 14); // Yellow
     }
-    // Cursor
-    if (active) {
-        int cx = x + 2 + text_len * 8;
-        if (cx < x + w - 2) {
-            ugfx_vline(cx, y + 2, 8, COL_BLACK);
+
+    // Tab/Esc hints
+    ugfx_string(220, 3, "Tab Esc", 7);
+}
+
+// Draw a window frame (border + title bar)
+static void draw_window_frame(int slot) {
+    int is_focused = (slot == focus);
+    int fx = slot_x[slot] - BORDER;
+    int fy = slot_y[slot] - TITLE_BAR_H - BORDER;
+    int fw = CONTENT_W + 2 * BORDER;
+    int fh = CONTENT_H + TITLE_BAR_H + 2 * BORDER;
+
+    // Border
+    ugfx_rect_outline(fx, fy, fw, fh,
+                      is_focused ? COL_BORDER_ACT : COL_BORDER_INACT);
+
+    // Title bar background
+    ugfx_rect(fx + BORDER, fy + BORDER, CONTENT_W, TITLE_BAR_H,
+              is_focused ? COL_TITLE_ACT : COL_TITLE_INACT);
+
+    // Title text
+    if (slots[slot].wid >= 0) {
+        ugfx_string(fx + BORDER + 4, fy + BORDER + 2,
+                    slots[slot].title, COL_TITLE_TXT);
+    }
+}
+
+// Blit a window's content buffer onto the framebuffer
+static void composite_window(int slot) {
+    if (slots[slot].wid < 0) return;
+
+    int bytes = win_read(slots[slot].wid, read_buf, sizeof(read_buf));
+    if (bytes <= 0) return;
+
+    int sx = slot_x[slot];
+    int sy = slot_y[slot];
+
+    for (int row = 0; row < CONTENT_H; row++) {
+        for (int col = 0; col < CONTENT_W; col++) {
+            ugfx_pixel(sx + col, sy + row,
+                       read_buf[row * CONTENT_W + col]);
         }
     }
 }
 
-// Draw status bar at bottom
-static void draw_status_bar(void) {
-    ugfx_rect(0, 191, 320, 9, COL_DGRAY);
-    ugfx_string(4, 192, "TAB:next ENTER:press q:quit", COL_WHITE);
-}
+// Discover windows created by children
+static void discover_windows(void) {
+    win_info_t info[8];
+    int wcount = win_list(info, 8);
 
-// Window dimensions
-#define WIN_X 20
-#define WIN_Y 10
-#define WIN_W 280
-#define WIN_H 175
-
-// Draw the desktop background (areas around window)
-static void draw_desktop(unsigned char color) {
-    ugfx_rect(0, 0, SCREEN_WIDTH, WIN_Y, color);
-    ugfx_rect(0, WIN_Y, WIN_X, WIN_H, color);
-    ugfx_rect(WIN_X + WIN_W, WIN_Y, SCREEN_WIDTH - WIN_X - WIN_W, WIN_H, color);
-    ugfx_rect(0, WIN_Y + WIN_H, SCREEN_WIDTH, 191 - WIN_Y - WIN_H, color);
-}
-
-// Draw the window frame
-static void draw_window(void) {
-    // Window background
-    ugfx_rect(WIN_X, WIN_Y, WIN_W, WIN_H, COL_LGRAY);
-
-    // Title bar
-    ugfx_rect(WIN_X, WIN_Y, WIN_W, 14, COL_BLUE);
-    ugfx_string(WIN_X + 4, WIN_Y + 3, "mateOS GUI", COL_WHITE);
-    ugfx_string(WIN_X + WIN_W - 24, WIN_Y + 3, "[X]", COL_LRED);
-
-    // Separator
-    ugfx_hline(WIN_X, WIN_Y + 14, WIN_W, COL_DGRAY);
-
-    // Welcome text
-    ugfx_string(WIN_X + 8, WIN_Y + 20, "Welcome to mateOS!", COL_BLACK);
-    ugfx_string(WIN_X + 8, WIN_Y + 32, "Running in Ring 3 (user mode)", COL_DGRAY);
+    for (int i = 0; i < wcount; i++) {
+        for (int s = 0; s < num_slots; s++) {
+            if ((int)info[i].owner_pid == slots[s].pid && slots[s].wid < 0) {
+                slots[s].wid = info[i].window_id;
+                wm_strcpy(slots[s].title, info[i].title, 32);
+            }
+        }
+    }
 }
 
 void _start(void) {
     // Enter graphics mode
     if (ugfx_init() != 0) {
-        const char *msg = "gfx_init failed\n";
-        write(1, msg, 16);
+        write(1, "WM: gfx_init failed\n", 20);
         exit(1);
     }
 
-    // Draw initial UI
-    unsigned char desktop_color = COL_BLUE;
-    ugfx_clear(desktop_color);
-    draw_window();
+    // Clear to desktop color
+    ugfx_clear(COL_DESKTOP);
 
-    // Buttons
-    button_t buttons[3] = {
-        {WIN_X + 10,  WIN_Y + 50, 80, 16, "About",
-         COL_LGRAY, COL_BLACK, COL_LBLUE, COL_WHITE},
-        {WIN_X + 100, WIN_Y + 50, 80, 16, "Color",
-         COL_LGRAY, COL_BLACK, COL_LGREEN, COL_WHITE},
-        {WIN_X + 190, WIN_Y + 50, 80, 16, "Quit",
-         COL_LGRAY, COL_BLACK, COL_LRED, COL_WHITE},
-    };
+    // Initialize slots
+    for (int i = 0; i < WM_MAX_SLOTS; i++) {
+        slots[i].wid = -1;
+        slots[i].pid = -1;
+        slots[i].title[0] = '\0';
+    }
 
-    // Text input
-    text_buf[0] = '\0';
-    text_len = 0;
-    ugfx_string(WIN_X + 8, WIN_Y + 78, "Type:", COL_BLACK);
+    // Spawn child apps
+    int pid0 = spawn("winterm.elf");
+    if (pid0 >= 0) {
+        slots[0].pid = pid0;
+        wm_strcpy(slots[0].title, "Term 1", 32);
+        num_slots = 1;
+    }
 
-    // Focus: 0-2 = buttons, 3 = text input
-    int focus = 0;
+    int pid1 = spawn("winterm.elf");
+    if (pid1 >= 0) {
+        slots[1].pid = pid1;
+        wm_strcpy(slots[1].title, "Term 2", 32);
+        num_slots = 2;
+    }
+
+    // Give children time to call win_create
+    for (int i = 0; i < 30; i++) yield();
+
+    // Discover their window IDs
+    discover_windows();
+
+    // Main loop
     int running = 1;
-    int color_idx = 0;
+    int tick = 0;
 
-    // Initial draw
-    for (int i = 0; i < 3; i++) {
-        draw_button(&buttons[i], i == focus);
-    }
-    draw_text_input(WIN_X + 50, WIN_Y + 75, 220, focus == 3);
-    draw_status_bar();
-
-    // Message area
-    int msg_y = WIN_Y + 100;
-
-    // Main event loop
     while (running) {
-        unsigned char key = ugfx_waitkey();
-
-        if (key == 'q' && focus != 3) {
-            running = 0;
-            continue;
-        }
-
-        if (key == '\t') {
-            // Redraw old focused element as unfocused
-            if (focus < 3) {
-                draw_button(&buttons[focus], 0);
-            } else {
-                draw_text_input(WIN_X + 50, WIN_Y + 75, 220, 0);
-            }
-            // Advance focus
-            focus = (focus + 1) % 4;
-            // Draw new focused element
-            if (focus < 3) {
-                draw_button(&buttons[focus], 1);
-            } else {
-                draw_text_input(WIN_X + 50, WIN_Y + 75, 220, 1);
-            }
-        } else if (key == '\n' && focus < 3) {
-            // Button press
-            if (focus == 0) {
-                // About
-                ugfx_rect(WIN_X + 4, msg_y, WIN_W - 8, 60, COL_LGRAY);
-                ugfx_string(WIN_X + 8, msg_y + 4,  "mateOS v0.1", COL_BLACK);
-                ugfx_string(WIN_X + 8, msg_y + 16, "A hobby x86 operating system", COL_DGRAY);
-                ugfx_string(WIN_X + 8, msg_y + 28, "VGA 320x200 - Mode 13h", COL_DGRAY);
-                ugfx_string(WIN_X + 8, msg_y + 40, "User-mode GUI via syscalls", COL_DGRAY);
-            } else if (focus == 1) {
-                // Color demo
-                ugfx_rect(WIN_X + 4, msg_y, WIN_W - 8, 60, COL_LGRAY);
-                // Draw 16 color swatches
-                for (int i = 0; i < 16; i++) {
-                    ugfx_rect(WIN_X + 8 + i * 16, msg_y + 4, 14, 14,
-                              (unsigned char)i);
-                }
-                ugfx_string(WIN_X + 8, msg_y + 24, "16 CGA palette colors", COL_BLACK);
-                // Cycle desktop background
-                {
-                    static const unsigned char bg_colors[] = {1, 9, 3, 5, 4, 2};
-                    color_idx = (color_idx + 1) % 6;
-                    desktop_color = bg_colors[color_idx];
-                    draw_desktop(desktop_color);
-                    draw_status_bar();
-                }
-                ugfx_string(WIN_X + 8, msg_y + 40, "Desktop color changed!", COL_DGRAY);
-            } else if (focus == 2) {
-                // Quit
+        // Read keyboard (WM owns the global buffer)
+        unsigned char key = ugfx_getkey();
+        if (key) {
+            if (key == 27) {
+                // ESC: exit WM
                 running = 0;
-            }
-        } else if (focus == 3) {
-            // Text input
-            if (key == '\b') {
-                if (text_len > 0) {
-                    text_len--;
-                    text_buf[text_len] = '\0';
+            } else if (key == '\t') {
+                // Tab: cycle focus
+                if (num_slots > 0) {
+                    focus = (focus + 1) % num_slots;
                 }
-            } else if (key >= 32 && key < 127 && text_len < 24) {
-                text_buf[text_len++] = (char)key;
-                text_buf[text_len] = '\0';
+            } else {
+                // Route key to focused window
+                if (num_slots > 0 && slots[focus].wid >= 0) {
+                    win_sendkey(slots[focus].wid, key);
+                }
             }
-            draw_text_input(WIN_X + 50, WIN_Y + 75, 220, 1);
         }
+
+        // Periodically re-discover windows
+        tick++;
+        if (tick % 50 == 0) {
+            discover_windows();
+        }
+
+        // Composite all windows
+        for (int i = 0; i < num_slots; i++) {
+            if (slots[i].wid >= 0) {
+                draw_window_frame(i);
+                composite_window(i);
+            }
+        }
+
+        // Draw taskbar (on top)
+        draw_taskbar();
+
+        yield();
     }
 
-    // Exit graphics mode and return to console
+    // Cleanup
     ugfx_exit();
-    write(1, "GUI exited.\n", 12);
     exit(0);
 }

@@ -15,6 +15,7 @@
 #include "task.h"
 #include "syscall.h"
 #include "pmm.h"
+#include "window.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -92,6 +93,9 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize syscall handler
   syscall_init();
+
+  // Initialize window manager subsystem
+  window_init();
 
   // Boot message
   console_init();

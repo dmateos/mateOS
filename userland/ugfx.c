@@ -299,6 +299,69 @@ void ugfx_string_bg(int x, int y, const char *str,
     }
 }
 
+// Buffer-mode drawing functions (for windowed child apps)
+
+void ugfx_buf_pixel(unsigned char *buf, int bw, int bh,
+                    int x, int y, unsigned char color) {
+    if (x < 0 || x >= bw || y < 0 || y >= bh) return;
+    buf[y * bw + x] = color;
+}
+
+void ugfx_buf_rect(unsigned char *buf, int bw, int bh,
+                   int x, int y, int w, int h, unsigned char color) {
+    for (int row = y; row < y + h; row++) {
+        if (row < 0 || row >= bh) continue;
+        for (int col = x; col < x + w; col++) {
+            if (col < 0 || col >= bw) continue;
+            buf[row * bw + col] = color;
+        }
+    }
+}
+
+void ugfx_buf_clear(unsigned char *buf, int bw, int bh, unsigned char color) {
+    for (int i = 0; i < bw * bh; i++)
+        buf[i] = color;
+}
+
+void ugfx_buf_char(unsigned char *buf, int bw, int bh,
+                   int x, int y, char c, unsigned char fg) {
+    if (c < 32 || c > 126) return;
+    const unsigned char *glyph = font8x8[c - 32];
+    for (int row = 0; row < 8; row++) {
+        unsigned char bits = glyph[row];
+        for (int col = 0; col < 8; col++) {
+            if (bits & (1 << col)) {
+                ugfx_buf_pixel(buf, bw, bh, x + col, y + row, fg);
+            }
+        }
+    }
+}
+
+void ugfx_buf_string(unsigned char *buf, int bw, int bh,
+                     int x, int y, const char *str, unsigned char fg) {
+    int cx = x;
+    while (*str) {
+        if (*str == '\n') {
+            y += 10;
+            cx = x;
+        } else {
+            ugfx_buf_char(buf, bw, bh, cx, y, *str, fg);
+            cx += 8;
+        }
+        str++;
+    }
+}
+
+void ugfx_buf_hline(unsigned char *buf, int bw, int bh,
+                    int x, int y, int w, unsigned char color) {
+    if (y < 0 || y >= bh) return;
+    for (int i = 0; i < w; i++) {
+        int cx = x + i;
+        if (cx >= 0 && cx < bw)
+            buf[y * bw + cx] = color;
+    }
+}
+
 unsigned char ugfx_getkey(void) {
     return getkey(0);
 }

@@ -4,6 +4,7 @@
 #include "arch/i686/tss.h"
 #include "arch/i686/paging.h"
 #include "pmm.h"
+#include "window.h"
 
 // Task array and management
 static task_t tasks[MAX_TASKS];
@@ -344,6 +345,9 @@ void task_exit_with_code(int code) {
         tasks[i].waiting_for = 0;
       }
     }
+
+    // Clean up any windows owned by this process
+    window_cleanup_pid(current_task->id);
 
     // Switch to kernel page directory before freeing process pages
     paging_switch(paging_get_kernel_dir());

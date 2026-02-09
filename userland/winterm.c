@@ -1,0 +1,293 @@
+// Window terminal - shell running inside a WM window
+// Renders text to pixel buffer, routes I/O through window syscalls
+
+#include "ugfx.h"
+#include "syscalls.h"
+
+#define W 148
+#define H 78
+
+// Text grid: 8x8 font with margins
+#define MARGIN_X 2
+#define MARGIN_Y 2
+#define CHAR_W 8
+#define CHAR_H 9  // 8px + 1px line spacing
+#define TERM_COLS ((W - MARGIN_X * 2) / CHAR_W)   // 18
+#define TERM_ROWS ((H - MARGIN_Y * 2) / CHAR_H)   // 8
+
+static unsigned char pixbuf[W * H];
+static char screen[TERM_ROWS][TERM_COLS + 1];  // +1 for safety
+static int cur_row = 0, cur_col = 0;
+static int wid = -1;
+
+// ---- String helpers ----
+
+static int my_strcmp(const char *a, const char *b) {
+    while (*a && *a == *b) { a++; b++; }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+static int my_strncmp(const char *a, const char *b, int n) {
+    for (int i = 0; i < n; i++) {
+        if (a[i] != b[i]) return (unsigned char)a[i] - (unsigned char)b[i];
+        if (a[i] == '\0') return 0;
+    }
+    return 0;
+}
+
+// ---- Terminal rendering ----
+
+static void term_scroll(void) {
+    // Shift all rows up by one
+    for (int r = 0; r < TERM_ROWS - 1; r++) {
+        for (int c = 0; c < TERM_COLS; c++) {
+            screen[r][c] = screen[r + 1][c];
+        }
+    }
+    // Clear last row
+    for (int c = 0; c < TERM_COLS; c++) {
+        screen[TERM_ROWS - 1][c] = ' ';
+    }
+    cur_row = TERM_ROWS - 1;
+}
+
+static void term_putchar(char ch) {
+    if (ch == '\n') {
+        cur_col = 0;
+        cur_row++;
+        if (cur_row >= TERM_ROWS) {
+            term_scroll();
+        }
+        return;
+    }
+    if (ch == '\b') {
+        if (cur_col > 0) {
+            cur_col--;
+            screen[cur_row][cur_col] = ' ';
+        }
+        return;
+    }
+    if (ch < 32 || ch > 126) return;
+
+    if (cur_col >= TERM_COLS) {
+        cur_col = 0;
+        cur_row++;
+        if (cur_row >= TERM_ROWS) {
+            term_scroll();
+        }
+    }
+
+    screen[cur_row][cur_col] = ch;
+    cur_col++;
+}
+
+static void term_print(const char *s) {
+    while (*s) {
+        term_putchar(*s++);
+    }
+}
+
+static void term_print_num(int n) {
+    if (n < 0) {
+        term_putchar('-');
+        n = -n;
+    }
+    if (n == 0) {
+        term_putchar('0');
+        return;
+    }
+    char buf[12];
+    int i = 0;
+    while (n > 0) {
+        buf[i++] = '0' + (n % 10);
+        n /= 10;
+    }
+    while (i > 0) {
+        term_putchar(buf[--i]);
+    }
+}
+
+static void term_redraw(void) {
+    // Black background
+    ugfx_buf_clear(pixbuf, W, H, 0);
+
+    // Render text
+    for (int r = 0; r < TERM_ROWS; r++) {
+        for (int c = 0; c < TERM_COLS; c++) {
+            char ch = screen[r][c];
+            if (ch > 32 && ch < 127) {
+                int px = MARGIN_X + c * CHAR_W;
+                int py = MARGIN_Y + r * CHAR_H;
+                ugfx_buf_char(pixbuf, W, H, px, py, ch, 10);  // Light green
+            }
+        }
+    }
+
+    // Draw cursor (block)
+    if (cur_row < TERM_ROWS) {
+        int cx = MARGIN_X + cur_col * CHAR_W;
+        int cy = MARGIN_Y + cur_row * CHAR_H;
+        ugfx_buf_rect(pixbuf, W, H, cx, cy, CHAR_W - 1, CHAR_H - 1, 10);
+    }
+
+    win_write(wid, pixbuf, sizeof(pixbuf));
+}
+
+static unsigned char term_waitkey(void) {
+    unsigned char k;
+    while (!(k = (unsigned char)win_getkey(wid))) {
+        term_redraw();  // Keep updating display while waiting
+        yield();
+    }
+    return k;
+}
+
+// ---- Shell readline ----
+
+static int readline(char *buf, int max) {
+    int pos = 0;
+    while (1) {
+        unsigned char key = term_waitkey();
+        if (key == '\n') {
+            term_putchar('\n');
+            term_redraw();
+            break;
+        }
+        if (key == '\b') {
+            if (pos > 0) {
+                pos--;
+                term_putchar('\b');
+                term_redraw();
+            }
+            continue;
+        }
+        if (key >= 32 && key < 127 && pos < max - 1) {
+            buf[pos++] = (char)key;
+            term_putchar((char)key);
+            term_redraw();
+        }
+    }
+    buf[pos] = '\0';
+    return pos;
+}
+
+// ---- Shell builtins ----
+
+static void cmd_help(void) {
+    term_print("Commands:\n");
+    term_print(" help  ls  echo\n");
+    term_print(" clear exit\n");
+    term_print(" tasks shutdown\n");
+    term_print("Run: <name>.elf\n");
+}
+
+static void cmd_ls(void) {
+    char name[32];
+    unsigned int i = 0;
+    while (readdir(i, name, sizeof(name)) > 0) {
+        term_print(" ");
+        term_print(name);
+        term_print("\n");
+        i++;
+    }
+}
+
+static void cmd_echo(const char *line) {
+    if (line[4] == ' ') {
+        term_print(line + 5);
+    }
+    term_print("\n");
+}
+
+static void cmd_clear(void) {
+    for (int r = 0; r < TERM_ROWS; r++) {
+        for (int c = 0; c < TERM_COLS; c++) {
+            screen[r][c] = ' ';
+        }
+    }
+    cur_row = 0;
+    cur_col = 0;
+}
+
+// ---- Main ----
+
+void _start(void) {
+    // Initialize screen buffer
+    for (int r = 0; r < TERM_ROWS; r++) {
+        for (int c = 0; c < TERM_COLS; c++) {
+            screen[r][c] = ' ';
+        }
+    }
+
+    // Create window
+    wid = win_create(W, H, "Term");
+    if (wid < 0) {
+        exit(1);
+    }
+
+    term_print("mateOS term\n");
+    term_redraw();
+
+    char line[64];
+
+    while (1) {
+        term_print("$ ");
+        term_redraw();
+        int len = readline(line, sizeof(line));
+
+        if (len == 0) continue;
+
+        if (my_strcmp(line, "help") == 0) {
+            cmd_help();
+        } else if (my_strcmp(line, "ls") == 0) {
+            cmd_ls();
+        } else if (my_strcmp(line, "exit") == 0) {
+            term_print("Bye!\n");
+            term_redraw();
+            break;
+        } else if (my_strcmp(line, "clear") == 0) {
+            cmd_clear();
+        } else if (my_strncmp(line, "echo ", 5) == 0 || my_strcmp(line, "echo") == 0) {
+            if (len > 4) {
+                cmd_echo(line);
+            } else {
+                term_print("\n");
+            }
+        } else if (my_strcmp(line, "shutdown") == 0) {
+            term_print("Shutting down..\n");
+            term_redraw();
+            shutdown();
+        } else if (my_strcmp(line, "tasks") == 0) {
+            // taskinfo prints to VGA console, not window
+            // Just show our PID
+            term_print("PID: ");
+            term_print_num(getpid());
+            term_print("\n");
+        } else {
+            // Try to run as program
+            int child = spawn(line);
+            if (child >= 0) {
+                term_print("[run ");
+                term_print(line);
+                term_print("]\n");
+                term_redraw();
+                int code = wait(child);
+                if (code != 0) {
+                    term_print("[exit ");
+                    term_print_num(code);
+                    term_print("]\n");
+                } else {
+                    term_print("[done]\n");
+                }
+            } else {
+                term_print("? ");
+                term_print(line);
+                term_print("\n");
+            }
+        }
+        term_redraw();
+    }
+
+    win_destroy(wid);
+    exit(0);
+}

@@ -17,6 +17,13 @@
 #define SYS_GETPID   11  // getpid() - get current task ID
 #define SYS_TASKINFO 12  // taskinfo() - print task list to console
 #define SYS_SHUTDOWN 13  // shutdown() - power off the machine
+#define SYS_WIN_CREATE  14  // win_create(w_h_packed, title) -> wid
+#define SYS_WIN_DESTROY 15  // win_destroy(wid)
+#define SYS_WIN_WRITE   16  // win_write(wid, data, len) -> bytes
+#define SYS_WIN_READ    17  // win_read(wid, dest, len) -> bytes
+#define SYS_WIN_GETKEY  18  // win_getkey(wid) -> key
+#define SYS_WIN_SENDKEY 19  // win_sendkey(wid, key)
+#define SYS_WIN_LIST    20  // win_list(out, max_count) -> count
 
 // Initialize syscall handler (registers int 0x80)
 void syscall_init(void);

@@ -9,6 +9,7 @@
 #include "arch/i686/vga.h"
 #include "liballoc/liballoc_1_1.h"
 #include "pmm.h"
+#include "window.h"
 
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
@@ -323,6 +324,42 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       // If that didn't work, halt
       while (1) { __asm__ volatile("cli; hlt"); }
       return 0;
+
+    case SYS_WIN_CREATE: {
+      int w = (int)(ebx >> 16);
+      int h = (int)(ebx & 0xFFFF);
+      task_t *cur = task_current();
+      return cur ? (uint32_t)window_create(cur->id, w, h, (const char *)ecx)
+                 : (uint32_t)-1;
+    }
+
+    case SYS_WIN_DESTROY: {
+      task_t *cur = task_current();
+      return cur ? (uint32_t)window_destroy((int)ebx, cur->id)
+                 : (uint32_t)-1;
+    }
+
+    case SYS_WIN_WRITE: {
+      task_t *cur = task_current();
+      return cur ? (uint32_t)window_write((int)ebx, cur->id,
+                                          (const uint8_t *)ecx, edx)
+                 : (uint32_t)-1;
+    }
+
+    case SYS_WIN_READ:
+      return (uint32_t)window_read((int)ebx, (uint8_t *)ecx, edx);
+
+    case SYS_WIN_GETKEY: {
+      task_t *cur = task_current();
+      return cur ? (uint32_t)window_getkey((int)ebx, cur->id)
+                 : (uint32_t)-1;
+    }
+
+    case SYS_WIN_SENDKEY:
+      return (uint32_t)window_sendkey((int)ebx, (uint8_t)ecx);
+
+    case SYS_WIN_LIST:
+      return (uint32_t)window_list((win_info_t *)ebx, (int)ecx);
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);
