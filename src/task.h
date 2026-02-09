@@ -69,6 +69,10 @@ typedef struct task {
   int is_kernel;                  // 1 = kernel mode task, 0 = user mode task
   uint32_t *kernel_stack;         // Kernel stack for user mode tasks (for TSS)
   uint32_t kernel_stack_top;      // Top of kernel stack (for TSS ESP0)
+
+  // Process management
+  int exit_code;                  // Exit code set by sys_exit
+  uint32_t waiting_for;           // Task ID this task is blocked waiting for (0 = not waiting)
 } task_t;
 
 // Maximum number of tasks
@@ -95,9 +99,13 @@ uint32_t *schedule(uint32_t *current_esp);
 
 // Terminate current task
 void task_exit(void);
+void task_exit_with_code(int code);
 
 // Print task list
 void task_list(void);
+
+// Look up a task by its ID
+task_t *task_get_by_id(uint32_t id);
 
 // Check if multitasking is enabled
 int task_is_enabled(void);

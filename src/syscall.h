@@ -11,6 +11,12 @@
 #define SYS_GFX_INIT 5   // gfx_init() - enter Mode 13h, map framebuffer
 #define SYS_GFX_EXIT 6   // gfx_exit() - return to text mode
 #define SYS_GETKEY   7   // getkey(flags) - read key from buffer
+#define SYS_SPAWN    8   // spawn(filename) - create child process from ELF
+#define SYS_WAIT     9   // wait(task_id) - block until child exits
+#define SYS_READDIR  10  // readdir(index, buf, size) - read ramfs directory entry
+#define SYS_GETPID   11  // getpid() - get current task ID
+#define SYS_TASKINFO 12  // taskinfo() - print task list to console
+#define SYS_SHUTDOWN 13  // shutdown() - power off the machine
 
 // Initialize syscall handler (registers int 0x80)
 void syscall_init(void);
@@ -88,6 +94,49 @@ static inline uint8_t sys_getkey(uint32_t flags) {
     : "memory"
   );
   return (uint8_t)ret;
+}
+
+static inline int sys_spawn(const char *filename) {
+  int ret;
+  __asm__ volatile(
+    "int $0x80"
+    : "=a"(ret)
+    : "a"(SYS_SPAWN), "b"(filename)
+    : "memory"
+  );
+  return ret;
+}
+
+static inline int sys_wait(uint32_t task_id) {
+  int ret;
+  __asm__ volatile(
+    "int $0x80"
+    : "=a"(ret)
+    : "a"(SYS_WAIT), "b"(task_id)
+    : "memory"
+  );
+  return ret;
+}
+
+static inline int sys_readdir(uint32_t index, char *buf, uint32_t size) {
+  int ret;
+  __asm__ volatile(
+    "int $0x80"
+    : "=a"(ret)
+    : "a"(SYS_READDIR), "b"(index), "c"(buf), "d"(size)
+    : "memory"
+  );
+  return ret;
+}
+
+static inline int sys_getpid(void) {
+  int ret;
+  __asm__ volatile(
+    "int $0x80"
+    : "=a"(ret)
+    : "a"(SYS_GETPID)
+  );
+  return ret;
 }
 
 #endif

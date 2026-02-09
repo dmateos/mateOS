@@ -110,3 +110,9 @@ int ramfs_get_file_count(void) {
   return file_count;
 }
 
+ramfs_file_t *ramfs_get_file_by_index(int index) {
+  if (index < 0 || index >= file_count) return NULL;
+  if (!files[index].in_use) return NULL;
+  return &files[index];
+}
+

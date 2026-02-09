@@ -6,6 +6,7 @@
 #include "arch/i686/io.h"
 #include "arch/i686/timer.h"
 #include "arch/i686/util.h"
+#include "arch/i686/paging.h"
 #include "console.h"
 #include "keyboard.h"
 #include "liballoc/liballoc_1_1.h"
@@ -13,9 +14,6 @@
 #include "ramfs.h"
 #include "task.h"
 #include "syscall.h"
-
-// Define to auto-run demo on boot (uncomment to enable)
-// #define AUTO_USERTEST
 
 // External Rust functions
 extern void rust_hello(void);
@@ -34,7 +32,7 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
-  // If user gfx key buffer is active, push to it instead of console
+  // If keyboard buffer is active, push to it (shell reads via SYS_GETKEY)
   if (keyboard_buffer_is_enabled()) {
     char c = keyboard_translate(scancode);
     if (c) {
@@ -43,11 +41,19 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
-  // Process key press and send to console
+  // Fallback: send to console (only during early boot)
   char c = keyboard_translate(scancode);
   if (c) {
     console_handle_key(c);
   }
+}
+
+// Shell launcher: trampoline that exec's shell.elf
+static char shell_filename[] = "shell.elf";
+
+static void shell_entry(void) {
+  sys_exec(shell_filename);
+  sys_exit(127);  // exec failed
 }
 
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
@@ -77,40 +83,35 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   rust_hello();
   printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
 
-  // Test memory allocator on boot
-  printf("Testing memory allocator...\n");
-  void *ptr1 = kmalloc(64);
-  if (ptr1) {
-    printf("  kmalloc(64) = 0x%x - OK\n", (uint32_t)ptr1);
-    // Write and read back
-    char *str = (char *)ptr1;
-    str[0] = 'A';
-    str[1] = 'B';
-    str[2] = 'C';
-    str[3] = '\0';
-    printf("  Write/read test: '%s' - %s\n", str,
-           (str[0] == 'A' && str[1] == 'B') ? "OK" : "FAIL");
-    kfree(ptr1);
-    printf("  kfree() - OK\n");
-  } else {
-    printf("  kmalloc FAILED!\n");
-  }
-  printf("\n");
-
   // Initialize task system
   task_init();
 
   // Initialize syscall handler
   syscall_init();
 
-  // Initialize console
+  // Boot message
   console_init();
 
-#ifdef AUTO_USERTEST
-  // Auto-test demo on boot
-  printf("\n");
-  console_execute_command("demo");
-#endif
+  // Enable keyboard buffer for userland shell
+  keyboard_buffer_init();
+  keyboard_buffer_enable(1);
+
+  // Mark shell_filename page as user-accessible
+  paging_set_user((uint32_t)shell_filename & ~0xFFF);
+
+  // Auto-launch shell.elf
+  ramfs_file_t *shell_file = ramfs_lookup("shell.elf");
+  if (shell_file) {
+    task_t *t = task_create_user("shell", shell_entry);
+    if (t) {
+      task_enable();
+    } else {
+      printf("ERROR: Failed to create shell task\n");
+    }
+  } else {
+    printf("WARNING: shell.elf not found in ramfs\n");
+    printf("No shell available. System halted.\n");
+  }
 
   // Main loop - just halt and wait for interrupts
   while (1) {

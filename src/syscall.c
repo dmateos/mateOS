@@ -5,6 +5,7 @@
 #include "task.h"
 #include "keyboard.h"
 #include "arch/i686/paging.h"
+#include "arch/i686/io.h"
 #include "arch/i686/vga.h"
 #include "liballoc/liballoc_1_1.h"
 
@@ -48,8 +49,7 @@ static void sys_do_exit(int code) {
     vga_enter_text_mode();
     user_gfx_active = 0;
   }
-  printf("[syscall] Task exiting with code %d\n", code);
-  task_exit();
+  task_exit_with_code(code);
   // Should never return
 }
 
@@ -66,30 +66,23 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     return -1;
   }
 
-  printf("[syscall] exec('%s')\n", filename);
-
   // Look up file in ramfs
   ramfs_file_t *file = ramfs_lookup(filename);
   if (!file) {
-    printf("[syscall] exec: file not found\n");
+    printf("[exec] file not found: %s\n", filename);
     return -1;
   }
-
-  printf("[syscall] Loading ELF from 0x%x (%d bytes)\n", file->data, file->size);
 
   // Parse ELF header
   elf32_ehdr_t *elf = (elf32_ehdr_t *)file->data;
   if (!elf_validate(elf)) {
-    printf("[syscall] exec: invalid ELF\n");
+    printf("[exec] invalid ELF: %s\n", filename);
     return -1;
   }
-
-  elf_print_info(elf);
 
   // Get current task
   task_t *current = task_current();
   if (!current || current->is_kernel) {
-    printf("[syscall] exec: cannot exec from kernel task\n");
     return -1;
   }
 
@@ -106,13 +99,6 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     uint32_t filesz = phdr[i].p_filesz;
     uint32_t offset = phdr[i].p_offset;
 
-    printf("[syscall]   Loading segment: vaddr=0x%x memsz=%d filesz=%d\n",
-           vaddr, memsz, filesz);
-
-    // Allocate memory for segment
-    // For simplicity, we'll just use the identity-mapped region
-    // In a real OS, we'd allocate pages and map them
-
     // Mark pages as user-accessible
     for (uint32_t addr = vaddr; addr < vaddr + memsz; addr += 0x1000) {
       paging_set_user(addr & ~0xFFF);
@@ -122,18 +108,15 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     uint8_t *src = (uint8_t *)elf + offset;
     uint8_t *dst = (uint8_t *)vaddr;
 
-    // Copy file data
     for (uint32_t j = 0; j < filesz; j++) {
       dst[j] = src[j];
     }
 
-    // Zero remaining (BSS)
+    // Zero BSS
     for (uint32_t j = filesz; j < memsz; j++) {
       dst[j] = 0;
     }
   }
-
-  printf("[syscall] Segments loaded, entry point: 0x%x\n", elf->e_entry);
 
   // Allocate new user stack for the loaded program
   uint32_t *new_user_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
@@ -167,9 +150,6 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
   frame->esp    = new_user_esp;  // New user stack
   frame->ss     = 0x23;          // User data segment (RPL=3)
 
-  printf("[syscall] exec: returning to 0x%x\n", elf->e_entry);
-
-  // Return 0 in eax - but the program won't see it since EIP changed
   return 0;
 }
 
@@ -207,6 +187,118 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
   return (uint32_t)keyboard_buffer_pop();
 }
 
+// Spawn: create a child process from an ELF in ramfs
+// Since all user ELFs are linked to 0x700000, we save the parent's code
+// region before loading the child and restore it when the child exits.
+#define USER_CODE_BASE  0x700000
+#define USER_CODE_SIZE  0x10000   // 64KB should cover any user program
+
+static char spawn_filename[64];
+static uint8_t *code_backup = NULL;  // Backup of parent's code region
+
+static void spawn_entry(void) {
+  sys_exec(spawn_filename);
+  sys_exit(127);  // exec failed
+}
+
+static int sys_do_spawn(const char *filename) {
+  if (!filename) return -1;
+
+  // Copy filename to static buffer
+  size_t i;
+  for (i = 0; i < sizeof(spawn_filename) - 1 && filename[i]; i++) {
+    spawn_filename[i] = filename[i];
+  }
+  spawn_filename[i] = '\0';
+
+  // Check file exists
+  ramfs_file_t *file = ramfs_lookup(spawn_filename);
+  if (!file) {
+    return -1;
+  }
+
+  // Save parent's code region before child overwrites it
+  if (code_backup) {
+    kfree(code_backup);
+  }
+  code_backup = (uint8_t *)kmalloc(USER_CODE_SIZE);
+  if (!code_backup) {
+    printf("[spawn] failed to allocate backup\n");
+    return -1;
+  }
+  memcpy(code_backup, (void *)USER_CODE_BASE, USER_CODE_SIZE);
+
+  // Mark spawn_filename page as user-accessible
+  paging_set_user((uint32_t)spawn_filename & ~0xFFF);
+
+  task_t *t = task_create_user("child", spawn_entry);
+  if (!t) {
+    kfree(code_backup);
+    code_backup = NULL;
+    return -1;
+  }
+
+  if (!task_is_enabled()) {
+    task_enable();
+  }
+
+  return (int)t->id;
+}
+
+// Wait: block until a child task exits, return its exit code
+static int sys_do_wait(uint32_t task_id) {
+  task_t *child = task_get_by_id(task_id);
+  if (!child) return -1;
+
+  // If child already exited, return immediately
+  if (child->state == TASK_TERMINATED) {
+    // Restore parent's code region
+    if (code_backup) {
+      memcpy((void *)USER_CODE_BASE, code_backup, USER_CODE_SIZE);
+      kfree(code_backup);
+      code_backup = NULL;
+    }
+    return child->exit_code;
+  }
+
+  // Block current task until child exits
+  task_t *current = task_current();
+  current->waiting_for = task_id;
+  current->state = TASK_BLOCKED;
+  task_yield();  // trigger reschedule
+
+  // When we resume, child has exited - restore parent's code
+  current->waiting_for = 0;
+  if (code_backup) {
+    memcpy((void *)USER_CODE_BASE, code_backup, USER_CODE_SIZE);
+    kfree(code_backup);
+    code_backup = NULL;
+  }
+  return child->exit_code;
+}
+
+// Readdir: copy filename at index from ramfs into user buffer
+static int sys_do_readdir(uint32_t index, char *buf, uint32_t size) {
+  if (!buf || size == 0) return 0;
+
+  ramfs_file_t *file = ramfs_get_file_by_index((int)index);
+  if (!file) return 0;
+
+  // Copy filename to user buffer
+  size_t name_len = strlen(file->name);
+  if (name_len >= size) name_len = size - 1;
+  memcpy(buf, file->name, name_len);
+  buf[name_len] = '\0';
+
+  return (int)(name_len + 1);
+}
+
+// Getpid: return current task ID
+static int sys_do_getpid(void) {
+  task_t *current = task_current();
+  return current ? (int)current->id : -1;
+}
+
 // Main syscall dispatcher - called from assembly
 // frame_ptr points to the iret frame on the kernel stack
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
@@ -235,6 +327,29 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_GETKEY:
       return sys_do_getkey(ebx);
+
+    case SYS_SPAWN:
+      return (uint32_t)sys_do_spawn((const char *)ebx);
+
+    case SYS_WAIT:
+      return (uint32_t)sys_do_wait(ebx);
+
+    case SYS_READDIR:
+      return (uint32_t)sys_do_readdir(ebx, (char *)ecx, edx);
+
+    case SYS_GETPID:
+      return (uint32_t)sys_do_getpid();
+
+    case SYS_TASKINFO:
+      task_list();
+      return 0;
+
+    case SYS_SHUTDOWN:
+      printf("Shutting down...\n");
+      outw(0x604, 0x2000);  // QEMU ACPI shutdown
+      // If that didn't work, halt
+      while (1) { __asm__ volatile("cli; hlt"); }
+      return 0;
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

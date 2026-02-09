@@ -62,3 +62,62 @@ unsigned char getkey(unsigned int flags) {
     );
     return (unsigned char)ret;
 }
+
+int spawn(const char *filename) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_SPAWN), "b"(filename)
+        : "memory"
+    );
+    return ret;
+}
+
+int wait(int task_id) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WAIT), "b"(task_id)
+        : "memory"
+    );
+    return ret;
+}
+
+int readdir(unsigned int index, char *buf, unsigned int size) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_READDIR), "b"(index), "c"(buf), "d"(size)
+        : "memory"
+    );
+    return ret;
+}
+
+int getpid(void) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_GETPID)
+    );
+    return ret;
+}
+
+void taskinfo(void) {
+    __asm__ volatile(
+        "int $0x80"
+        :
+        : "a"(SYS_TASKINFO)
+    );
+}
+
+void shutdown(void) {
+    __asm__ volatile(
+        "int $0x80"
+        :
+        : "a"(SYS_SHUTDOWN)
+    );
+}

@@ -30,4 +30,7 @@ void ramfs_list(void);
 // Get file count
 int ramfs_get_file_count(void);
 
+// Get file by index (for readdir)
+ramfs_file_t *ramfs_get_file_by_index(int index);
+
 #endif

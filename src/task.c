@@ -131,8 +131,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
     current_task->next = task;
   }
 
-  printf("Created task '%s' (id=%d, stack=0x%x)\n",
-         task->name, task->id, (uint32_t)stack);
+  // task created silently
 
   return task;
 }
@@ -248,8 +247,7 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
     current_task->next = task;
   }
 
-  printf("Created user task '%s' (id=%d, user_stack=0x%x, kernel_stack=0x%x)\n",
-         task->name, task->id, (uint32_t)user_stack, (uint32_t)kernel_stack);
+  // task created silently
 
   return task;
 }
@@ -313,10 +311,20 @@ void task_yield(void) {
   __asm__ volatile("int $0x20");  // Trigger timer interrupt
 }
 
-void task_exit(void) {
+void task_exit_with_code(int code) {
   if (current_task && current_task->id != 0) {
-    printf("Task '%s' (id=%d) exiting\n", current_task->name, current_task->id);
+    // Silently exit (no debug spam)
     current_task->state = TASK_TERMINATED;
+    current_task->exit_code = code;
+
+    // Wake up any task waiting for us
+    for (int i = 0; i < MAX_TASKS; i++) {
+      if (tasks[i].state == TASK_BLOCKED &&
+          tasks[i].waiting_for == current_task->id) {
+        tasks[i].state = TASK_READY;
+        tasks[i].waiting_for = 0;
+      }
+    }
 
     // Free the stack(s)
     if (current_task->stack) {
@@ -333,6 +341,19 @@ void task_exit(void) {
   while (1) {
     task_yield();
   }
+}
+
+void task_exit(void) {
+  task_exit_with_code(0);
+}
+
+task_t *task_get_by_id(uint32_t id) {
+  for (int i = 0; i < MAX_TASKS; i++) {
+    if (tasks[i].id == id) {
+      return &tasks[i];
+    }
+  }
+  return NULL;
 }
 
 void task_list(void) {
