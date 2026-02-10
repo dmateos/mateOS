@@ -1,6 +1,8 @@
 #include "ugfx.h"
 #include "syscalls.h"
 
+int ugfx_width = 320;
+int ugfx_height = 200;
 static unsigned char *framebuffer = (unsigned char *)0;
 
 // 8x8 bitmap font (ASCII 32-126) - same as kernel's font8x8
@@ -200,6 +202,11 @@ static const unsigned char font8x8[95][8] = {
 int ugfx_init(void) {
     framebuffer = gfx_init();
     if (!framebuffer) return -1;
+
+    unsigned int info = gfx_info();
+    ugfx_width  = (int)(info >> 16);
+    ugfx_height = (int)(info & 0xFFFF);
+
     return 0;
 }
 
@@ -209,16 +216,16 @@ void ugfx_exit(void) {
 }
 
 void ugfx_pixel(int x, int y, unsigned char color) {
-    if (x < 0 || x >= SCREEN_WIDTH || y < 0 || y >= SCREEN_HEIGHT) return;
-    framebuffer[y * SCREEN_WIDTH + x] = color;
+    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return;
+    framebuffer[y * ugfx_width + x] = color;
 }
 
 void ugfx_rect(int x, int y, int w, int h, unsigned char color) {
     for (int row = y; row < y + h; row++) {
-        if (row < 0 || row >= SCREEN_HEIGHT) continue;
+        if (row < 0 || row >= ugfx_height) continue;
         for (int col = x; col < x + w; col++) {
-            if (col < 0 || col >= SCREEN_WIDTH) continue;
-            framebuffer[row * SCREEN_WIDTH + col] = color;
+            if (col < 0 || col >= ugfx_width) continue;
+            framebuffer[row * ugfx_width + col] = color;
         }
     }
 }
@@ -231,27 +238,27 @@ void ugfx_rect_outline(int x, int y, int w, int h, unsigned char color) {
 }
 
 void ugfx_clear(unsigned char color) {
-    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
+    for (int i = 0; i < ugfx_width * ugfx_height; i++) {
         framebuffer[i] = color;
     }
 }
 
 void ugfx_hline(int x, int y, int w, unsigned char color) {
-    if (y < 0 || y >= SCREEN_HEIGHT) return;
+    if (y < 0 || y >= ugfx_height) return;
     for (int i = 0; i < w; i++) {
         int cx = x + i;
-        if (cx >= 0 && cx < SCREEN_WIDTH) {
-            framebuffer[y * SCREEN_WIDTH + cx] = color;
+        if (cx >= 0 && cx < ugfx_width) {
+            framebuffer[y * ugfx_width + cx] = color;
         }
     }
 }
 
 void ugfx_vline(int x, int y, int h, unsigned char color) {
-    if (x < 0 || x >= SCREEN_WIDTH) return;
+    if (x < 0 || x >= ugfx_width) return;
     for (int i = 0; i < h; i++) {
         int cy = y + i;
-        if (cy >= 0 && cy < SCREEN_HEIGHT) {
-            framebuffer[cy * SCREEN_WIDTH + x] = color;
+        if (cy >= 0 && cy < ugfx_height) {
+            framebuffer[cy * ugfx_width + x] = color;
         }
     }
 }

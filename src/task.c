@@ -1,4 +1,5 @@
 #include "task.h"
+#include "syscall.h"
 #include "lib.h"
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/tss.h"
@@ -64,6 +65,11 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   for (int i = 1; i < MAX_TASKS; i++) {
     if (tasks[i].state == TASK_TERMINATED || tasks[i].id == 0) {
       task = &tasks[i];
+      // Free leftover kernel stack from terminated task
+      if (task->kernel_stack) {
+        kfree(task->kernel_stack);
+        task->kernel_stack = NULL;
+      }
       break;
     }
   }
@@ -149,6 +155,11 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
   for (int i = 1; i < MAX_TASKS; i++) {
     if (tasks[i].state == TASK_TERMINATED || tasks[i].id == 0) {
       task = &tasks[i];
+      // Free leftover kernel stack from terminated task
+      if (task->kernel_stack) {
+        kfree(task->kernel_stack);
+        task->kernel_stack = NULL;
+      }
       break;
     }
   }
@@ -326,14 +337,13 @@ uint32_t *schedule(uint32_t *current_esp) {
 }
 
 void task_yield(void) {
-  // Trigger a software interrupt or just call the scheduler
-  // For now, we'll use a simple approach
-  __asm__ volatile("int $0x20");  // Trigger timer interrupt
+  // Use dedicated yield interrupt (0x81) instead of timer interrupt (0x20)
+  // to avoid sending spurious EOI to the PIC, which corrupts its state
+  __asm__ volatile("int $0x81");
 }
 
 void task_exit_with_code(int code) {
   if (current_task && current_task->id != 0) {
-    // Silently exit (no debug spam)
     current_task->state = TASK_TERMINATED;
     current_task->exit_code = code;
 
@@ -358,12 +368,10 @@ void task_exit_with_code(int code) {
       current_task->page_dir = NULL;
     }
 
-    // Free the kernel stack (allocated from kernel heap)
-    if (current_task->kernel_stack) {
-      kfree(current_task->kernel_stack);
-      current_task->kernel_stack = NULL;
-    }
-    // User stack was PMM-allocated and freed by paging_destroy_address_space
+    // NOTE: Do NOT free kernel_stack here — we are currently executing on it!
+    // The kernel stack will be freed when the task slot is reused in
+    // task_create_user(). For now, just mark the user stack as freed
+    // (it was already freed by paging_destroy_address_space).
     current_task->stack = NULL;
   }
 
@@ -384,6 +392,28 @@ task_t *task_get_by_id(uint32_t id) {
     }
   }
   return NULL;
+}
+
+// Fill user buffer with task info, return count
+int task_list_info(taskinfo_entry_t *buf, int max) {
+  int count = 0;
+  for (int i = 0; i < MAX_TASKS && count < max; i++) {
+    if (tasks[i].id == 0 && i != 0) continue;
+    if (tasks[i].state == TASK_TERMINATED) continue;
+
+    buf[count].id = tasks[i].id;
+    buf[count].state = (uint32_t)tasks[i].state;
+
+    // Copy name
+    int j;
+    for (j = 0; j < TASK_NAME_MAX - 1 && tasks[i].name[j]; j++) {
+      buf[count].name[j] = tasks[i].name[j];
+    }
+    buf[count].name[j] = '\0';
+
+    count++;
+  }
+  return count;
 }
 
 void task_list(void) {

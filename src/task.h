@@ -109,6 +109,11 @@ void task_exit_with_code(int code);
 // Print task list
 void task_list(void);
 
+// Fill user buffer with task info
+// Uses taskinfo_entry_t from syscall.h
+#include "syscall.h"
+int task_list_info(taskinfo_entry_t *buf, int max);
+
 // Look up a task by its ID
 task_t *task_get_by_id(uint32_t id);
 

@@ -4,6 +4,13 @@
 static multiboot_info_t *multiboot_info = NULL;
 static multiboot_module_t *initrd_module = NULL;
 
+// VBE framebuffer info
+static uint32_t vbe_fb_addr = 0;
+static uint32_t vbe_fb_width = 0;
+static uint32_t vbe_fb_height = 0;
+static uint32_t vbe_fb_pitch = 0;
+static uint32_t vbe_fb_bpp = 0;
+
 void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
   printf("Multiboot init...\n");
 
@@ -59,9 +66,31 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
     printf("  No modules loaded (no initrd)\n");
   }
 
+  // Check for VBE info
+  if (mbi->flags & MULTIBOOT_FLAG_VBE) {
+    uint8_t *vbe = (uint8_t *)(uint32_t)mbi->vbe_mode_info;
+    if (vbe) {
+      vbe_fb_pitch  = *(uint16_t *)(vbe + 16);
+      vbe_fb_width  = *(uint16_t *)(vbe + 18);
+      vbe_fb_height = *(uint16_t *)(vbe + 20);
+      vbe_fb_bpp    = *(uint8_t  *)(vbe + 25);
+      vbe_fb_addr   = *(uint32_t *)(vbe + 40);
+
+      printf("  VBE: %dx%dx%d pitch=%d fb=0x%x\n",
+             vbe_fb_width, vbe_fb_height, vbe_fb_bpp,
+             vbe_fb_pitch, vbe_fb_addr);
+    }
+  }
+
   printf("Multiboot init complete\n");
 }
 
 multiboot_module_t *multiboot_get_initrd(void) {
   return initrd_module;
 }
+
+uint32_t multiboot_get_vbe_fb(void)     { return vbe_fb_addr; }
+uint32_t multiboot_get_vbe_width(void)  { return vbe_fb_width; }
+uint32_t multiboot_get_vbe_height(void) { return vbe_fb_height; }
+uint32_t multiboot_get_vbe_pitch(void)  { return vbe_fb_pitch; }
+uint32_t multiboot_get_vbe_bpp(void)    { return vbe_fb_bpp; }

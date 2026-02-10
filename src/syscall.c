@@ -13,6 +13,11 @@
 
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
+static int user_gfx_bga = 0;         // 1 if using BGA, 0 if Mode 13h
+static uint32_t bga_fb_addr = 0;     // Physical/virtual address of BGA LFB
+static uint32_t bga_width = 0;
+static uint32_t bga_height = 0;
+static uint32_t gfx_owner_pid = 0;   // Task ID that owns graphics mode
 
 // Forward declaration for interrupt registration
 extern void isr128(void);
@@ -45,11 +50,18 @@ static int sys_do_write(int fd __attribute__((unused)),
 
 // Exit current task
 static void sys_do_exit(int code) {
-  // Auto-cleanup graphics mode if this task had it active
-  if (user_gfx_active) {
+  // Only tear down graphics if the exiting task owns it
+  task_t *current = task_current();
+  if (user_gfx_active && current && current->id == gfx_owner_pid) {
     keyboard_buffer_enable(0);
-    vga_enter_text_mode();
+    if (user_gfx_bga) {
+      vga_exit_bga_mode();
+    } else {
+      vga_enter_text_mode();
+    }
     user_gfx_active = 0;
+    user_gfx_bga = 0;
+    gfx_owner_pid = 0;
   }
   task_exit_with_code(code);
   // Should never return
@@ -161,15 +173,54 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
   return 0;
 }
 
-// Enter VGA Mode 13h and map framebuffer for user access
+// Enter graphics mode — try BGA (Bochs VGA) for 1024x768, else Mode 13h
 static uint32_t sys_do_gfx_init(void) {
   if (user_gfx_active) {
-    return 0xA0000;  // Already active
+    return user_gfx_bga ? bga_fb_addr : 0xA0000;
   }
 
+  // Try BGA mode (QEMU -vga std)
+  if (vga_bga_available()) {
+    uint32_t lfb = vga_enter_bga_mode(1024, 768, 8);
+    if (lfb) {
+      uint32_t fb_size = 1024 * 768;  // 8bpp = 1 byte per pixel
+
+      // Map LFB pages in kernel page directory (for propagation to new processes)
+      paging_map_vbe(lfb, fb_size);
+
+      // Also map into calling process's page directory
+      task_t *current = task_current();
+      if (current && current->page_dir) {
+        uint32_t start = lfb & ~0xFFF;
+        uint32_t end = (lfb + fb_size + 0xFFF) & ~0xFFF;
+        for (uint32_t addr = start; addr < end; addr += 0x1000) {
+          paging_map_page(current->page_dir, addr, addr,
+                          PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+        }
+        // Flush TLB
+        paging_switch(current->page_dir);
+      }
+
+      bga_fb_addr = lfb;
+      bga_width = 1024;
+      bga_height = 768;
+
+      // Set up palette via DAC ports
+      vga_init_palette();
+
+      user_gfx_bga = 1;
+      keyboard_buffer_init();
+      keyboard_buffer_enable(1);
+      user_gfx_active = 1;
+      gfx_owner_pid = current ? current->id : 0;
+
+      return bga_fb_addr;
+    }
+  }
+
+  // Fallback: Mode 13h
   vga_enter_mode13h();
 
-  // Mark VGA framebuffer pages as user-accessible (0xA0000-0xAFFFF, 16 pages)
   for (uint32_t addr = 0xA0000; addr < 0xB0000; addr += 0x1000) {
     paging_set_user(addr);
   }
@@ -177,17 +228,40 @@ static uint32_t sys_do_gfx_init(void) {
   keyboard_buffer_init();
   keyboard_buffer_enable(1);
   user_gfx_active = 1;
+  user_gfx_bga = 0;
+  {
+    task_t *cur = task_current();
+    gfx_owner_pid = cur ? cur->id : 0;
+  }
 
   return 0xA0000;
 }
 
-// Return to text mode
+// Return to text mode — only the gfx owner can do this
 static void sys_do_gfx_exit(void) {
   if (!user_gfx_active) return;
 
+  task_t *current = task_current();
+  if (!current || current->id != gfx_owner_pid) return;
+
   keyboard_buffer_enable(0);
-  vga_enter_text_mode();
+  if (user_gfx_bga) {
+    vga_exit_bga_mode();
+  } else {
+    vga_enter_text_mode();
+  }
   user_gfx_active = 0;
+  user_gfx_bga = 0;
+  gfx_owner_pid = 0;
+}
+
+// Return screen dimensions: (width << 16) | height
+static uint32_t sys_do_gfx_info(void) {
+  if (user_gfx_bga && bga_width && bga_height) {
+    return (bga_width << 16) | bga_height;
+  }
+  // Fallback: Mode 13h dimensions
+  return (320 << 16) | 200;
 }
 
 // Read key from buffer (non-blocking)
@@ -210,7 +284,7 @@ static int sys_do_spawn(const char *filename) {
   ramfs_file_t *file = ramfs_lookup(filename);
   if (!file) return -1;
 
-  task_t *t = task_create_user("child", spawn_entry);
+  task_t *t = task_create_user(filename, spawn_entry);
   if (!t) return -1;
 
   // Copy filename into child's pending_exec (race-safe per-task buffer)
@@ -248,7 +322,40 @@ static int sys_do_wait(uint32_t task_id) {
   task_yield();
 
   current->waiting_for = 0;
+
+  // Debug: check PIC and keyboard controller state after wait
+  {
+    uint8_t mask = inb(0x21);
+    outb(0x20, 0x0B);
+    uint8_t isr = inb(0x20);
+    uint8_t kb_status = inb(0x64);  // Keyboard controller status
+    printf("[wait] PIC mask=0x%x ISR=0x%x KB_status=0x%x\n", mask, isr, kb_status);
+    // If keyboard output buffer is full (bit 0), drain it
+    if (kb_status & 0x01) {
+      uint8_t sc = inb(0x60);
+      printf("[wait] KB had pending scancode=0x%x, drained\n", sc);
+    }
+    if (mask & 0x02) {
+      outb(0x21, mask & ~0x02);
+    }
+    if (isr) {
+      outb(0x20, 0x20);
+    }
+  }
+
   return child->exit_code;
+}
+
+// Non-blocking wait: returns -1 if child still running, else exit code
+static int sys_do_wait_nb(uint32_t task_id) {
+  task_t *child = task_get_by_id(task_id);
+  if (!child) return -2;  // No such task
+
+  if (child->state == TASK_TERMINATED) {
+    return child->exit_code;
+  }
+
+  return -1;  // Still running
 }
 
 // Readdir: copy filename at index from ramfs into user buffer
@@ -277,6 +384,21 @@ static int sys_do_getpid(void) {
 // frame_ptr points to the iret frame on the kernel stack
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
                          uint32_t edx, void *frame) {
+  // Debug: trace all syscalls
+  {
+    static int trace_enabled = 0;
+    extern void serial_writestr(const char *s);
+    if (eax == SYS_WAIT && !trace_enabled) {
+      trace_enabled = 1;
+    }
+    if (trace_enabled) {
+      static const char hex[] = "0123456789abcdef";
+      char buf[] = "[sc:XX]\n";
+      buf[4] = hex[(eax >> 4) & 0xF];
+      buf[5] = hex[eax & 0xF];
+      serial_writestr(buf);
+    }
+  }
   switch (eax) {
     case SYS_WRITE:
       return (uint32_t)sys_do_write((int)ebx, (const char *)ecx, (size_t)edx);
@@ -360,6 +482,15 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_WIN_LIST:
       return (uint32_t)window_list((win_info_t *)ebx, (int)ecx);
+
+    case SYS_GFX_INFO:
+      return sys_do_gfx_info();
+
+    case SYS_TASKLIST:
+      return (uint32_t)task_list_info((void *)ebx, (int)ecx);
+
+    case SYS_WAIT_NB:
+      return (uint32_t)sys_do_wait_nb(ebx);
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

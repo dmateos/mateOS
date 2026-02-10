@@ -21,6 +21,9 @@
 #define SYS_WIN_GETKEY  18
 #define SYS_WIN_SENDKEY 19
 #define SYS_WIN_LIST    20
+#define SYS_GFX_INFO   21
+#define SYS_TASKLIST   22
+#define SYS_WAIT_NB    23
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -31,6 +34,7 @@ void yield(void);
 unsigned char *gfx_init(void);
 void gfx_exit(void);
 unsigned char getkey(unsigned int flags);
+unsigned int gfx_info(void);  // Returns (width << 16) | height
 
 // Process management syscalls
 int spawn(const char *filename);
@@ -39,6 +43,16 @@ int readdir(unsigned int index, char *buf, unsigned int size);
 int getpid(void);
 void taskinfo(void);
 void shutdown(void);
+
+// Task info entry (must match kernel's taskinfo_entry_t)
+typedef struct {
+    unsigned int id;
+    unsigned int state;    // 0=ready, 1=running, 2=blocked, 3=terminated
+    char name[32];
+} taskinfo_entry_t;
+
+int tasklist(taskinfo_entry_t *buf, int max);
+int wait_nb(int task_id);  // Non-blocking: returns -1 if still running
 
 // Window info struct (must match kernel's win_info_t)
 typedef struct {

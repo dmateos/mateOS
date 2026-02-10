@@ -3,11 +3,11 @@
 #include "ugfx.h"
 #include "syscalls.h"
 
-#define W 148
-#define H 78
-#define MAX_TEXT 200
-#define CHARS_PER_LINE (W / 8 - 1)  // ~17 chars per line
-#define MAX_LINES ((H - 12) / 10)   // ~6 lines of text
+#define W 500
+#define H 350
+#define MAX_TEXT 2000
+#define CHARS_PER_LINE (W / 8 - 1)  // ~61 chars per line
+#define MAX_LINES ((H - 12) / 10)   // ~33 lines of text
 
 static unsigned char buf[W * H];
 static char text[MAX_TEXT];

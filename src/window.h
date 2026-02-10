@@ -6,8 +6,8 @@
 #define MAX_WINDOWS 8
 #define WIN_TITLE_MAX 32
 #define WIN_KEY_BUF_SIZE 16
-#define WIN_MAX_WIDTH 200
-#define WIN_MAX_HEIGHT 160
+#define WIN_MAX_WIDTH  600
+#define WIN_MAX_HEIGHT 500
 
 typedef struct {
     int active;

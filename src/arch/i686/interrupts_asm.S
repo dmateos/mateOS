@@ -53,6 +53,7 @@ flush_idt:
 .endm
 
 # Special handler for IRQ0 (timer) that supports context switching
+# Called from real hardware IRQ0 - sends EOI
 .global irq0_task
 .align 4
 irq0_task:
@@ -71,10 +72,49 @@ irq0_task:
     mov %ax, %fs
     mov %ax, %gs
 
-    # Call the timer handler with context switch support
-    # Pass current ESP as argument
-    push %esp
+    # Call timer_handler_switch(esp, is_hw=1)
+    mov %esp, %eax              # Save context ESP before pushing args
+    push $1                     # is_hw = 1 (real hardware IRQ)
+    push %eax                   # esp = saved context pointer
     call timer_handler_switch
+    add $8, %esp                # cleanup both args
+    mov %eax, %esp              # Switch to new stack if needed
+
+    # Restore segment registers (may be user or kernel)
+    pop %gs
+    pop %fs
+    pop %es
+    pop %ds
+
+    popa                        # Restore registers (possibly from new task)
+    iret                        # Return from interrupt
+
+# Software yield handler - called via int $0x20 from task_yield()
+# Does NOT send EOI (no real hardware IRQ happened)
+.global yield_task
+.align 4
+yield_task:
+    pusha                       # Save all general registers
+
+    # Save segment registers
+    push %ds
+    push %es
+    push %fs
+    push %gs
+
+    # Load kernel data segment into segment registers
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %fs
+    mov %ax, %gs
+
+    # Call timer_handler_switch(esp, is_hw=0)
+    mov %esp, %eax              # Save context ESP before pushing args
+    push $0                     # is_hw = 0 (software interrupt)
+    push %eax                   # esp = saved context pointer
+    call timer_handler_switch
+    add $8, %esp                # cleanup both args
     mov %eax, %esp              # Switch to new stack if needed
 
     # Restore segment registers (may be user or kernel)

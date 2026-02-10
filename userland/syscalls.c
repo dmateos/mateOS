@@ -63,6 +63,16 @@ unsigned char getkey(unsigned int flags) {
     return (unsigned char)ret;
 }
 
+unsigned int gfx_info(void) {
+    unsigned int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_GFX_INFO)
+    );
+    return ret;
+}
+
 int spawn(const char *filename) {
     int ret;
     __asm__ volatile(
@@ -184,6 +194,28 @@ int win_sendkey(int wid, unsigned char key) {
         "int $0x80"
         : "=a"(ret)
         : "a"(SYS_WIN_SENDKEY), "b"(wid), "c"(key)
+        : "memory"
+    );
+    return ret;
+}
+
+int wait_nb(int task_id) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_WAIT_NB), "b"(task_id)
+        : "memory"
+    );
+    return ret;
+}
+
+int tasklist(taskinfo_entry_t *buf, int max) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_TASKLIST), "b"(buf), "c"(max)
         : "memory"
     );
     return ret;

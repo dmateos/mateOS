@@ -83,4 +83,11 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi);
 // Get initrd module (first module)
 multiboot_module_t *multiboot_get_initrd(void);
 
+// VBE framebuffer info (set if bootloader provided VBE mode)
+uint32_t multiboot_get_vbe_fb(void);      // Physical address (0 if unavailable)
+uint32_t multiboot_get_vbe_width(void);
+uint32_t multiboot_get_vbe_height(void);
+uint32_t multiboot_get_vbe_pitch(void);   // Bytes per scanline
+uint32_t multiboot_get_vbe_bpp(void);     // Bits per pixel
+
 #endif

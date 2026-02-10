@@ -145,7 +145,23 @@ void _start(void) {
         } else if (strcmp(line, "ls") == 0) {
             cmd_ls();
         } else if (strcmp(line, "tasks") == 0) {
-            taskinfo();
+            taskinfo_entry_t tlist[16];
+            int count = tasklist(tlist, 16);
+            print("PID  State    Name\n");
+            print("---  -------  ----\n");
+            for (int ti = 0; ti < count; ti++) {
+                print_num((int)tlist[ti].id);
+                print("    ");
+                switch (tlist[ti].state) {
+                    case 0: print("ready  "); break;
+                    case 1: print("run    "); break;
+                    case 2: print("block  "); break;
+                    default: print("???    "); break;
+                }
+                print("  ");
+                print(tlist[ti].name);
+                print("\n");
+            }
         } else if (strncmp(line, "echo ", 5) == 0 || strcmp(line, "echo") == 0) {
             if (len > 4) {
                 cmd_echo(line);

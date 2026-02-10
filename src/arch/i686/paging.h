@@ -49,6 +49,9 @@ page_table_t *paging_get_tables(void);
 // Per-process address space management
 page_directory_t *paging_create_address_space(void);
 void paging_destroy_address_space(page_directory_t *page_dir);
+
+// Map VBE framebuffer into kernel page directory (called once at gfx_init)
+void paging_map_vbe(uint32_t phys_addr, uint32_t size);
 void paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
                      uint32_t physical_addr, uint32_t flags);
 void paging_unmap_page(page_directory_t *page_dir, uint32_t virtual_addr);

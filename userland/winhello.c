@@ -3,8 +3,8 @@
 #include "ugfx.h"
 #include "syscalls.h"
 
-#define W 148
-#define H 78
+#define W 500
+#define H 350
 
 static unsigned char buf[W * H];
 static char last_key_str[] = "Key: _";

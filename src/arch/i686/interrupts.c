@@ -108,6 +108,10 @@ static void init_idt_table(idt_entry_t *ide) {
 
   // Syscall interrupt (int 0x80) - accessible from user mode (DPL=3)
   write_idt_entry(ide, 128, (uint32_t)isr128, SEGMENT_OFFSET, PRIVILEGE_USER);
+
+  // Yield interrupt (int 0x81) - software context switch, no PIC EOI
+  // DPL=3 so user mode tasks can yield
+  write_idt_entry(ide, 129, (uint32_t)yield_task, SEGMENT_OFFSET, PRIVILEGE_USER);
 }
 
 void register_interrupt_handler(uint8_t n, void (*h)(uint32_t, uint32_t)) {

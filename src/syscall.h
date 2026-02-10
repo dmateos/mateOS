@@ -24,6 +24,16 @@
 #define SYS_WIN_GETKEY  18  // win_getkey(wid) -> key
 #define SYS_WIN_SENDKEY 19  // win_sendkey(wid, key)
 #define SYS_WIN_LIST    20  // win_list(out, max_count) -> count
+#define SYS_GFX_INFO   21  // gfx_info() -> (width<<16)|height
+#define SYS_TASKLIST   22  // tasklist(buf, max) -> count of tasks filled
+#define SYS_WAIT_NB    23  // wait_nb(task_id) -> exit code, or -1 if still running
+
+// Task info returned by SYS_TASKLIST
+typedef struct {
+  uint32_t id;
+  uint32_t state;     // 0=ready, 1=running, 2=blocked, 3=terminated
+  char name[32];
+} taskinfo_entry_t;
 
 // Initialize syscall handler (registers int 0x80)
 void syscall_init(void);

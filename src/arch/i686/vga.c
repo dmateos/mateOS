@@ -4,6 +4,18 @@
 #include "../../lib.h"
 
 static int vga_mode13h_active = 0;
+static int vga_bga_active = 0;
+
+// BGA helper: read/write dispi registers
+static void bga_write(uint16_t index, uint16_t value) {
+    outw(VBE_DISPI_INDEX_PORT, index);
+    outw(VBE_DISPI_DATA_PORT, value);
+}
+
+static uint16_t bga_read(uint16_t index) {
+    outw(VBE_DISPI_INDEX_PORT, index);
+    return inw(VBE_DISPI_DATA_PORT);
+}
 
 // ============================================================
 // VGA State Save/Restore
@@ -493,6 +505,77 @@ void vga_enter_text_mode(void) {
 
 int vga_is_mode13h(void) {
     return vga_mode13h_active;
+}
+
+int vga_is_graphics(void) {
+    return vga_mode13h_active || vga_bga_active;
+}
+
+// Check if Bochs VGA device is present
+int vga_bga_available(void) {
+    uint16_t id = bga_read(VBE_DISPI_INDEX_ID);
+    // BGA ID range: 0xB0C0 - 0xB0C5
+    return (id >= 0xB0C0 && id <= 0xB0CF);
+}
+
+// Enter BGA high-resolution mode
+// Returns LFB physical address (typically 0xFD000000 under QEMU), 0 on failure
+uint32_t vga_enter_bga_mode(int width, int height, int bpp) {
+    if (!vga_bga_available()) {
+        printf("[vga] BGA not available (id=0x%x)\n", bga_read(VBE_DISPI_INDEX_ID));
+        return 0;
+    }
+
+    // Save text mode state before switching
+    if (!state_saved) {
+        vga_save_state();
+    }
+
+    // Disable VBE to change settings
+    bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+
+    // Set resolution and depth
+    bga_write(VBE_DISPI_INDEX_XRES, (uint16_t)width);
+    bga_write(VBE_DISPI_INDEX_YRES, (uint16_t)height);
+    bga_write(VBE_DISPI_INDEX_BPP, (uint16_t)bpp);
+
+    // Enable with linear framebuffer
+    bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+
+    // Verify settings took effect
+    uint16_t actual_w = bga_read(VBE_DISPI_INDEX_XRES);
+    uint16_t actual_h = bga_read(VBE_DISPI_INDEX_YRES);
+
+    if (actual_w != (uint16_t)width || actual_h != (uint16_t)height) {
+        printf("[vga] BGA mode set failed: requested %dx%d got %dx%d\n",
+               width, height, actual_w, actual_h);
+        bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+        return 0;
+    }
+
+    vga_bga_active = 1;
+
+    // The LFB address for QEMU's std VGA is at PCI BAR0
+    // For QEMU -vga std, this is typically 0xFD000000
+    // We can read it from PCI config space (bus 0, dev 2, fn 0, BAR0 offset 0x10)
+    // PCI config address: 0x80000000 | (bus<<16) | (dev<<11) | (fn<<8) | (reg)
+    uint32_t pci_addr = 0x80000000 | (0 << 16) | (2 << 11) | (0 << 8) | 0x10;
+    outl(0xCF8, pci_addr);
+    uint32_t bar0 = inl(0xCFC);
+    uint32_t lfb_addr = bar0 & ~0xF;  // Mask off type bits
+
+    printf("[vga] BGA mode: %dx%dx%d LFB=0x%x\n",
+           actual_w, actual_h, bpp, lfb_addr);
+
+    return lfb_addr;
+}
+
+void vga_exit_bga_mode(void) {
+    if (!vga_bga_active) return;
+    bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
+    vga_bga_active = 0;
+    // Restore text mode
+    vga_restore_state();
 }
 
 // ============================================================

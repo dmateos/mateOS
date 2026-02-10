@@ -21,12 +21,16 @@
 extern void rust_hello(void);
 extern int rust_add(int a, int b);
 
+
 typedef struct {
   void (*register_interrupt_handler)(uint8_t, void (*h)(uint32_t, uint32_t));
 } kernel_interrupt_t;
 
+extern void serial_writestr(const char *s);
+
 void test_interrupt_handler(uint32_t number __attribute__((unused)),
                             uint32_t error_code __attribute__((unused))) {
+  serial_writestr("[IRQ1]\n");
   uint8_t scancode = inb(IO_KB_DATA);
 
   // 0x80 bit indicates key release, so ignore it

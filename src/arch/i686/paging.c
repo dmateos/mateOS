@@ -12,6 +12,11 @@ extern void enable_paging(uint32_t page_directory_physical);
 static page_directory_t *current_page_dir = NULL;
 static page_table_t *current_page_tables = NULL;
 
+// VBE framebuffer page directory entries to propagate to child processes
+#define VBE_MAX_DIR_ENTRIES 4
+static uint32_t vbe_dir_indices[VBE_MAX_DIR_ENTRIES];
+static int vbe_dir_count = 0;
+
 void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
   printf("Paging initialization starting\n");
 
@@ -103,6 +108,35 @@ page_directory_t *paging_get_kernel_dir(void) {
   return current_page_dir;
 }
 
+// Map VBE framebuffer into kernel page directory
+// Pages are identity-mapped at the VBE physical address
+void paging_map_vbe(uint32_t phys_addr, uint32_t size) {
+  if (!current_page_dir || !phys_addr || !size) return;
+
+  uint32_t start = phys_addr & ~0xFFF;
+  uint32_t end = (phys_addr + size + 0xFFF) & ~0xFFF;
+
+  vbe_dir_count = 0;
+
+  for (uint32_t addr = start; addr < end; addr += 0x1000) {
+    paging_map_page(current_page_dir, addr, addr,
+                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+
+    // Track which directory entries we touched
+    uint32_t dir_idx = addr >> 22;
+    int found = 0;
+    for (int i = 0; i < vbe_dir_count; i++) {
+      if (vbe_dir_indices[i] == dir_idx) { found = 1; break; }
+    }
+    if (!found && vbe_dir_count < VBE_MAX_DIR_ENTRIES) {
+      vbe_dir_indices[vbe_dir_count++] = dir_idx;
+    }
+  }
+
+  printf("[paging] VBE mapped: 0x%x-0x%x (%d pages, %d dir entries)\n",
+         start, end, (end - start) / 0x1000, vbe_dir_count);
+}
+
 // Create a new address space for a user process
 // Shares kernel page tables (tables 0-7) but allocates a private copy
 // of page table 1 so user code region (0x700000+) is per-process
@@ -120,6 +154,12 @@ page_directory_t *paging_create_address_space(void) {
   // Copy kernel page directory entries (shared kernel page tables)
   for (uint32_t i = 0; i < NUM_PAGE_TABLES; i++) {
     new_dir->tables[i] = current_page_dir->tables[i];
+  }
+
+  // Copy VBE framebuffer page directory entries (if any)
+  for (int i = 0; i < vbe_dir_count; i++) {
+    uint32_t idx = vbe_dir_indices[i];
+    new_dir->tables[idx] = current_page_dir->tables[idx];
   }
 
   // Page table 1 covers 0x400000-0x7FFFFF which includes both:
@@ -220,8 +260,16 @@ void paging_destroy_address_space(page_directory_t *page_dir) {
   }
 
   // Free any additional page tables we allocated (beyond the shared kernel ones)
+  // Skip VBE/BGA directory entries (shared from kernel, must not be freed)
   for (uint32_t i = NUM_PAGE_TABLES; i < 1024; i++) {
     if (page_dir->tables[i] & PAGE_PRESENT) {
+      // Check if this is a VBE shared entry — skip if so
+      int is_vbe = 0;
+      for (int v = 0; v < vbe_dir_count; v++) {
+        if (vbe_dir_indices[v] == i) { is_vbe = 1; break; }
+      }
+      if (is_vbe) continue;
+
       uint32_t pt_phys = page_dir->tables[i] & ~0xFFF;
       // Free frames in this page table
       page_table_t *pt = (page_table_t *)pt_phys;

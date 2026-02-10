@@ -69,11 +69,11 @@ test32:
 	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img -no-reboot
 
 test32-gfx:
-	qemu-system-i386 -display sdl -kernel $(TARGET) -initrd initrd.img -no-reboot
+	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img -no-reboot
 
 test32-vnc:
 	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
-	qemu-system-i386 -display vnc=:0 -kernel $(TARGET) -initrd initrd.img -no-reboot
+	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img -no-reboot
 
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)

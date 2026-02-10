@@ -1,8 +1,9 @@
 #ifndef _UGFX_H
 #define _UGFX_H
 
-#define SCREEN_WIDTH  320
-#define SCREEN_HEIGHT 200
+// Screen dimensions — set by ugfx_init() based on kernel gfx_info
+extern int ugfx_width;
+extern int ugfx_height;
 
 // Initialize/exit graphics mode
 int ugfx_init(void);

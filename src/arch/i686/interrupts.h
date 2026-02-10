@@ -81,4 +81,7 @@ extern void irq0_task(void);
 // Syscall handler (int 0x80)
 extern void isr128(void);
 
+// Software yield handler (int 0x81) - context switch without PIC EOI
+extern void yield_task(void);
+
 #endif

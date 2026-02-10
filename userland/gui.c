@@ -1,16 +1,19 @@
 // mateOS Window Manager
-// Compositing WM that owns VGA Mode 13h, spawns child apps in windows
+// Compositing WM that owns the framebuffer, spawns child apps in windows
 
 #include "ugfx.h"
 #include "syscalls.h"
 
-// Layout constants
-#define TASKBAR_H    14
-#define TITLE_BAR_H  12
+// Layout constants (dynamic parts computed from screen size)
+#define TASKBAR_H    20
+#define TITLE_BAR_H  14
 #define BORDER       1
-#define CONTENT_W    148
-#define CONTENT_H    78
 #define WM_MAX_SLOTS 4
+#define GAP          6
+
+// Window content size — computed at startup
+static int content_w = 148;
+static int content_h = 78;
 
 // Colors (CGA palette indices)
 #define COL_DESKTOP    1   // Blue
@@ -34,17 +37,8 @@ static wm_slot_t slots[WM_MAX_SLOTS];
 static int focus = 0;
 static int num_slots = 0;
 
-// Slot positions (content area top-left)
-static const int slot_x[] = {3, 165, 3, 165};
-static const int slot_y[] = {
-    TASKBAR_H + 2 + BORDER + TITLE_BAR_H,
-    TASKBAR_H + 2 + BORDER + TITLE_BAR_H,
-    TASKBAR_H + 2 + BORDER + TITLE_BAR_H + CONTENT_H + TITLE_BAR_H + 2 * BORDER + 4,
-    TASKBAR_H + 2 + BORDER + TITLE_BAR_H + CONTENT_H + TITLE_BAR_H + 2 * BORDER + 4
-};
-
-// Buffer for reading window content
-static unsigned char read_buf[CONTENT_W * CONTENT_H];
+// Buffer for reading window content (max 500*400 = 200000)
+static unsigned char read_buf[200000];
 
 static void wm_strcpy(char *dst, const char *src, int max) {
     int i;
@@ -53,39 +47,64 @@ static void wm_strcpy(char *dst, const char *src, int max) {
     dst[i] = '\0';
 }
 
+static void compute_layout(void) {
+    // 2x2 grid with gaps
+    int usable_w = ugfx_width - GAP * 3;    // left gap + middle gap + right gap
+    int usable_h = ugfx_height - TASKBAR_H - GAP * 3;  // top gap + middle + bottom
+
+    content_w = usable_w / 2;
+    content_h = (usable_h - (TITLE_BAR_H + 2 * BORDER) * 2) / 2;
+
+    // Clamp to window system limits and child app window size
+    if (content_w > 500) content_w = 500;
+    if (content_h > 350) content_h = 350;
+
+    // Compute slot positions (content area top-left)
+    int frame_h = content_h + TITLE_BAR_H + 2 * BORDER;
+    int x0 = GAP + BORDER;
+    int x1 = GAP + content_w + 2 * BORDER + GAP + BORDER;
+    int y0 = TASKBAR_H + GAP + BORDER + TITLE_BAR_H;
+    int y1 = y0 + frame_h + GAP;
+
+    slots[0].x = x0; slots[0].y = y0;
+    slots[1].x = x1; slots[1].y = y0;
+    slots[2].x = x0; slots[2].y = y1;
+    slots[3].x = x1; slots[3].y = y1;
+}
+
 // Draw the taskbar
 static void draw_taskbar(void) {
-    ugfx_rect(0, 0, 320, TASKBAR_H, COL_TASKBAR);
-    ugfx_string(4, 3, "mateOS WM", COL_TASKBAR_TXT);
+    ugfx_rect(0, 0, ugfx_width, TASKBAR_H, COL_TASKBAR);
+    ugfx_string(8, 6, "mateOS WM", COL_TASKBAR_TXT);
 
-    // Show focused window title on right side
+    // Show focused window title
     if (num_slots > 0 && slots[focus].wid >= 0) {
-        ugfx_string(120, 3, slots[focus].title, 14); // Yellow
+        ugfx_string(160, 6, slots[focus].title, 14);
     }
 
-    // Tab/Esc hints
-    ugfx_string(220, 3, "Tab Esc", 7);
+    // Hints on right side
+    ugfx_string(ugfx_width - 80, 6, "Tab Esc", 7);
 }
 
 // Draw a window frame (border + title bar)
 static void draw_window_frame(int slot) {
     int is_focused = (slot == focus);
-    int fx = slot_x[slot] - BORDER;
-    int fy = slot_y[slot] - TITLE_BAR_H - BORDER;
-    int fw = CONTENT_W + 2 * BORDER;
-    int fh = CONTENT_H + TITLE_BAR_H + 2 * BORDER;
+    int fx = slots[slot].x - BORDER;
+    int fy = slots[slot].y - TITLE_BAR_H - BORDER;
+    int fw = content_w + 2 * BORDER;
+    int fh = content_h + TITLE_BAR_H + 2 * BORDER;
 
     // Border
     ugfx_rect_outline(fx, fy, fw, fh,
                       is_focused ? COL_BORDER_ACT : COL_BORDER_INACT);
 
     // Title bar background
-    ugfx_rect(fx + BORDER, fy + BORDER, CONTENT_W, TITLE_BAR_H,
+    ugfx_rect(fx + BORDER, fy + BORDER, content_w, TITLE_BAR_H,
               is_focused ? COL_TITLE_ACT : COL_TITLE_INACT);
 
     // Title text
     if (slots[slot].wid >= 0) {
-        ugfx_string(fx + BORDER + 4, fy + BORDER + 2,
+        ugfx_string(fx + BORDER + 4, fy + BORDER + 3,
                     slots[slot].title, COL_TITLE_TXT);
     }
 }
@@ -94,16 +113,19 @@ static void draw_window_frame(int slot) {
 static void composite_window(int slot) {
     if (slots[slot].wid < 0) return;
 
-    int bytes = win_read(slots[slot].wid, read_buf, sizeof(read_buf));
+    int buf_size = content_w * content_h;
+    if (buf_size > (int)sizeof(read_buf)) buf_size = (int)sizeof(read_buf);
+
+    int bytes = win_read(slots[slot].wid, read_buf, (unsigned int)buf_size);
     if (bytes <= 0) return;
 
-    int sx = slot_x[slot];
-    int sy = slot_y[slot];
+    int sx = slots[slot].x;
+    int sy = slots[slot].y;
 
-    for (int row = 0; row < CONTENT_H; row++) {
-        for (int col = 0; col < CONTENT_W; col++) {
+    for (int row = 0; row < content_h; row++) {
+        for (int col = 0; col < content_w; col++) {
             ugfx_pixel(sx + col, sy + row,
-                       read_buf[row * CONTENT_W + col]);
+                       read_buf[row * content_w + col]);
         }
     }
 }
@@ -129,6 +151,9 @@ void _start(void) {
         write(1, "WM: gfx_init failed\n", 20);
         exit(1);
     }
+
+    // Compute layout based on screen dimensions
+    compute_layout();
 
     // Clear to desktop color
     ugfx_clear(COL_DESKTOP);
@@ -166,32 +191,26 @@ void _start(void) {
     int tick = 0;
 
     while (running) {
-        // Read keyboard (WM owns the global buffer)
         unsigned char key = ugfx_getkey();
         if (key) {
             if (key == 27) {
-                // ESC: exit WM
                 running = 0;
             } else if (key == '\t') {
-                // Tab: cycle focus
                 if (num_slots > 0) {
                     focus = (focus + 1) % num_slots;
                 }
             } else {
-                // Route key to focused window
                 if (num_slots > 0 && slots[focus].wid >= 0) {
                     win_sendkey(slots[focus].wid, key);
                 }
             }
         }
 
-        // Periodically re-discover windows
         tick++;
         if (tick % 50 == 0) {
             discover_windows();
         }
 
-        // Composite all windows
         for (int i = 0; i < num_slots; i++) {
             if (slots[i].wid >= 0) {
                 draw_window_frame(i);
@@ -199,13 +218,10 @@ void _start(void) {
             }
         }
 
-        // Draw taskbar (on top)
         draw_taskbar();
-
         yield();
     }
 
-    // Cleanup
     ugfx_exit();
     exit(0);
 }

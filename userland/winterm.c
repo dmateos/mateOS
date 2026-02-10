@@ -4,16 +4,16 @@
 #include "ugfx.h"
 #include "syscalls.h"
 
-#define W 148
-#define H 78
+#define W 500
+#define H 350
 
 // Text grid: 8x8 font with margins
-#define MARGIN_X 2
-#define MARGIN_Y 2
+#define MARGIN_X 4
+#define MARGIN_Y 4
 #define CHAR_W 8
-#define CHAR_H 9  // 8px + 1px line spacing
-#define TERM_COLS ((W - MARGIN_X * 2) / CHAR_W)   // 18
-#define TERM_ROWS ((H - MARGIN_Y * 2) / CHAR_H)   // 8
+#define CHAR_H 10  // 8px + 2px line spacing
+#define TERM_COLS ((W - MARGIN_X * 2) / CHAR_W)   // 61
+#define TERM_ROWS ((H - MARGIN_Y * 2) / CHAR_H)   // 34
 
 static unsigned char pixbuf[W * H];
 static char screen[TERM_ROWS][TERM_COLS + 1];  // +1 for safety
@@ -38,13 +38,11 @@ static int my_strncmp(const char *a, const char *b, int n) {
 // ---- Terminal rendering ----
 
 static void term_scroll(void) {
-    // Shift all rows up by one
     for (int r = 0; r < TERM_ROWS - 1; r++) {
         for (int c = 0; c < TERM_COLS; c++) {
             screen[r][c] = screen[r + 1][c];
         }
     }
-    // Clear last row
     for (int c = 0; c < TERM_COLS; c++) {
         screen[TERM_ROWS - 1][c] = ' ';
     }
@@ -136,7 +134,7 @@ static void term_redraw(void) {
 static unsigned char term_waitkey(void) {
     unsigned char k;
     while (!(k = (unsigned char)win_getkey(wid))) {
-        term_redraw();  // Keep updating display while waiting
+        term_redraw();
         yield();
     }
     return k;
@@ -174,18 +172,22 @@ static int readline(char *buf, int max) {
 // ---- Shell builtins ----
 
 static void cmd_help(void) {
-    term_print("Commands:\n");
-    term_print(" help  ls  echo\n");
-    term_print(" clear exit\n");
-    term_print(" tasks shutdown\n");
-    term_print("Run: <name>.elf\n");
+    term_print("Built-in commands:\n");
+    term_print("  help     - Show this help\n");
+    term_print("  ls       - List files in ramfs\n");
+    term_print("  echo     - Print arguments\n");
+    term_print("  clear    - Clear screen\n");
+    term_print("  tasks    - Show PID\n");
+    term_print("  shutdown - Power off\n");
+    term_print("  exit     - Exit terminal\n");
+    term_print("Run any file by name (e.g. hello.elf)\n");
 }
 
 static void cmd_ls(void) {
     char name[32];
     unsigned int i = 0;
     while (readdir(i, name, sizeof(name)) > 0) {
-        term_print(" ");
+        term_print("  ");
         term_print(name);
         term_print("\n");
         i++;
@@ -225,10 +227,11 @@ void _start(void) {
         exit(1);
     }
 
-    term_print("mateOS term\n");
+    term_print("mateOS terminal\n");
+    term_print("Type 'help' for commands.\n\n");
     term_redraw();
 
-    char line[64];
+    char line[128];
 
     while (1) {
         term_print("$ ");
@@ -258,20 +261,36 @@ void _start(void) {
             term_redraw();
             shutdown();
         } else if (my_strcmp(line, "tasks") == 0) {
-            // taskinfo prints to VGA console, not window
-            // Just show our PID
-            term_print("PID: ");
-            term_print_num(getpid());
-            term_print("\n");
+            taskinfo_entry_t tlist[16];
+            int count = tasklist(tlist, 16);
+            term_print("PID  State    Name\n");
+            term_print("---  -------  ----\n");
+            for (int i = 0; i < count; i++) {
+                term_print_num((int)tlist[i].id);
+                term_print("    ");
+                switch (tlist[i].state) {
+                    case 0: term_print("ready  "); break;
+                    case 1: term_print("run    "); break;
+                    case 2: term_print("block  "); break;
+                    default: term_print("???    "); break;
+                }
+                term_print("  ");
+                term_print(tlist[i].name);
+                term_print("\n");
+            }
         } else {
-            // Try to run as program
             int child = spawn(line);
             if (child >= 0) {
                 term_print("[run ");
                 term_print(line);
                 term_print("]\n");
                 term_redraw();
-                int code = wait(child);
+                // Non-blocking wait: keep rendering while child runs
+                int code;
+                while ((code = wait_nb(child)) == -1) {
+                    term_redraw();
+                    yield();
+                }
                 if (code != 0) {
                     term_print("[exit ");
                     term_print_num(code);
@@ -280,7 +299,7 @@ void _start(void) {
                     term_print("[done]\n");
                 }
             } else {
-                term_print("? ");
+                term_print("Unknown: ");
                 term_print(line);
                 term_print("\n");
             }
