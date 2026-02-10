@@ -38,6 +38,10 @@ typedef struct {
 // Initialize syscall handler (registers int 0x80)
 void syscall_init(void);
 
+// Load ELF from ramfs into a page directory. Returns entry point, or 0 on error.
+struct page_directory;
+uint32_t load_elf_into(struct page_directory *page_dir, const char *filename);
+
 // Syscall handler called from assembly
 // Arguments passed in registers: eax=syscall#, ebx=arg1, ecx=arg2, edx=arg3
 // Returns result in eax

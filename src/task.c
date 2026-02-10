@@ -1,5 +1,5 @@
 #include "task.h"
-#include "syscall.h"
+#include "syscall.h"  // for load_elf_into
 #include "lib.h"
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/tss.h"
@@ -51,7 +51,6 @@ void task_init(void) {
   idle->kernel_stack = NULL;
   idle->kernel_stack_top = 0;
   idle->page_dir = NULL;
-  idle->pending_exec[0] = '\0';
 
   current_task = idle;
   task_list_head = idle;
@@ -131,7 +130,6 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->kernel_stack = NULL;
   task->kernel_stack_top = 0;
   task->page_dir = NULL;
-  task->pending_exec[0] = '\0';
 
   // Add to circular task list
   if (task_list_head == NULL) {
@@ -148,8 +146,11 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   return task;
 }
 
-// Create a user-mode task with its own address space
-task_t *task_create_user(const char *name, void (*entry)(void)) {
+// Create a user-mode task by loading an ELF from ramfs.
+// The ELF is loaded entirely in kernel mode — the task starts directly
+// at the ELF entry point with no kernel trampoline. No kernel pages are
+// marked user-accessible.
+task_t *task_create_user_elf(const char *filename) {
   // Find free task slot
   task_t *task = NULL;
   for (int i = 1; i < MAX_TASKS; i++) {
@@ -176,6 +177,13 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
     return NULL;
   }
 
+  // Load ELF into the new address space (allocates code + stack pages)
+  uint32_t elf_entry = load_elf_into(page_dir, filename);
+  if (!elf_entry) {
+    paging_destroy_address_space(page_dir);
+    return NULL;
+  }
+
   // Allocate kernel stack (for interrupts/syscalls when in user mode)
   uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
   if (!kernel_stack) {
@@ -184,67 +192,34 @@ task_t *task_create_user(const char *name, void (*entry)(void)) {
     return NULL;
   }
 
-  // Allocate user stack from PMM and map into process address space
-  uint32_t user_stack_phys = pmm_alloc_frame();
-  if (!user_stack_phys) {
-    printf("Error: Failed to allocate user stack frame\n");
-    kfree(kernel_stack);
-    paging_destroy_address_space(page_dir);
-    return NULL;
-  }
-
-  // Map user stack at virtual 0x7F0000 in the process's address space
-  // Stack grows down, so ESP will start at 0x7F1000
-  uint32_t user_stack_virt = 0x7F0000;
-  paging_map_page(page_dir, user_stack_virt, user_stack_phys,
-                  PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
-
-  // Mark entry point pages as user-accessible in the process's page table
-  // The entry is a kernel-space trampoline (e.g. spawn_entry) that will
-  // call sys_exec to load the real ELF. Mark those pages in the per-process
-  // page table 1 copy as user-accessible.
-  uint32_t entry_addr = (uint32_t)entry;
-  uint32_t entry_page = entry_addr & ~0xFFF;
-  for (uint32_t i = 0; i < 4; i++) {
-    // Set user bit on the per-process page table for these pages
-    uint32_t addr = entry_page + i * 0x1000;
-    uint32_t dir_idx = addr >> 22;
-    uint32_t tbl_idx = (addr >> 12) & 0x3FF;
-    if (page_dir->tables[dir_idx] & 0x1) {
-      page_table_t *pt = (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
-      pt->pages[tbl_idx] |= PAGE_USER;
-      page_dir->tables[dir_idx] |= PAGE_USER;
-    }
-  }
-
   // Initialize task
   task->id = next_task_id++;
-  size_t name_len = strlen(name);
+  size_t name_len = strlen(filename);
   if (name_len >= TASK_NAME_MAX) {
     name_len = TASK_NAME_MAX - 1;
   }
-  memcpy(task->name, name, name_len);
+  memcpy(task->name, filename, name_len);
   task->name[name_len] = '\0';
   task->state = TASK_READY;
-  task->stack = (uint32_t *)user_stack_phys;  // Track physical addr for cleanup
-  task->entry = entry;
+  task->stack = NULL;
+  task->entry = NULL;
   task->page_dir = page_dir;
-  task->pending_exec[0] = '\0';
 
   // User mode task
   task->is_kernel = 0;
   task->kernel_stack = kernel_stack;
   task->kernel_stack_top = (uint32_t)kernel_stack + TASK_STACK_SIZE;
 
-  // Set up initial kernel stack for first context switch
+  // Set up initial kernel stack for first context switch.
+  // The iret frame points directly at the ELF entry point in user mode.
   uint32_t *sp = (uint32_t *)task->kernel_stack_top;
 
   // User mode iret frame
-  *(--sp) = USER_DATA_SEL;                             // SS
-  *(--sp) = user_stack_virt + 0x1000;                  // ESP (top of user stack page)
-  *(--sp) = 0x202;                                      // EFLAGS (IF=1)
-  *(--sp) = USER_CODE_SEL;                             // CS
-  *(--sp) = (uint32_t)entry;                           // EIP
+  *(--sp) = USER_DATA_SEL;          // SS
+  *(--sp) = 0x7F0000 + 0x1000;     // ESP (top of user stack page)
+  *(--sp) = 0x202;                  // EFLAGS (IF=1)
+  *(--sp) = USER_CODE_SEL;          // CS
+  *(--sp) = elf_entry;              // EIP - directly at ELF entry point
 
   // Pushed by pusha
   *(--sp) = 0;  // EAX
@@ -370,7 +345,7 @@ void task_exit_with_code(int code) {
 
     // NOTE: Do NOT free kernel_stack here — we are currently executing on it!
     // The kernel stack will be freed when the task slot is reused in
-    // task_create_user(). For now, just mark the user stack as freed
+    // task_create_user_elf(). For now, just mark the user stack as freed
     // (it was already freed by paging_destroy_address_space).
     current_task->stack = NULL;
   }

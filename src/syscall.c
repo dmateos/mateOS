@@ -72,33 +72,19 @@ static void sys_do_yield(void) {
   task_yield();
 }
 
-// Execute ELF binary from ramfs - replaces current process
-// Uses per-process page tables: allocates physical frames from PMM,
-// maps them at the ELF's virtual addresses in the task's page directory,
-// and copies data via identity mapping.
-static int sys_do_exec(const char *filename, iret_frame_t *frame) {
-  if (!filename) {
-    printf("[syscall] exec: NULL filename\n");
-    return -1;
-  }
-
-  // Look up file in ramfs
+// Load ELF segments into a page directory. Returns entry point, or 0 on error.
+// Used by sys_do_exec, task_create_user_elf, and kernel shell launch.
+uint32_t load_elf_into(struct page_directory *page_dir, const char *filename) {
   ramfs_file_t *file = ramfs_lookup(filename);
   if (!file) {
     printf("[exec] file not found: %s\n", filename);
-    return -1;
+    return 0;
   }
 
-  // Parse ELF header
   elf32_ehdr_t *elf = (elf32_ehdr_t *)file->data;
   if (!elf_validate(elf)) {
     printf("[exec] invalid ELF: %s\n", filename);
-    return -1;
-  }
-
-  task_t *current = task_current();
-  if (!current || current->is_kernel || !current->page_dir) {
-    return -1;
+    return 0;
   }
 
   // Load program segments into per-process physical frames
@@ -114,23 +100,18 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
 
     uint8_t *src = (uint8_t *)elf + offset;
 
-    // Process page by page
     uint32_t seg_start = vaddr & ~0xFFF;
     uint32_t seg_end = (vaddr + memsz + 0xFFF) & ~0xFFF;
 
     for (uint32_t page_vaddr = seg_start; page_vaddr < seg_end; page_vaddr += 0x1000) {
-      // Allocate a physical frame
       uint32_t phys = pmm_alloc_frame();
       if (!phys) {
         printf("[exec] out of physical frames\n");
-        return -1;
+        return 0;
       }
 
-      // Zero the frame (via identity mapping - phys < 32MB)
       memset((void *)phys, 0, 0x1000);
 
-      // Copy ELF data that falls within this page
-      // Calculate overlap between [vaddr, vaddr+filesz) and [page_vaddr, page_vaddr+0x1000)
       uint32_t copy_start = (page_vaddr > vaddr) ? page_vaddr : vaddr;
       uint32_t copy_end = (page_vaddr + 0x1000 < vaddr + filesz)
                             ? page_vaddr + 0x1000 : vaddr + filesz;
@@ -141,33 +122,45 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
         memcpy((void *)(phys + dst_offset), src + src_offset, copy_end - copy_start);
       }
 
-      // Map physical frame at virtual address in process page directory
-      paging_map_page(current->page_dir, page_vaddr, phys,
+      paging_map_page(page_dir, page_vaddr, phys,
                       PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
     }
   }
 
-  // Allocate a new user stack frame from PMM
+  // Allocate user stack
   uint32_t stack_phys = pmm_alloc_frame();
   if (!stack_phys) {
     printf("[exec] failed to allocate stack frame\n");
-    return -1;
+    return 0;
   }
   memset((void *)stack_phys, 0, 0x1000);
 
-  // Map user stack at virtual 0x7F0000
-  uint32_t stack_virt = 0x7F0000;
-  paging_map_page(current->page_dir, stack_virt, stack_phys,
+  paging_map_page(page_dir, 0x7F0000, stack_phys,
                   PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
 
-  // Flush TLB by reloading CR3 with our page directory
+  return elf->e_entry;
+}
+
+// Execute ELF binary from ramfs - replaces current process
+static int sys_do_exec(const char *filename, iret_frame_t *frame) {
+  if (!filename) return -1;
+
+  task_t *current = task_current();
+  if (!current || current->is_kernel || !current->page_dir) {
+    return -1;
+  }
+
+  uint32_t entry = load_elf_into(current->page_dir, filename);
+  if (!entry) return -1;
+
+  // Flush TLB
   paging_switch(current->page_dir);
 
   // Modify the iret frame to jump to ELF entry with new stack
-  frame->eip    = elf->e_entry;
+  frame->eip    = entry;
   frame->cs     = 0x1B;           // User code segment (RPL=3)
   frame->eflags = 0x202;          // IF=1, reserved bit 1
-  frame->esp    = stack_virt + 0x1000;  // Top of stack page
+  frame->esp    = 0x7F0000 + 0x1000;  // Top of stack page
   frame->ss     = 0x23;           // User data segment (RPL=3)
 
   return 0;
@@ -269,35 +262,13 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
   return (uint32_t)keyboard_buffer_pop();
 }
 
-// Spawn: create a child process from an ELF in ramfs
-// Each child gets its own address space, so no code backup needed.
-static void spawn_entry(void) {
-  task_t *me = task_current();
-  sys_exec(me->pending_exec);
-  sys_exit(127);  // exec failed
-}
-
+// Spawn: create a child process from an ELF in ramfs.
+// ELF is loaded entirely in kernel mode — no user-mode trampoline needed.
 static int sys_do_spawn(const char *filename) {
   if (!filename) return -1;
 
-  // Check file exists first
-  ramfs_file_t *file = ramfs_lookup(filename);
-  if (!file) return -1;
-
-  task_t *t = task_create_user(filename, spawn_entry);
+  task_t *t = task_create_user_elf(filename);
   if (!t) return -1;
-
-  // Copy filename into child's pending_exec (race-safe per-task buffer)
-  size_t i;
-  for (i = 0; i < sizeof(t->pending_exec) - 1 && filename[i]; i++) {
-    t->pending_exec[i] = filename[i];
-  }
-  t->pending_exec[i] = '\0';
-
-  // Mark pending_exec buffer as user-accessible in child's address space
-  // The buffer is in kernel BSS, which is in page table 0 (shared)
-  uint32_t buf_addr = (uint32_t)t->pending_exec;
-  paging_set_user(buf_addr & ~0xFFF);
 
   if (!task_is_enabled()) {
     task_enable();

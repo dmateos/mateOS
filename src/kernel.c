@@ -78,13 +78,6 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
   }
 }
 
-// Shell launcher: trampoline that exec's shell.elf
-static char shell_filename[] = "shell.elf";
-
-static void shell_entry(void) {
-  sys_exec(shell_filename);
-  sys_exit(127);  // exec failed
-}
 
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
@@ -135,18 +128,10 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   keyboard_buffer_init();
   keyboard_buffer_enable(1);
 
-  // Mark shell_filename page as user-accessible
-  paging_set_user((uint32_t)shell_filename & ~0xFFF);
-
-  // Auto-launch shell.elf
-  ramfs_file_t *shell_file = ramfs_lookup("shell.elf");
-  if (shell_file) {
-    task_t *t = task_create_user("shell", shell_entry);
-    if (t) {
-      task_enable();
-    } else {
-      printf("ERROR: Failed to create shell task\n");
-    }
+  // Auto-launch shell.elf — loaded directly, no kernel trampoline
+  task_t *shell_task = task_create_user_elf("shell.elf");
+  if (shell_task) {
+    task_enable();
   } else {
     printf("WARNING: shell.elf not found in ramfs\n");
     printf("No shell available. System halted.\n");

@@ -77,7 +77,6 @@ typedef struct task {
 
   // Per-process address space
   page_directory_t *page_dir;     // Per-process page directory (NULL for kernel tasks)
-  char pending_exec[64];          // Filename for spawn trampoline
 } task_t;
 
 // Maximum number of tasks
@@ -89,8 +88,8 @@ void task_init(void);
 // Create a new kernel-mode task
 task_t *task_create(const char *name, void (*entry)(void));
 
-// Create a new user-mode task
-task_t *task_create_user(const char *name, void (*entry)(void));
+// Create a new user-mode task by loading an ELF from ramfs
+task_t *task_create_user_elf(const char *filename);
 
 // Get current running task
 task_t *task_current(void);
