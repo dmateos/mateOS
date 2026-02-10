@@ -10,4 +10,8 @@ void term_putchar(char c);
 void terminal_write(const char *data, size_t size);
 void term_writestr(const char *data);
 
+// Scrollback navigation (Page Up / Page Down)
+void terminal_scroll_up(void);
+void terminal_scroll_down(void);
+
 #endif

@@ -15,7 +15,9 @@
 #include "task.h"
 #include "syscall.h"
 #include "pmm.h"
+#include "pci.h"
 #include "window.h"
+#include "arch/i686/legacytty.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -26,12 +28,34 @@ typedef struct {
   void (*register_interrupt_handler)(uint8_t, void (*h)(uint32_t, uint32_t));
 } kernel_interrupt_t;
 
-extern void serial_writestr(const char *s);
+// Track PS/2 extended scancode prefix (0xE0)
+static int kb_extended = 0;
 
 void test_interrupt_handler(uint32_t number __attribute__((unused)),
                             uint32_t error_code __attribute__((unused))) {
-  serial_writestr("[IRQ1]\n");
   uint8_t scancode = inb(IO_KB_DATA);
+
+  // Handle extended scancode prefix
+  if (scancode == 0xE0) {
+    kb_extended = 1;
+    return;
+  }
+
+  if (kb_extended) {
+    kb_extended = 0;
+    // Only handle key press, not release (0x80 bit)
+    if (!(scancode & 0x80)) {
+      if (scancode == 0x49) {       // Page Up
+        terminal_scroll_up();
+        return;
+      } else if (scancode == 0x51) { // Page Down
+        terminal_scroll_down();
+        return;
+      }
+    }
+    // Other extended keys: ignore
+    return;
+  }
 
   // 0x80 bit indicates key release, so ignore it
   if (scancode & 0x80) {
@@ -91,6 +115,9 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize physical memory manager
   pmm_init();
+
+  // Scan PCI bus
+  pci_init();
 
   // Initialize task system
   task_init();

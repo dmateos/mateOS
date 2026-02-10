@@ -323,26 +323,6 @@ static int sys_do_wait(uint32_t task_id) {
 
   current->waiting_for = 0;
 
-  // Debug: check PIC and keyboard controller state after wait
-  {
-    uint8_t mask = inb(0x21);
-    outb(0x20, 0x0B);
-    uint8_t isr = inb(0x20);
-    uint8_t kb_status = inb(0x64);  // Keyboard controller status
-    printf("[wait] PIC mask=0x%x ISR=0x%x KB_status=0x%x\n", mask, isr, kb_status);
-    // If keyboard output buffer is full (bit 0), drain it
-    if (kb_status & 0x01) {
-      uint8_t sc = inb(0x60);
-      printf("[wait] KB had pending scancode=0x%x, drained\n", sc);
-    }
-    if (mask & 0x02) {
-      outb(0x21, mask & ~0x02);
-    }
-    if (isr) {
-      outb(0x20, 0x20);
-    }
-  }
-
   return child->exit_code;
 }
 
@@ -384,21 +364,6 @@ static int sys_do_getpid(void) {
 // frame_ptr points to the iret frame on the kernel stack
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
                          uint32_t edx, void *frame) {
-  // Debug: trace all syscalls
-  {
-    static int trace_enabled = 0;
-    extern void serial_writestr(const char *s);
-    if (eax == SYS_WAIT && !trace_enabled) {
-      trace_enabled = 1;
-    }
-    if (trace_enabled) {
-      static const char hex[] = "0123456789abcdef";
-      char buf[] = "[sc:XX]\n";
-      buf[4] = hex[(eax >> 4) & 0xF];
-      buf[5] = hex[eax & 0xF];
-      serial_writestr(buf);
-    }
-  }
   switch (eax) {
     case SYS_WRITE:
       return (uint32_t)sys_do_write((int)ebx, (const char *)ecx, (size_t)edx);

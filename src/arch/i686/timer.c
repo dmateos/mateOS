@@ -19,30 +19,12 @@ void timer_handler(uint32_t irq __attribute__((unused)),
 
 // Timer handler with context switch support
 // Called from assembly, returns new ESP
-// is_hw: 1 if called from a real hardware IRQ, 0 if from software int $0x20
-static uint32_t sw_yield_count = 0;
-
+// is_hw: 1 if called from a real hardware IRQ, 0 if from software int $0x81
 uint32_t *timer_handler_switch(uint32_t *esp, uint32_t is_hw) {
   if (is_hw) {
     system_ticks++;
     // Only send EOI for real hardware interrupts
     outb(MASTER_PIC_COMMAND, 0x20);
-  } else {
-    sw_yield_count++;
-  }
-
-  // Debug: print every call to serial
-  {
-    static uint32_t hw_count = 0;
-    static uint32_t sw_count = 0;
-    if (is_hw) hw_count++;
-    else sw_count++;
-    // Print every 50th call
-    if ((hw_count + sw_count) % 50 == 0) {
-      extern void serial_writestr(const char *s);
-      if (is_hw) serial_writestr("[H]\n");
-      else serial_writestr("[S]\n");
-    }
   }
 
   // Call scheduler if multitasking is enabled
