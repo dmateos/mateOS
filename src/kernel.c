@@ -18,6 +18,7 @@
 #include "pci.h"
 #include "window.h"
 #include "arch/i686/legacytty.h"
+#include "net.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -111,6 +112,9 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Scan PCI bus
   pci_init();
+
+  // Initialize network (RTL8139 + minimal ARP/ICMP)
+  net_init();
 
   // Initialize task system
   task_init();

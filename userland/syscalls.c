@@ -231,3 +231,14 @@ int win_list(win_info_t *out, int max_count) {
     );
     return ret;
 }
+
+int net_ping(unsigned int ip_be, unsigned int timeout_ms) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_PING), "b"(ip_be), "c"(timeout_ms)
+        : "memory"
+    );
+    return ret;
+}

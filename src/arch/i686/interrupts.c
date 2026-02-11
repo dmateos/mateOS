@@ -42,6 +42,22 @@ static void pic_acknowledge(int irq) {
   outb(MASTER_PIC_COMMAND, 0x20);
 }
 
+void pic_unmask_irq(uint8_t irq) {
+  if (irq < 8) {
+    uint8_t mask = inb(MASTER_PIC_DATA);
+    mask &= (uint8_t)~(1 << irq);
+    outb(MASTER_PIC_DATA, mask);
+  } else {
+    uint8_t mask = inb(SLAVE_PIC_DATA);
+    mask &= (uint8_t)~(1 << (irq - 8));
+    outb(SLAVE_PIC_DATA, mask);
+    // Ensure cascade IRQ2 on master is unmasked
+    uint8_t master_mask = inb(MASTER_PIC_DATA);
+    master_mask &= (uint8_t)~(1 << 2);
+    outb(MASTER_PIC_DATA, master_mask);
+  }
+}
+
 
 static void write_idt_entry(idt_entry_t *idt_entries, uint8_t num,
                             uint32_t base, uint16_t selector, uint8_t flags) {
@@ -200,6 +216,8 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
   case 0x21:
     break;
   case 0x20:
+    break;
+  case 0x2B: // IRQ11 (e.g., RTL8139)
     break;
   default:
     printf("Unknown IRQ 0x%x 0x%x\n", number, number2);

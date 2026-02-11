@@ -90,6 +90,7 @@ static void cmd_help(void) {
     print("  ls      - List files in ramfs\n");
     print("  tasks   - Show running tasks\n");
     print("  echo    - Print arguments\n");
+    print("  ping    - Ping an IP (e.g. ping 10.0.2.2)\n");
     print("  clear   - Clear screen\n");
     print("  shutdown- Power off\n");
     print("  exit    - Exit shell\n");
@@ -124,6 +125,53 @@ static void cmd_echo(const char *line) {
 static void cmd_clear(void) {
     for (int i = 0; i < 25; i++) {
         print("\n");
+    }
+}
+
+static int parse_ip4(const char *s, unsigned int *out_be) {
+    unsigned int a = 0, b = 0, c = 0, d = 0;
+    int part = 0;
+    unsigned int val = 0;
+    for (int i = 0; ; i++) {
+        char ch = s[i];
+        if (ch >= '0' && ch <= '9') {
+            val = val * 10 + (unsigned int)(ch - '0');
+            if (val > 255) return -1;
+        } else if (ch == '.' || ch == '\0' || ch == ' ') {
+            if (part == 0) a = val;
+            else if (part == 1) b = val;
+            else if (part == 2) c = val;
+            else if (part == 3) d = val;
+            else return -1;
+            part++;
+            val = 0;
+            if (ch == '\0' || ch == ' ') break;
+        } else {
+            return -1;
+        }
+    }
+    if (part != 4) return -1;
+    *out_be = (a << 24) | (b << 16) | (c << 8) | d;
+    return 0;
+}
+
+static void cmd_ping(const char *line) {
+    const char *arg = line + 4;
+    while (*arg == ' ') arg++;
+    if (*arg == '\0') {
+        print("usage: ping <ip>\n");
+        return;
+    }
+    unsigned int ip_be;
+    if (parse_ip4(arg, &ip_be) != 0) {
+        print("ping: invalid ip\n");
+        return;
+    }
+    int r = net_ping(ip_be, 1000);
+    if (r == 0) {
+        print("ping ok\n");
+    } else {
+        print("ping timeout\n");
     }
 }
 
@@ -170,6 +218,8 @@ void _start(void) {
             }
         } else if (strcmp(line, "clear") == 0) {
             cmd_clear();
+        } else if (strncmp(line, "ping ", 5) == 0 || strcmp(line, "ping") == 0) {
+            cmd_ping(line);
         } else if (strcmp(line, "shutdown") == 0) {
             print("Powering off...\n");
             shutdown();

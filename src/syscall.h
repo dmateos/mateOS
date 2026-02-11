@@ -27,6 +27,7 @@
 #define SYS_GFX_INFO   21  // gfx_info() -> (width<<16)|height
 #define SYS_TASKLIST   22  // tasklist(buf, max) -> count of tasks filled
 #define SYS_WAIT_NB    23  // wait_nb(task_id) -> exit code, or -1 if still running
+#define SYS_PING       24  // ping(ip_be, timeout_ms) -> 0 ok, -1 timeout
 
 // Task info returned by SYS_TASKLIST
 typedef struct {
