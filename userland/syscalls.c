@@ -262,3 +262,14 @@ int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be) {
     );
     return ret;
 }
+
+int sleep_ms(unsigned int ms) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_SLEEPMS), "b"(ms)
+        : "memory"
+    );
+    return ret;
+}

@@ -30,6 +30,7 @@ typedef struct {
     int x, y;       // Content area position on screen
     int wid;        // Kernel window ID (-1 if empty)
     int pid;        // Child process PID
+    int w, h;       // Window content size
     char title[32];
 } wm_slot_t;
 
@@ -45,6 +46,28 @@ static void wm_strcpy(char *dst, const char *src, int max) {
     for (i = 0; i < max - 1 && src[i]; i++)
         dst[i] = src[i];
     dst[i] = '\0';
+}
+
+static int find_slot_by_wid(int wid) {
+    for (int s = 0; s < WM_MAX_SLOTS; s++) {
+        if (slots[s].wid == wid) return s;
+    }
+    return -1;
+}
+
+static int find_free_slot(void) {
+    for (int s = 0; s < WM_MAX_SLOTS; s++) {
+        if (slots[s].wid < 0) return s;
+    }
+    return -1;
+}
+
+static int next_active_slot(int start) {
+    for (int i = 1; i <= WM_MAX_SLOTS; i++) {
+        int s = (start + i) % WM_MAX_SLOTS;
+        if (slots[s].wid >= 0) return s;
+    }
+    return -1;
 }
 
 static void compute_layout(void) {
@@ -89,17 +112,21 @@ static void draw_taskbar(void) {
 // Draw a window frame (border + title bar)
 static void draw_window_frame(int slot) {
     int is_focused = (slot == focus);
+    int win_w = slots[slot].w > 0 ? slots[slot].w : content_w;
+    int win_h = slots[slot].h > 0 ? slots[slot].h : content_h;
+    if (win_w > content_w) win_w = content_w;
+    if (win_h > content_h) win_h = content_h;
     int fx = slots[slot].x - BORDER;
     int fy = slots[slot].y - TITLE_BAR_H - BORDER;
-    int fw = content_w + 2 * BORDER;
-    int fh = content_h + TITLE_BAR_H + 2 * BORDER;
+    int fw = win_w + 2 * BORDER;
+    int fh = win_h + TITLE_BAR_H + 2 * BORDER;
 
     // Border
     ugfx_rect_outline(fx, fy, fw, fh,
                       is_focused ? COL_BORDER_ACT : COL_BORDER_INACT);
 
     // Title bar background
-    ugfx_rect(fx + BORDER, fy + BORDER, content_w, TITLE_BAR_H,
+    ugfx_rect(fx + BORDER, fy + BORDER, win_w, TITLE_BAR_H,
               is_focused ? COL_TITLE_ACT : COL_TITLE_INACT);
 
     // Title text
@@ -113,7 +140,12 @@ static void draw_window_frame(int slot) {
 static void composite_window(int slot) {
     if (slots[slot].wid < 0) return;
 
-    int buf_size = content_w * content_h;
+    int win_w = slots[slot].w > 0 ? slots[slot].w : content_w;
+    int win_h = slots[slot].h > 0 ? slots[slot].h : content_h;
+    if (win_w > content_w) win_w = content_w;
+    if (win_h > content_h) win_h = content_h;
+
+    int buf_size = win_w * win_h;
     if (buf_size > (int)sizeof(read_buf)) buf_size = (int)sizeof(read_buf);
 
     int bytes = win_read(slots[slot].wid, read_buf, (unsigned int)buf_size);
@@ -122,10 +154,10 @@ static void composite_window(int slot) {
     int sx = slots[slot].x;
     int sy = slots[slot].y;
 
-    for (int row = 0; row < content_h; row++) {
-        for (int col = 0; col < content_w; col++) {
+    for (int row = 0; row < win_h; row++) {
+        for (int col = 0; col < win_w; col++) {
             ugfx_pixel(sx + col, sy + row,
-                       read_buf[row * content_w + col]);
+                       read_buf[row * win_w + col]);
         }
     }
 }
@@ -135,13 +167,71 @@ static void discover_windows(void) {
     win_info_t info[8];
     int wcount = win_list(info, 8);
 
-    for (int i = 0; i < wcount; i++) {
-        for (int s = 0; s < num_slots; s++) {
-            if ((int)info[i].owner_pid == slots[s].pid && slots[s].wid < 0) {
-                slots[s].wid = info[i].window_id;
-                wm_strcpy(slots[s].title, info[i].title, 32);
+    // Remove slots whose windows no longer exist
+    for (int s = 0; s < WM_MAX_SLOTS; s++) {
+        if (slots[s].wid < 0) continue;
+        int alive = 0;
+        for (int i = 0; i < wcount; i++) {
+            if (info[i].window_id == slots[s].wid) {
+                alive = 1;
+                break;
             }
         }
+        if (!alive) {
+            slots[s].wid = -1;
+            slots[s].pid = -1;
+            slots[s].w = 0;
+            slots[s].h = 0;
+            slots[s].title[0] = '\0';
+        }
+    }
+
+    // Add/update current windows
+    for (int i = 0; i < wcount; i++) {
+        int s = find_slot_by_wid(info[i].window_id);
+        if (s >= 0) {
+            wm_strcpy(slots[s].title, info[i].title, 32);
+            slots[s].w = info[i].w;
+            slots[s].h = info[i].h;
+            continue;
+        }
+
+        // Prefer slot pre-reserved for this pid
+        for (int k = 0; k < WM_MAX_SLOTS; k++) {
+            if (slots[k].pid == (int)info[i].owner_pid && slots[k].wid < 0) {
+                slots[k].wid = info[i].window_id;
+                wm_strcpy(slots[k].title, info[i].title, 32);
+                slots[k].w = info[i].w;
+                slots[k].h = info[i].h;
+                s = k;
+                break;
+            }
+        }
+
+        // Otherwise adopt into any free slot
+        if (s < 0) {
+            int free = find_free_slot();
+            if (free >= 0) {
+                slots[free].pid = (int)info[i].owner_pid;
+                slots[free].wid = info[i].window_id;
+                wm_strcpy(slots[free].title, info[i].title, 32);
+                slots[free].w = info[i].w;
+                slots[free].h = info[i].h;
+            }
+        }
+    }
+
+    // Recompute number of active slots
+    num_slots = 0;
+    for (int s = 0; s < WM_MAX_SLOTS; s++) {
+        if (slots[s].wid >= 0) num_slots++;
+    }
+
+    if (num_slots == 0) {
+        focus = 0;
+    } else if (slots[focus].wid < 0) {
+        int nf = next_active_slot(focus);
+        if (nf >= 0) focus = nf;
     }
 }
 
@@ -162,6 +252,8 @@ void _start(void) {
     for (int i = 0; i < WM_MAX_SLOTS; i++) {
         slots[i].wid = -1;
         slots[i].pid = -1;
+        slots[i].w = 0;
+        slots[i].h = 0;
         slots[i].title[0] = '\0';
     }
 
@@ -197,7 +289,8 @@ void _start(void) {
                 running = 0;
             } else if (key == '\t') {
                 if (num_slots > 0) {
-                    focus = (focus + 1) % num_slots;
+                    int nf = next_active_slot(focus);
+                    if (nf >= 0) focus = nf;
                 }
             } else {
                 if (num_slots > 0 && slots[focus].wid >= 0) {
@@ -211,7 +304,7 @@ void _start(void) {
             discover_windows();
         }
 
-        for (int i = 0; i < num_slots; i++) {
+        for (int i = 0; i < WM_MAX_SLOTS; i++) {
             if (slots[i].wid >= 0) {
                 draw_window_frame(i);
                 composite_window(i);

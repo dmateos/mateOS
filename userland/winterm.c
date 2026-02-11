@@ -3,6 +3,7 @@
 
 #include "ugfx.h"
 #include "syscalls.h"
+#include "cmd_shared.h"
 
 #define W 500
 #define H 350
@@ -19,21 +20,6 @@ static unsigned char pixbuf[W * H];
 static char screen[TERM_ROWS][TERM_COLS + 1];  // +1 for safety
 static int cur_row = 0, cur_col = 0;
 static int wid = -1;
-
-// ---- String helpers ----
-
-static int my_strcmp(const char *a, const char *b) {
-    while (*a && *a == *b) { a++; b++; }
-    return (unsigned char)*a - (unsigned char)*b;
-}
-
-static int my_strncmp(const char *a, const char *b, int n) {
-    for (int i = 0; i < n; i++) {
-        if (a[i] != b[i]) return (unsigned char)a[i] - (unsigned char)b[i];
-        if (a[i] == '\0') return 0;
-    }
-    return 0;
-}
 
 // ---- Terminal rendering ----
 
@@ -169,38 +155,6 @@ static int readline(char *buf, int max) {
     return pos;
 }
 
-// ---- Shell builtins ----
-
-static void cmd_help(void) {
-    term_print("Built-in commands:\n");
-    term_print("  help     - Show this help\n");
-    term_print("  ls       - List files in ramfs\n");
-    term_print("  echo     - Print arguments\n");
-    term_print("  clear    - Clear screen\n");
-    term_print("  tasks    - Show PID\n");
-    term_print("  shutdown - Power off\n");
-    term_print("  exit     - Exit terminal\n");
-    term_print("Run any file by name (e.g. hello.elf)\n");
-}
-
-static void cmd_ls(void) {
-    char name[32];
-    unsigned int i = 0;
-    while (readdir(i, name, sizeof(name)) > 0) {
-        term_print("  ");
-        term_print(name);
-        term_print("\n");
-        i++;
-    }
-}
-
-static void cmd_echo(const char *line) {
-    if (line[4] == ' ') {
-        term_print(line + 5);
-    }
-    term_print("\n");
-}
-
 static void cmd_clear(void) {
     for (int r = 0; r < TERM_ROWS; r++) {
         for (int c = 0; c < TERM_COLS; c++) {
@@ -232,6 +186,12 @@ void _start(void) {
     term_redraw();
 
     char line[128];
+    cmd_io_t io = {
+        .print = term_print,
+        .print_num = term_print_num,
+        .clear = cmd_clear,
+        .exit_help = "Exit terminal"
+    };
 
     while (1) {
         term_print("$ ");
@@ -240,69 +200,40 @@ void _start(void) {
 
         if (len == 0) continue;
 
-        if (my_strcmp(line, "help") == 0) {
-            cmd_help();
-        } else if (my_strcmp(line, "ls") == 0) {
-            cmd_ls();
-        } else if (my_strcmp(line, "exit") == 0) {
+        cmd_result_t builtin = cmd_try_builtin(line, &io);
+        if (builtin == CMD_HANDLED) {
+            term_redraw();
+            continue;
+        }
+        if (builtin == CMD_EXIT) {
             term_print("Bye!\n");
             term_redraw();
             break;
-        } else if (my_strcmp(line, "clear") == 0) {
-            cmd_clear();
-        } else if (my_strncmp(line, "echo ", 5) == 0 || my_strcmp(line, "echo") == 0) {
-            if (len > 4) {
-                cmd_echo(line);
-            } else {
-                term_print("\n");
-            }
-        } else if (my_strcmp(line, "shutdown") == 0) {
-            term_print("Shutting down..\n");
+        }
+
+        int child = spawn(line);
+        if (child >= 0) {
+            term_print("[run ");
+            term_print(line);
+            term_print("]\n");
             term_redraw();
-            shutdown();
-        } else if (my_strcmp(line, "tasks") == 0) {
-            taskinfo_entry_t tlist[16];
-            int count = tasklist(tlist, 16);
-            term_print("PID  State    Name\n");
-            term_print("---  -------  ----\n");
-            for (int i = 0; i < count; i++) {
-                term_print_num((int)tlist[i].id);
-                term_print("    ");
-                switch (tlist[i].state) {
-                    case 0: term_print("ready  "); break;
-                    case 1: term_print("run    "); break;
-                    case 2: term_print("block  "); break;
-                    default: term_print("???    "); break;
-                }
-                term_print("  ");
-                term_print(tlist[i].name);
-                term_print("\n");
+            // Non-blocking wait: keep rendering while child runs
+            int code;
+            while ((code = wait_nb(child)) == -1) {
+                term_redraw();
+                yield();
+            }
+            if (code != 0) {
+                term_print("[exit ");
+                term_print_num(code);
+                term_print("]\n");
+            } else {
+                term_print("[done]\n");
             }
         } else {
-            int child = spawn(line);
-            if (child >= 0) {
-                term_print("[run ");
-                term_print(line);
-                term_print("]\n");
-                term_redraw();
-                // Non-blocking wait: keep rendering while child runs
-                int code;
-                while ((code = wait_nb(child)) == -1) {
-                    term_redraw();
-                    yield();
-                }
-                if (code != 0) {
-                    term_print("[exit ");
-                    term_print_num(code);
-                    term_print("]\n");
-                } else {
-                    term_print("[done]\n");
-                }
-            } else {
-                term_print("Unknown: ");
-                term_print(line);
-                term_print("\n");
-            }
+            term_print("Unknown: ");
+            term_print(line);
+            term_print("\n");
         }
         term_redraw();
     }

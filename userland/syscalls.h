@@ -27,6 +27,7 @@
 #define SYS_PING       24
 #define SYS_NETCFG     25
 #define SYS_NETGET     26
+#define SYS_SLEEPMS    27
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -76,5 +77,6 @@ int win_list(win_info_t *out, int max_count);
 int net_ping(unsigned int ip_be, unsigned int timeout_ms);
 void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be);
 int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be);
+int sleep_ms(unsigned int ms);
 
 #endif

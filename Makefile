@@ -75,13 +75,31 @@ test32-net:
 	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
 		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
 
+test32-gfx-net:
+	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img \
+		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
+
 test32-net-tap:
 	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
+		-device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no -no-reboot
+
+test32-gfx-net-tap:
+	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img \
 		-device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no -no-reboot
 
 test32-vnc:
 	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
 	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img -no-reboot
+
+test32-vnc-net:
+	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
+	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img \
+		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
+
+test32-vnc-net-tap:
+	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
+	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img \
+		-device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no -no-reboot
 
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)

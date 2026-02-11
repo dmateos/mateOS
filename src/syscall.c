@@ -7,6 +7,7 @@
 #include "arch/i686/paging.h"
 #include "arch/i686/io.h"
 #include "arch/i686/vga.h"
+#include "arch/i686/timer.h"
 #include "liballoc/liballoc_1_1.h"
 #include "pmm.h"
 #include "window.h"
@@ -71,6 +72,17 @@ static void sys_do_exit(int code) {
 // Yield to scheduler
 static void sys_do_yield(void) {
   task_yield();
+}
+
+// Sleep current task for at least ms milliseconds.
+static int sys_do_sleepms(uint32_t ms) {
+  uint32_t start = get_tick_count();
+  uint32_t ticks = (ms + 9) / 10;  // 100Hz timer => 10ms ticks
+  if (ticks == 0) ticks = 1;
+  while ((get_tick_count() - start) < ticks) {
+    task_yield();
+  }
+  return 0;
 }
 
 // Load ELF segments into a page directory. Returns entry point, or 0 on error.
@@ -445,6 +457,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       *(uint32_t *)edx = gw_be;
       return 0;
     }
+
+    case SYS_SLEEPMS:
+      return (uint32_t)sys_do_sleepms(ebx);
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

@@ -30,6 +30,7 @@
 #define SYS_PING       24  // ping(ip_be, timeout_ms) -> 0 ok, -1 timeout
 #define SYS_NETCFG     25  // netcfg(ip_be, mask_be, gw_be)
 #define SYS_NETGET     26  // netget(out_ip, out_mask, out_gw) -> 0
+#define SYS_SLEEPMS    27  // sleepms(ms) -> 0
 
 // Task info returned by SYS_TASKLIST
 typedef struct {
