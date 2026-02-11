@@ -153,11 +153,16 @@ static void composite_window(int slot) {
 
     int sx = slots[slot].x;
     int sy = slots[slot].y;
+    int max_pixels = bytes;
+
+    // Clear current content area first to avoid stale pixels from short/partial reads.
+    ugfx_rect(sx, sy, win_w, win_h, 0);
 
     for (int row = 0; row < win_h; row++) {
         for (int col = 0; col < win_w; col++) {
-            ugfx_pixel(sx + col, sy + row,
-                       read_buf[row * win_w + col]);
+            int idx = row * win_w + col;
+            if (idx >= max_pixels) return;
+            ugfx_pixel(sx + col, sy + row, read_buf[idx]);
         }
     }
 }
