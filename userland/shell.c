@@ -91,6 +91,7 @@ static void cmd_help(void) {
     print("  tasks   - Show running tasks\n");
     print("  echo    - Print arguments\n");
     print("  ping    - Ping an IP (e.g. ping 10.0.2.2)\n");
+    print("  ifconfig- Set IP/mask/gw (e.g. ifconfig 10.69.0.69 255.255.255.0 10.69.0.1)\n");
     print("  clear   - Clear screen\n");
     print("  shutdown- Power off\n");
     print("  exit    - Exit shell\n");
@@ -175,6 +176,53 @@ static void cmd_ping(const char *line) {
     }
 }
 
+static void cmd_ifconfig(const char *line) {
+    const char *arg = line + 8;
+    while (*arg == ' ') arg++;
+    if (*arg == '\0') {
+        unsigned int ip_be = 0, mask_be = 0, gw_be = 0;
+        if (net_get(&ip_be, &mask_be, &gw_be) == 0) {
+            unsigned int ip[4] = {ip_be >> 24, (ip_be >> 16) & 0xFF,
+                                  (ip_be >> 8) & 0xFF, ip_be & 0xFF};
+            unsigned int mask[4] = {mask_be >> 24, (mask_be >> 16) & 0xFF,
+                                    (mask_be >> 8) & 0xFF, mask_be & 0xFF};
+            unsigned int gw[4] = {gw_be >> 24, (gw_be >> 16) & 0xFF,
+                                  (gw_be >> 8) & 0xFF, gw_be & 0xFF};
+            print("ip ");
+            print_num((int)ip[0]); print("."); print_num((int)ip[1]); print(".");
+            print_num((int)ip[2]); print("."); print_num((int)ip[3]); print("\n");
+            print("mask ");
+            print_num((int)mask[0]); print("."); print_num((int)mask[1]); print(".");
+            print_num((int)mask[2]); print("."); print_num((int)mask[3]); print("\n");
+            print("gw ");
+            print_num((int)gw[0]); print("."); print_num((int)gw[1]); print(".");
+            print_num((int)gw[2]); print("."); print_num((int)gw[3]); print("\n");
+        } else {
+            print("ifconfig: failed to read config\n");
+        }
+        return;
+    }
+    unsigned int ip_be, mask_be, gw_be;
+    if (parse_ip4(arg, &ip_be) != 0) {
+        print("ifconfig: invalid ip\n");
+        return;
+    }
+    while (*arg && *arg != ' ') arg++;
+    while (*arg == ' ') arg++;
+    if (parse_ip4(arg, &mask_be) != 0) {
+        print("ifconfig: invalid mask\n");
+        return;
+    }
+    while (*arg && *arg != ' ') arg++;
+    while (*arg == ' ') arg++;
+    if (parse_ip4(arg, &gw_be) != 0) {
+        print("ifconfig: invalid gw\n");
+        return;
+    }
+    net_cfg(ip_be, mask_be, gw_be);
+    print("ifconfig ok\n");
+}
+
 void _start(void) {
     print("mateOS shell v0.1\n");
     print("Type 'help' for commands.\n\n");
@@ -220,6 +268,8 @@ void _start(void) {
             cmd_clear();
         } else if (strncmp(line, "ping ", 5) == 0 || strcmp(line, "ping") == 0) {
             cmd_ping(line);
+        } else if (strncmp(line, "ifconfig ", 9) == 0 || strcmp(line, "ifconfig") == 0) {
+            cmd_ifconfig(line);
         } else if (strcmp(line, "shutdown") == 0) {
             print("Powering off...\n");
             shutdown();

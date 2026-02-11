@@ -432,6 +432,20 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_PING:
       return (uint32_t)net_ping(ebx, ecx);
 
+    case SYS_NETCFG:
+      net_set_config(ebx, ecx, edx);
+      return 0;
+
+    case SYS_NETGET: {
+      if (!ebx || !ecx || !edx) return (uint32_t)-1;
+      uint32_t ip_be = 0, mask_be = 0, gw_be = 0;
+      net_get_config(&ip_be, &mask_be, &gw_be);
+      *(uint32_t *)ebx = ip_be;
+      *(uint32_t *)ecx = mask_be;
+      *(uint32_t *)edx = gw_be;
+      return 0;
+    }
+
     default:
       printf("[syscall] Unknown syscall %d\n", eax);
       return (uint32_t)-1;

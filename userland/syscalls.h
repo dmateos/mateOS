@@ -25,6 +25,8 @@
 #define SYS_TASKLIST   22
 #define SYS_WAIT_NB    23
 #define SYS_PING       24
+#define SYS_NETCFG     25
+#define SYS_NETGET     26
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -72,5 +74,7 @@ int win_getkey(int wid);
 int win_sendkey(int wid, unsigned char key);
 int win_list(win_info_t *out, int max_count);
 int net_ping(unsigned int ip_be, unsigned int timeout_ms);
+void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be);
+int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be);
 
 #endif

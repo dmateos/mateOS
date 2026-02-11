@@ -242,3 +242,23 @@ int net_ping(unsigned int ip_be, unsigned int timeout_ms) {
     );
     return ret;
 }
+
+void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be) {
+    __asm__ volatile(
+        "int $0x80"
+        :
+        : "a"(SYS_NETCFG), "b"(ip_be), "c"(mask_be), "d"(gw_be)
+        : "memory"
+    );
+}
+
+int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYS_NETGET), "b"(ip_be), "c"(mask_be), "d"(gw_be)
+        : "memory"
+    );
+    return ret;
+}

@@ -144,6 +144,13 @@ static uint32_t ip4_to_u32(const uint8_t ip[4]) {
          ((uint32_t)ip[2] << 8) | (uint32_t)ip[3];
 }
 
+static void u32_to_ip4(uint32_t be, uint8_t out[4]) {
+  out[0] = (uint8_t)(be >> 24);
+  out[1] = (uint8_t)(be >> 16);
+  out[2] = (uint8_t)(be >> 8);
+  out[3] = (uint8_t)(be);
+}
+
 // ---- Simple ARP cache (single entry) ----
 static uint8_t arp_ip[4] = {0};
 static uint8_t arp_mac[6] = {0};
@@ -473,6 +480,23 @@ int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
   }
 
   return 0;
+}
+
+void net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be) {
+  u32_to_ip4(ip_be, net_ip);
+  u32_to_ip4(mask_be, net_mask);
+  u32_to_ip4(gw_be, net_gw);
+  arp_valid = 0;
+  printf("[net] cfg ip=%d.%d.%d.%d mask=%d.%d.%d.%d gw=%d.%d.%d.%d\n",
+         net_ip[0], net_ip[1], net_ip[2], net_ip[3],
+         net_mask[0], net_mask[1], net_mask[2], net_mask[3],
+         net_gw[0], net_gw[1], net_gw[2], net_gw[3]);
+}
+
+void net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be) {
+  if (ip_be) *ip_be = ip4_to_u32(net_ip);
+  if (mask_be) *mask_be = ip4_to_u32(net_mask);
+  if (gw_be) *gw_be = ip4_to_u32(net_gw);
 }
 
 void net_init(void) {
