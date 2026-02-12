@@ -65,7 +65,9 @@ static void cmd_help(const cmd_io_t *io) {
     io->print("  exit    - ");
     io->print(io->exit_help ? io->exit_help : "Exit");
     io->print("\n");
+    io->print("  jobs    - List background jobs\n");
     io->print("\nRun any file by name (e.g. hello.elf)\n");
+    io->print("Append '&' to run in background (e.g. httpd.elf &)\n");
 }
 
 static void cmd_ls(const cmd_io_t *io) {

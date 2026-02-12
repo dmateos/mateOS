@@ -1,6 +1,6 @@
 #include "keyboard.h"
 
-const uint8_t kb_map[] = {
+static const uint8_t kb_map[] = {
     0,   0,   '1',  '2',  '3',  '4', '5', '6',  '7', '8', '9', '0',
     '-', '=', '\b', '\t', 'q',  'w', 'e', 'r',  't', 'y', 'u', 'i',
     'o', 'p', '[',  ']',  '\n', 0,   'a', 's',  'd', 'f', 'g', 'h',
@@ -8,17 +8,39 @@ const uint8_t kb_map[] = {
     'b', 'n', 'm',  ',',  '.',  '/', 0,   '*',  0,   ' ',
 };
 
+static const uint8_t kb_map_shift[] = {
+    0,   0,   '!',  '@',  '#',  '$', '%', '^',  '&', '*', '(', ')',
+    '_', '+', '\b', '\t', 'Q',  'W', 'E', 'R',  'T', 'Y', 'U', 'I',
+    'O', 'P', '{',  '}',  '\n', 0,   'A', 'S',  'D', 'F', 'G', 'H',
+    'J', 'K', 'L',  ':',  '"',  '~', 0,   '|',  'Z', 'X', 'C', 'V',
+    'B', 'N', 'M',  '<',  '>',  '?', 0,   '*',  0,   ' ',
+};
+
+#define LSHIFT_SCAN 0x2A
+#define RSHIFT_SCAN 0x36
+
+static volatile int shift_held = 0;
+
 uint8_t keyboard_translate(uint8_t scancode) {
+  // Track shift key press/release
+  if (scancode == LSHIFT_SCAN || scancode == RSHIFT_SCAN) {
+    shift_held = 1;
+    return 0;
+  }
+  if (scancode == (LSHIFT_SCAN | 0x80) || scancode == (RSHIFT_SCAN | 0x80)) {
+    shift_held = 0;
+    return 0;
+  }
+
   if (scancode & 0x80) {
     return 0;
   }
 
-  char c = kb_map[scancode] & 0x7F;
-  if (c) {
-    return c;
-  }
+  if (scancode >= sizeof(kb_map)) return 0;
 
-  return 0;
+  const uint8_t *map = shift_held ? kb_map_shift : kb_map;
+  char c = map[scancode] & 0x7F;
+  return c ? c : 0;
 }
 
 // Ring buffer for user-mode keyboard input

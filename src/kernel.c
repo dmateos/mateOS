@@ -58,11 +58,7 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
     return;
   }
 
-  // 0x80 bit indicates key release, so ignore it
-  if (scancode & 0x80) {
-    return;
-  }
-
+  // Pass all scancodes (including releases) to translate for shift tracking
   // If keyboard buffer is active, push to it (shell reads via SYS_GETKEY)
   if (keyboard_buffer_is_enabled()) {
     char c = keyboard_translate(scancode);
