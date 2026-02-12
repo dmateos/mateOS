@@ -1,8 +1,6 @@
 #include "net.h"
 #include "lib.h"
-#include "pci.h"
-#include "arch/i686/io.h"
-#include "arch/i686/interrupts.h"
+#include "drivers/rtl8139.h"
 #include "arch/i686/timer.h"
 
 #include "lwip/init.h"
@@ -13,64 +11,13 @@
 #include "lwip/pbuf.h"
 #include "lwip/ip_addr.h"
 #include "lwip/prot/ip.h"
+#include "lwip/prot/icmp.h"
 #include "lwip/tcp.h"
 #include "netif/ethernet.h"
-
-// ---- RTL8139 constants ----
-#define RTL_VENDOR_ID 0x10EC
-#define RTL_DEVICE_ID 0x8139
-
-#define RTL_IDR0     0x00
-#define RTL_TSD0     0x10
-#define RTL_TSAD0    0x20
-#define RTL_RBSTART  0x30
-#define RTL_CR       0x37
-#define RTL_CAPR     0x38
-#define RTL_CBR      0x3A
-#define RTL_IMR      0x3C
-#define RTL_ISR      0x3E
-#define RTL_TCR      0x40
-#define RTL_RCR      0x44
-#define RTL_CONFIG1  0x52
-
-#define RTL_CR_RESET 0x10
-#define RTL_CR_RX_EN 0x08
-#define RTL_CR_TX_EN 0x04
-
-#define RTL_INT_ROK  0x01
-#define RTL_INT_TOK  0x04
-
-#define RTL_RCR_AAP  0x01
-#define RTL_RCR_APM  0x02
-#define RTL_RCR_AM   0x04
-#define RTL_RCR_AB   0x08
-#define RTL_RCR_WRAP 0x80
-
-#define RX_BUF_SIZE (8192 + 16 + 1500)
-#define TX_BUF_SIZE 2048
-#define TX_DESC_COUNT 4
-
-static uint16_t rtl_io = 0;
-static uint8_t rtl_irq = 0;
-
-static uint8_t rtl_mac[6] = {0};
-static uint8_t rx_buf[RX_BUF_SIZE] __attribute__((aligned(16)));
-static uint8_t tx_buf[TX_DESC_COUNT][TX_BUF_SIZE] __attribute__((aligned(16)));
-static int tx_cur = 0;
 
 // ---- lwIP netif ----
 static struct netif rtl_netif;
 static int lwip_ready = 0;
-
-// ---- RTL8139 send (raw Ethernet frame) ----
-static void rtl_send(const uint8_t *data, uint16_t len) {
-  if (!rtl_io || len > TX_BUF_SIZE) return;
-  int idx = tx_cur % TX_DESC_COUNT;
-  memcpy(tx_buf[idx], data, len);
-  outl(rtl_io + RTL_TSAD0 + (idx * 4), (uint32_t)tx_buf[idx]);
-  outl(rtl_io + RTL_TSD0 + (idx * 4), len);
-  tx_cur = (tx_cur + 1) % TX_DESC_COUNT;
-}
 
 // ---- Feed received frame to lwIP ----
 static void net_rx_to_lwip(uint8_t *data, uint16_t len) {
@@ -83,139 +30,34 @@ static void net_rx_to_lwip(uint8_t *data, uint16_t len) {
   }
 }
 
-// ---- RTL8139 RX polling ----
-static void rtl_rx_poll(void) {
-  if (!rtl_io) return;
-
-  uint16_t capr = inw(rtl_io + RTL_CAPR);
-  uint16_t cbr = inw(rtl_io + RTL_CBR);
-  uint16_t offset = (uint16_t)(capr + 16);
-
-  while (offset != cbr) {
-    uint16_t hdr_off = offset % RX_BUF_SIZE;
-    uint16_t status = *(uint16_t *)(rx_buf + hdr_off);
-    uint16_t length = *(uint16_t *)(rx_buf + hdr_off + 2);
-
-    if (!(status & 0x01) || length < 4) {
-      break;
-    }
-
-    uint16_t pkt_len = (uint16_t)(length - 4);
-    uint16_t data_off = (uint16_t)(hdr_off + 4);
-
-    if (pkt_len > 1514) {
-      pkt_len = 1514;
-    }
-
-    static uint8_t pkt[1600];
-    if (data_off + pkt_len <= RX_BUF_SIZE) {
-      memcpy(pkt, rx_buf + data_off, pkt_len);
-    } else {
-      uint16_t first = (uint16_t)(RX_BUF_SIZE - data_off);
-      memcpy(pkt, rx_buf + data_off, first);
-      memcpy(pkt + first, rx_buf, (uint16_t)(pkt_len - first));
-    }
-
-    net_rx_to_lwip(pkt, pkt_len);
-
-    offset = (uint16_t)(offset + length + 4);
-    offset = (uint16_t)((offset + 3) & ~3);
-    outw(rtl_io + RTL_CAPR, (uint16_t)(offset - 16));
-
-    capr = inw(rtl_io + RTL_CAPR);
-    cbr = inw(rtl_io + RTL_CBR);
-  }
-}
-
-// ---- RTL8139 IRQ handler ----
-static void rtl_irq_handler(uint32_t irq __attribute__((unused)),
-                            uint32_t err __attribute__((unused))) {
-  if (!rtl_io) return;
-  uint16_t isr = inw(rtl_io + RTL_ISR);
-  if (!isr) return;
-  outw(rtl_io + RTL_ISR, isr);
-
-  if (isr & RTL_INT_ROK) {
-    rtl_rx_poll();
-  }
-}
-
-// ---- RTL8139 init ----
-static void rtl_init(void) {
-  pci_device_t *dev = pci_find_device(RTL_VENDOR_ID, RTL_DEVICE_ID);
-  if (!dev) {
-    printf("[net] RTL8139 not found\n");
-    return;
-  }
-
-  if (!(dev->bar[0] & 0x01)) {
-    printf("[net] RTL8139 BAR0 not IO\n");
-    return;
-  }
-
-  rtl_io = (uint16_t)(dev->bar[0] & 0xFFFC);
-  rtl_irq = dev->irq_line;
-
-  pci_enable_bus_mastering(dev);
-
-  outb(rtl_io + RTL_CONFIG1, 0x00);
-
-  outb(rtl_io + RTL_CR, RTL_CR_RESET);
-  while (inb(rtl_io + RTL_CR) & RTL_CR_RESET) {}
-
-  for (int i = 0; i < 6; i++) {
-    rtl_mac[i] = inb(rtl_io + RTL_IDR0 + i);
-  }
-
-  outl(rtl_io + RTL_RBSTART, (uint32_t)rx_buf);
-
-  outb(rtl_io + RTL_CR, RTL_CR_RX_EN | RTL_CR_TX_EN);
-
-  outl(rtl_io + RTL_RCR, RTL_RCR_AB | RTL_RCR_APM | RTL_RCR_AM | RTL_RCR_WRAP);
-
-  outw(rtl_io + RTL_IMR, RTL_INT_ROK | RTL_INT_TOK);
-
-  if (rtl_irq != 0 && rtl_irq != 0xFF) {
-    register_interrupt_handler((uint8_t)(0x20 + rtl_irq), rtl_irq_handler);
-    pic_unmask_irq(rtl_irq);
-  }
-
-  printf("[net] RTL8139 io=0x%x irq=%d mac=%x:%x:%x:%x:%x:%x\n",
-         rtl_io, rtl_irq,
-         rtl_mac[0], rtl_mac[1], rtl_mac[2],
-         rtl_mac[3], rtl_mac[4], rtl_mac[5]);
-}
-
 // ---- lwIP sys_now() — required for timeouts ----
 uint32_t sys_now(void) {
-  return get_tick_count() * 10;  // 100Hz → milliseconds
+  return get_tick_count() * 10;  // 100Hz -> milliseconds
 }
 
 // sys_arch_protect/unprotect defined inline in lwipopts.h
 
 // ---- lwIP netif TX callback ----
-static err_t rtl_linkoutput(struct netif *netif __attribute__((unused)),
+static err_t net_linkoutput(struct netif *netif __attribute__((unused)),
                             struct pbuf *p) {
-  rtl_send((const uint8_t *)p->payload, (uint16_t)p->tot_len);
+  rtl8139_send((const uint8_t *)p->payload, (uint16_t)p->tot_len);
   return ERR_OK;
 }
 
 // ---- lwIP netif init callback ----
-static err_t rtl_netif_init(struct netif *netif) {
-  netif->linkoutput = rtl_linkoutput;
+static err_t net_netif_init(struct netif *netif) {
+  netif->linkoutput = net_linkoutput;
   netif->output = etharp_output;
   netif->mtu = 1500;
   netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
   netif->hwaddr_len = 6;
-  memcpy(netif->hwaddr, rtl_mac, 6);
+  rtl8139_get_mac(netif->hwaddr);
   netif->name[0] = 'e';
   netif->name[1] = 'n';
   return ERR_OK;
 }
 
 // ---- ICMP ping via lwIP raw API ----
-#include "lwip/prot/icmp.h"
-
 static volatile int ping_reply_received = 0;
 
 static uint8_t ping_recv_cb(void *arg __attribute__((unused)),
@@ -236,8 +78,8 @@ static uint8_t ping_recv_cb(void *arg __attribute__((unused)),
 // ---- Public API ----
 
 void net_init(void) {
-  rtl_init();
-  if (!rtl_io) return;
+  rtl8139_init(net_rx_to_lwip);
+  if (!rtl8139_available()) return;
 
   lwip_init();
 
@@ -245,7 +87,7 @@ void net_init(void) {
   IP4_ADDR(&ip, 10, 0, 2, 15);
   IP4_ADDR(&mask, 255, 255, 255, 0);
   IP4_ADDR(&gw, 10, 0, 2, 2);
-  netif_add(&rtl_netif, &ip, &mask, &gw, NULL, rtl_netif_init, ethernet_input);
+  netif_add(&rtl_netif, &ip, &mask, &gw, NULL, net_netif_init, ethernet_input);
   netif_set_default(&rtl_netif);
   netif_set_up(&rtl_netif);
 
@@ -255,7 +97,7 @@ void net_init(void) {
 
 void net_poll(void) {
   if (!lwip_ready) return;
-  rtl_rx_poll();
+  rtl8139_rx_poll();
   sys_check_timeouts();
 }
 
@@ -352,7 +194,6 @@ void net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be) {
   const ip4_addr_t *gw = netif_ip4_gw(&rtl_netif);
   if (ip_be) {
     uint32_t a = ip4_addr_get_u32(ip);
-    // lwIP stores in network byte order, we return host byte order (big-endian IP)
     *ip_be = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) |
              (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
   }
@@ -417,7 +258,6 @@ static err_t sock_recv_cb(void *arg, struct tcp_pcb *tpcb,
   (void)err;
 
   if (!p) {
-    // FIN received — remote closed
     s->rx_closed = 1;
     return ERR_OK;
   }
@@ -429,7 +269,7 @@ static err_t sock_recv_cb(void *arg, struct tcp_pcb *tpcb,
     uint8_t *src = (uint8_t *)q->payload;
     for (uint16_t i = 0; i < copy_len; i++) {
       int next_head = (s->rx_head + 1) % SOCK_RX_BUF;
-      if (next_head == s->rx_tail) break;  // Buffer full, drop remaining
+      if (next_head == s->rx_tail) break;
       s->rx_buf[s->rx_head] = src[i];
       s->rx_head = next_head;
     }
@@ -445,7 +285,7 @@ static void sock_err_cb(void *arg, err_t err) {
   ksocket_t *s = (ksocket_t *)arg;
   (void)err;
   s->err = 1;
-  s->pcb = NULL;  // lwIP already freed the pcb
+  s->pcb = NULL;
 }
 
 // lwIP callback: new connection accepted on listener
@@ -454,7 +294,6 @@ static err_t sock_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err) {
   (void)err;
 
   if (ls->accepted_fd >= 0) {
-    // Still have an unaccepted connection — reject this one
     tcp_abort(newpcb);
     return ERR_ABRT;
   }
@@ -471,7 +310,7 @@ static err_t sock_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err) {
   tcp_recv(newpcb, sock_recv_cb);
   tcp_err(newpcb, sock_err_cb);
 
-  ls->accepted_fd = fd;  // Signal to accept() syscall
+  ls->accepted_fd = fd;
   return ERR_OK;
 }
 
@@ -522,7 +361,7 @@ int net_sock_accept(int fd) {
     return newfd;
   }
 
-  return -1;  // No pending connection
+  return -1;
 }
 
 int net_sock_send(int fd, const void *buf, uint32_t len) {
@@ -531,7 +370,7 @@ int net_sock_send(int fd, const void *buf, uint32_t len) {
   if (!s->in_use || s->type != SOCK_STREAM || !s->pcb) return -1;
 
   uint16_t sndbuf = tcp_sndbuf(s->pcb);
-  if (sndbuf == 0) return 0;  // Send buffer full, try again later
+  if (sndbuf == 0) return 0;
   if (len > sndbuf) len = sndbuf;
 
   err_t e = tcp_write(s->pcb, buf, (uint16_t)len, TCP_WRITE_FLAG_COPY);
@@ -548,8 +387,8 @@ int net_sock_recv(int fd, void *buf, uint32_t len) {
 
   int avail = rx_buf_used(s);
   if (avail == 0) {
-    if (s->rx_closed || s->err || !s->pcb) return 0;  // Connection closed
-    return -1;  // No data yet
+    if (s->rx_closed || s->err || !s->pcb) return 0;
+    return -1;
   }
 
   if ((uint32_t)avail > len) avail = (int)len;
