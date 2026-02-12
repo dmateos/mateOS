@@ -1,24 +1,57 @@
 #include "syscalls.h"
 
-// Inline assembly syscall wrappers
-
-int write(int fd, const void *buf, unsigned int len) {
+// Low-level syscall helpers.
+static inline int __syscall0(unsigned int n) {
     int ret;
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(len)
+        : "a"(n)
         : "memory"
     );
     return ret;
 }
 
-void exit(int code) {
+static inline int __syscall1(unsigned int n, unsigned int a1) {
+    int ret;
     __asm__ volatile(
         "int $0x80"
-        :
-        : "a"(SYS_EXIT), "b"(code)
+        : "=a"(ret)
+        : "a"(n), "b"(a1)
+        : "memory"
     );
+    return ret;
+}
+
+static inline int __syscall2(unsigned int n, unsigned int a1, unsigned int a2) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(n), "b"(a1), "c"(a2)
+        : "memory"
+    );
+    return ret;
+}
+
+static inline int __syscall3(unsigned int n, unsigned int a1, unsigned int a2,
+                             unsigned int a3) {
+    int ret;
+    __asm__ volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(n), "b"(a1), "c"(a2), "d"(a3)
+        : "memory"
+    );
+    return ret;
+}
+
+int write(int fd, const void *buf, unsigned int len) {
+    return __syscall3(SYS_WRITE, (unsigned int)fd, (unsigned int)buf, len);
+}
+
+void exit(int code) {
+    (void)__syscall1(SYS_EXIT, (unsigned int)code);
     // Should never return, but loop just in case
     while (1) {
         __asm__ volatile("hlt");
@@ -26,250 +59,98 @@ void exit(int code) {
 }
 
 void yield(void) {
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"(SYS_YIELD)
-    );
+    (void)__syscall0(SYS_YIELD);
 }
 
 unsigned char *gfx_init(void) {
-    unsigned int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_GFX_INIT)
-        : "memory"
-    );
-    return (unsigned char *)ret;
+    return (unsigned char *)(unsigned int)__syscall0(SYS_GFX_INIT);
 }
 
 void gfx_exit(void) {
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"(SYS_GFX_EXIT)
-    );
+    (void)__syscall0(SYS_GFX_EXIT);
 }
 
 unsigned char getkey(unsigned int flags) {
-    unsigned int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_GETKEY), "b"(flags)
-        : "memory"
-    );
-    return (unsigned char)ret;
+    return (unsigned char)__syscall1(SYS_GETKEY, flags);
 }
 
 unsigned int gfx_info(void) {
-    unsigned int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_GFX_INFO)
-    );
-    return ret;
+    return (unsigned int)__syscall0(SYS_GFX_INFO);
 }
 
 int spawn(const char *filename) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_SPAWN), "b"(filename)
-        : "memory"
-    );
-    return ret;
+    return __syscall1(SYS_SPAWN, (unsigned int)filename);
 }
 
 int wait(int task_id) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WAIT), "b"(task_id)
-        : "memory"
-    );
-    return ret;
+    return __syscall1(SYS_WAIT, (unsigned int)task_id);
 }
 
 int readdir(unsigned int index, char *buf, unsigned int size) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_READDIR), "b"(index), "c"(buf), "d"(size)
-        : "memory"
-    );
-    return ret;
+    return __syscall3(SYS_READDIR, index, (unsigned int)buf, size);
 }
 
 int getpid(void) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_GETPID)
-    );
-    return ret;
+    return __syscall0(SYS_GETPID);
 }
 
 void taskinfo(void) {
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"(SYS_TASKINFO)
-    );
+    (void)__syscall0(SYS_TASKINFO);
 }
 
 void shutdown(void) {
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"(SYS_SHUTDOWN)
-    );
+    (void)__syscall0(SYS_SHUTDOWN);
 }
 
 int win_create(int width, int height, const char *title) {
     unsigned int packed = ((unsigned int)width << 16) | ((unsigned int)height & 0xFFFF);
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_CREATE), "b"(packed), "c"(title)
-        : "memory"
-    );
-    return ret;
+    return __syscall2(SYS_WIN_CREATE, packed, (unsigned int)title);
 }
 
 int win_destroy(int wid) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_DESTROY), "b"(wid)
-        : "memory"
-    );
-    return ret;
+    return __syscall1(SYS_WIN_DESTROY, (unsigned int)wid);
 }
 
 int win_write(int wid, const unsigned char *data, unsigned int len) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_WRITE), "b"(wid), "c"(data), "d"(len)
-        : "memory"
-    );
-    return ret;
+    return __syscall3(SYS_WIN_WRITE, (unsigned int)wid, (unsigned int)data, len);
 }
 
 int win_read(int wid, unsigned char *dest, unsigned int len) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_READ), "b"(wid), "c"(dest), "d"(len)
-        : "memory"
-    );
-    return ret;
+    return __syscall3(SYS_WIN_READ, (unsigned int)wid, (unsigned int)dest, len);
 }
 
 int win_getkey(int wid) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_GETKEY), "b"(wid)
-        : "memory"
-    );
-    return ret;
+    return __syscall1(SYS_WIN_GETKEY, (unsigned int)wid);
 }
 
 int win_sendkey(int wid, unsigned char key) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_SENDKEY), "b"(wid), "c"(key)
-        : "memory"
-    );
-    return ret;
+    return __syscall2(SYS_WIN_SENDKEY, (unsigned int)wid, (unsigned int)key);
 }
 
 int wait_nb(int task_id) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WAIT_NB), "b"(task_id)
-        : "memory"
-    );
-    return ret;
+    return __syscall1(SYS_WAIT_NB, (unsigned int)task_id);
 }
 
 int tasklist(taskinfo_entry_t *buf, int max) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_TASKLIST), "b"(buf), "c"(max)
-        : "memory"
-    );
-    return ret;
+    return __syscall2(SYS_TASKLIST, (unsigned int)buf, (unsigned int)max);
 }
 
 int win_list(win_info_t *out, int max_count) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_WIN_LIST), "b"(out), "c"(max_count)
-        : "memory"
-    );
-    return ret;
+    return __syscall2(SYS_WIN_LIST, (unsigned int)out, (unsigned int)max_count);
 }
 
 int net_ping(unsigned int ip_be, unsigned int timeout_ms) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_PING), "b"(ip_be), "c"(timeout_ms)
-        : "memory"
-    );
-    return ret;
+    return __syscall2(SYS_PING, ip_be, timeout_ms);
 }
 
 void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be) {
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"(SYS_NETCFG), "b"(ip_be), "c"(mask_be), "d"(gw_be)
-        : "memory"
-    );
+    (void)__syscall3(SYS_NETCFG, ip_be, mask_be, gw_be);
 }
 
 int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_NETGET), "b"(ip_be), "c"(mask_be), "d"(gw_be)
-        : "memory"
-    );
-    return ret;
+    return __syscall3(SYS_NETGET, (unsigned int)ip_be, (unsigned int)mask_be, (unsigned int)gw_be);
 }
 
 int sleep_ms(unsigned int ms) {
-    int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYS_SLEEPMS), "b"(ms)
-        : "memory"
-    );
-    return ret;
+    return __syscall1(SYS_SLEEPMS, ms);
 }
