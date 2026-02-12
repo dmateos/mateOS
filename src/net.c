@@ -5,13 +5,21 @@
 #include "arch/i686/interrupts.h"
 #include "arch/i686/timer.h"
 
-// Minimal RTL8139 + ARP/ICMP (ping) stack for QEMU
+#include "lwip/init.h"
+#include "lwip/netif.h"
+#include "lwip/timeouts.h"
+#include "lwip/etharp.h"
+#include "lwip/raw.h"
+#include "lwip/pbuf.h"
+#include "lwip/ip_addr.h"
+#include "lwip/prot/ip.h"
+#include "lwip/tcp.h"
+#include "netif/ethernet.h"
 
 // ---- RTL8139 constants ----
 #define RTL_VENDOR_ID 0x10EC
 #define RTL_DEVICE_ID 0x8139
 
-// Register offsets
 #define RTL_IDR0     0x00
 #define RTL_TSD0     0x10
 #define RTL_TSAD0    0x20
@@ -25,20 +33,17 @@
 #define RTL_RCR      0x44
 #define RTL_CONFIG1  0x52
 
-// Command bits
 #define RTL_CR_RESET 0x10
 #define RTL_CR_RX_EN 0x08
 #define RTL_CR_TX_EN 0x04
 
-// Interrupt status bits
 #define RTL_INT_ROK  0x01
 #define RTL_INT_TOK  0x04
 
-// RX config bits
-#define RTL_RCR_AAP  0x01  // Accept all physical
-#define RTL_RCR_APM  0x02  // Accept physical match
-#define RTL_RCR_AM   0x04  // Accept multicast
-#define RTL_RCR_AB   0x08  // Accept broadcast
+#define RTL_RCR_AAP  0x01
+#define RTL_RCR_APM  0x02
+#define RTL_RCR_AM   0x04
+#define RTL_RCR_AB   0x08
 #define RTL_RCR_WRAP 0x80
 
 #define RX_BUF_SIZE (8192 + 16 + 1500)
@@ -53,113 +58,11 @@ static uint8_t rx_buf[RX_BUF_SIZE] __attribute__((aligned(16)));
 static uint8_t tx_buf[TX_DESC_COUNT][TX_BUF_SIZE] __attribute__((aligned(16)));
 static int tx_cur = 0;
 
-// ---- Minimal network config ----
-static uint8_t net_ip[4] = {10, 0, 2, 15};
-static uint8_t net_mask[4] = {255, 255, 255, 0};
-static uint8_t net_gw[4] = {10, 0, 2, 2};
+// ---- lwIP netif ----
+static struct netif rtl_netif;
+static int lwip_ready = 0;
 
-// ---- Byte order helpers ----
-static inline uint16_t bswap16(uint16_t v) {
-  return (uint16_t)((v >> 8) | (v << 8));
-}
-
-static inline uint32_t bswap32(uint32_t v) {
-  return (v >> 24) |
-         ((v >> 8) & 0x0000FF00) |
-         ((v << 8) & 0x00FF0000) |
-         (v << 24);
-}
-
-static inline uint16_t htons(uint16_t v) { return bswap16(v); }
-static inline uint16_t ntohs(uint16_t v) { return bswap16(v); }
-static inline uint32_t htonl(uint32_t v) { return bswap32(v); }
-static inline uint32_t ntohl(uint32_t v) { return bswap32(v); }
-
-// ---- Ethernet / ARP / IP / ICMP ----
-#define ETH_TYPE_ARP 0x0806
-#define ETH_TYPE_IP  0x0800
-
-typedef struct {
-  uint8_t dst[6];
-  uint8_t src[6];
-  uint16_t type;
-} __attribute__((packed)) eth_hdr_t;
-
-typedef struct {
-  uint16_t htype;
-  uint16_t ptype;
-  uint8_t hlen;
-  uint8_t plen;
-  uint16_t oper;
-  uint8_t sha[6];
-  uint8_t spa[4];
-  uint8_t tha[6];
-  uint8_t tpa[4];
-} __attribute__((packed)) arp_hdr_t;
-
-typedef struct {
-  uint8_t ver_ihl;
-  uint8_t tos;
-  uint16_t len;
-  uint16_t id;
-  uint16_t flags_frag;
-  uint8_t ttl;
-  uint8_t proto;
-  uint16_t csum;
-  uint32_t src;
-  uint32_t dst;
-} __attribute__((packed)) ip_hdr_t;
-
-typedef struct {
-  uint8_t type;
-  uint8_t code;
-  uint16_t csum;
-  uint16_t id;
-  uint16_t seq;
-} __attribute__((packed)) icmp_hdr_t;
-
-static uint16_t checksum16(const void *data, uint16_t len) {
-  const uint16_t *p = (const uint16_t *)data;
-  uint32_t sum = 0;
-  while (len > 1) {
-    sum += *p++;
-    len -= 2;
-  }
-  if (len) {
-    sum += *(const uint8_t *)p;
-  }
-  while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
-  return (uint16_t)~sum;
-}
-
-static int bytes_eq(const uint8_t *a, const uint8_t *b, uint16_t len) {
-  for (uint16_t i = 0; i < len; i++) {
-    if (a[i] != b[i]) return 0;
-  }
-  return 1;
-}
-
-static uint32_t ip4_to_u32(const uint8_t ip[4]) {
-  return ((uint32_t)ip[0] << 24) | ((uint32_t)ip[1] << 16) |
-         ((uint32_t)ip[2] << 8) | (uint32_t)ip[3];
-}
-
-static void u32_to_ip4(uint32_t be, uint8_t out[4]) {
-  out[0] = (uint8_t)(be >> 24);
-  out[1] = (uint8_t)(be >> 16);
-  out[2] = (uint8_t)(be >> 8);
-  out[3] = (uint8_t)(be);
-}
-
-// ---- Simple ARP cache (single entry) ----
-static uint8_t arp_ip[4] = {0};
-static uint8_t arp_mac[6] = {0};
-static int arp_valid = 0;
-
-static volatile uint16_t icmp_wait_id = 0;
-static volatile uint16_t icmp_wait_seq = 0;
-static volatile int icmp_reply_ok = 0;
-
+// ---- RTL8139 send (raw Ethernet frame) ----
 static void rtl_send(const uint8_t *data, uint16_t len) {
   if (!rtl_io || len > TX_BUF_SIZE) return;
   int idx = tx_cur % TX_DESC_COUNT;
@@ -169,126 +72,18 @@ static void rtl_send(const uint8_t *data, uint16_t len) {
   tx_cur = (tx_cur + 1) % TX_DESC_COUNT;
 }
 
-static void arp_request(const uint8_t target_ip[4]) {
-  uint8_t frame[sizeof(eth_hdr_t) + sizeof(arp_hdr_t)];
-  eth_hdr_t *re = (eth_hdr_t *)frame;
-  arp_hdr_t *ra = (arp_hdr_t *)(frame + sizeof(eth_hdr_t));
-
-  memset(re->dst, 0xFF, 6);
-  memcpy(re->src, rtl_mac, 6);
-  re->type = htons(ETH_TYPE_ARP);
-
-  ra->htype = htons(1);
-  ra->ptype = htons(ETH_TYPE_IP);
-  ra->hlen = 6;
-  ra->plen = 4;
-  ra->oper = htons(1);
-  memcpy(ra->sha, rtl_mac, 6);
-  memcpy(ra->spa, net_ip, 4);
-  memset(ra->tha, 0x00, 6);
-  memcpy(ra->tpa, target_ip, 4);
-
-  rtl_send(frame, sizeof(frame));
-}
-
-static void arp_reply(const eth_hdr_t *eth, const arp_hdr_t *arp) {
-  uint8_t frame[sizeof(eth_hdr_t) + sizeof(arp_hdr_t)];
-  eth_hdr_t *re = (eth_hdr_t *)frame;
-  arp_hdr_t *ra = (arp_hdr_t *)(frame + sizeof(eth_hdr_t));
-
-  memcpy(re->dst, eth->src, 6);
-  memcpy(re->src, rtl_mac, 6);
-  re->type = htons(ETH_TYPE_ARP);
-
-  ra->htype = htons(1);
-  ra->ptype = htons(ETH_TYPE_IP);
-  ra->hlen = 6;
-  ra->plen = 4;
-  ra->oper = htons(2);
-  memcpy(ra->sha, rtl_mac, 6);
-  memcpy(ra->spa, net_ip, 4);
-  memcpy(ra->tha, arp->sha, 6);
-  memcpy(ra->tpa, arp->spa, 4);
-
-  rtl_send(frame, sizeof(frame));
-}
-
-static void icmp_echo_reply(const eth_hdr_t *eth, const ip_hdr_t *ip,
-                            const icmp_hdr_t *icmp, uint16_t icmp_len) {
-  uint16_t ip_hlen = (ip->ver_ihl & 0x0F) * 4;
-  uint16_t total_len = sizeof(eth_hdr_t) + ip_hlen + icmp_len;
-
-  uint8_t frame[1514];
-  if (total_len > sizeof(frame)) return;
-
-  eth_hdr_t *re = (eth_hdr_t *)frame;
-  ip_hdr_t *ri = (ip_hdr_t *)(frame + sizeof(eth_hdr_t));
-  icmp_hdr_t *ri_icmp = (icmp_hdr_t *)((uint8_t *)ri + ip_hlen);
-
-  memcpy(re->dst, eth->src, 6);
-  memcpy(re->src, rtl_mac, 6);
-  re->type = htons(ETH_TYPE_IP);
-
-  memcpy(ri, ip, ip_hlen);
-  ri->src = ip->dst;
-  ri->dst = ip->src;
-  ri->ttl = 64;
-  ri->csum = 0;
-  ri->csum = checksum16(ri, ip_hlen);
-
-  memcpy(ri_icmp, icmp, icmp_len);
-  ri_icmp->type = 0;  // Echo reply
-  ri_icmp->csum = 0;
-  ri_icmp->csum = checksum16(ri_icmp, icmp_len);
-
-  rtl_send(frame, total_len);
-}
-
-static void net_handle_frame(uint8_t *data, uint16_t len) {
-  if (len < sizeof(eth_hdr_t)) return;
-  eth_hdr_t *eth = (eth_hdr_t *)data;
-  uint16_t etype = ntohs(eth->type);
-
-  if (etype == ETH_TYPE_ARP) {
-    if (len < sizeof(eth_hdr_t) + sizeof(arp_hdr_t)) return;
-    arp_hdr_t *arp = (arp_hdr_t *)(data + sizeof(eth_hdr_t));
-    if (ntohs(arp->oper) == 1 && bytes_eq(arp->tpa, net_ip, 4)) {
-      arp_reply(eth, arp);
-    }
-    if (ntohs(arp->oper) == 2 && bytes_eq(arp->tpa, net_ip, 4)) {
-      memcpy(arp_ip, arp->spa, 4);
-      memcpy(arp_mac, arp->sha, 6);
-      arp_valid = 1;
-    }
-    return;
-  }
-
-  if (etype == ETH_TYPE_IP) {
-    if (len < sizeof(eth_hdr_t) + sizeof(ip_hdr_t)) return;
-    ip_hdr_t *ip = (ip_hdr_t *)(data + sizeof(eth_hdr_t));
-    if ((ip->ver_ihl >> 4) != 4) return;
-    if (!bytes_eq((const uint8_t *)&ip->dst, net_ip, 4)) return;
-    uint16_t ip_hlen = (ip->ver_ihl & 0x0F) * 4;
-    if (len < sizeof(eth_hdr_t) + ip_hlen) return;
-    if (ip->proto == 1) {  // ICMP
-      icmp_hdr_t *icmp = (icmp_hdr_t *)((uint8_t *)ip + ip_hlen);
-      uint16_t ip_len = ntohs(ip->len);
-      uint16_t icmp_len = (ip_len > ip_hlen) ? (ip_len - ip_hlen) : 0;
-      if (icmp_len >= sizeof(icmp_hdr_t)) {
-        if (icmp->type == 8) {
-          icmp_echo_reply(eth, ip, icmp, icmp_len);
-        } else if (icmp->type == 0) {
-          uint16_t id = ntohs(icmp->id);
-          uint16_t seq = ntohs(icmp->seq);
-          if (id == icmp_wait_id && seq == icmp_wait_seq) {
-            icmp_reply_ok = 1;
-          }
-        }
-      }
-    }
+// ---- Feed received frame to lwIP ----
+static void net_rx_to_lwip(uint8_t *data, uint16_t len) {
+  if (!lwip_ready) return;
+  struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_RAM);
+  if (!p) return;
+  memcpy(p->payload, data, len);
+  if (rtl_netif.input(p, &rtl_netif) != ERR_OK) {
+    pbuf_free(p);
   }
 }
 
+// ---- RTL8139 RX polling ----
 static void rtl_rx_poll(void) {
   if (!rtl_io) return;
 
@@ -321,7 +116,7 @@ static void rtl_rx_poll(void) {
       memcpy(pkt + first, rx_buf, (uint16_t)(pkt_len - first));
     }
 
-    net_handle_frame(pkt, pkt_len);
+    net_rx_to_lwip(pkt, pkt_len);
 
     offset = (uint16_t)(offset + length + 4);
     offset = (uint16_t)((offset + 3) & ~3);
@@ -332,6 +127,7 @@ static void rtl_rx_poll(void) {
   }
 }
 
+// ---- RTL8139 IRQ handler ----
 static void rtl_irq_handler(uint32_t irq __attribute__((unused)),
                             uint32_t err __attribute__((unused))) {
   if (!rtl_io) return;
@@ -344,6 +140,7 @@ static void rtl_irq_handler(uint32_t irq __attribute__((unused)),
   }
 }
 
+// ---- RTL8139 init ----
 static void rtl_init(void) {
   pci_device_t *dev = pci_find_device(RTL_VENDOR_ID, RTL_DEVICE_ID);
   if (!dev) {
@@ -361,31 +158,23 @@ static void rtl_init(void) {
 
   pci_enable_bus_mastering(dev);
 
-  // Power on / enable
   outb(rtl_io + RTL_CONFIG1, 0x00);
 
-  // Reset
   outb(rtl_io + RTL_CR, RTL_CR_RESET);
   while (inb(rtl_io + RTL_CR) & RTL_CR_RESET) {}
 
-  // Read MAC
   for (int i = 0; i < 6; i++) {
     rtl_mac[i] = inb(rtl_io + RTL_IDR0 + i);
   }
 
-  // RX buffer
   outl(rtl_io + RTL_RBSTART, (uint32_t)rx_buf);
 
-  // Enable RX/TX
   outb(rtl_io + RTL_CR, RTL_CR_RX_EN | RTL_CR_TX_EN);
 
-  // Configure RX
   outl(rtl_io + RTL_RCR, RTL_RCR_AB | RTL_RCR_APM | RTL_RCR_AM | RTL_RCR_WRAP);
 
-  // Interrupt mask
   outw(rtl_io + RTL_IMR, RTL_INT_ROK | RTL_INT_TOK);
 
-  // Hook IRQ
   if (rtl_irq != 0 && rtl_irq != 0xFF) {
     register_interrupt_handler((uint8_t)(0x20 + rtl_irq), rtl_irq_handler);
     pic_unmask_irq(rtl_irq);
@@ -397,112 +186,398 @@ static void rtl_init(void) {
          rtl_mac[3], rtl_mac[4], rtl_mac[5]);
 }
 
-int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
-  __asm__ volatile("sti");
-  uint8_t dst_ip[4] = {
-    (uint8_t)(ip_be >> 24),
-    (uint8_t)(ip_be >> 16),
-    (uint8_t)(ip_be >> 8),
-    (uint8_t)(ip_be)
-  };
+// ---- lwIP sys_now() — required for timeouts ----
+uint32_t sys_now(void) {
+  return get_tick_count() * 10;  // 100Hz → milliseconds
+}
 
-  // ARP resolve (single-entry cache)
-  if (!(arp_valid && bytes_eq(arp_ip, dst_ip, 4))) {
-    arp_valid = 0;
-    arp_request(dst_ip);
-    uint32_t start = get_tick_count();
-    uint32_t timeout_ticks = (timeout_ms + 9) / 10;  // 100Hz
-    uint32_t spins = 0;
-    while (!arp_valid) {
-      rtl_rx_poll();
-      if ((get_tick_count() - start) > timeout_ticks) {
-        return -1;
-      }
-      if (++spins > timeout_ms * 10000u) {
-        return -1;
-      }
-      __asm__ volatile("hlt");
+// sys_arch_protect/unprotect defined inline in lwipopts.h
+
+// ---- lwIP netif TX callback ----
+static err_t rtl_linkoutput(struct netif *netif __attribute__((unused)),
+                            struct pbuf *p) {
+  rtl_send((const uint8_t *)p->payload, (uint16_t)p->tot_len);
+  return ERR_OK;
+}
+
+// ---- lwIP netif init callback ----
+static err_t rtl_netif_init(struct netif *netif) {
+  netif->linkoutput = rtl_linkoutput;
+  netif->output = etharp_output;
+  netif->mtu = 1500;
+  netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
+  netif->hwaddr_len = 6;
+  memcpy(netif->hwaddr, rtl_mac, 6);
+  netif->name[0] = 'e';
+  netif->name[1] = 'n';
+  return ERR_OK;
+}
+
+// ---- ICMP ping via lwIP raw API ----
+#include "lwip/prot/icmp.h"
+
+static volatile int ping_reply_received = 0;
+
+static uint8_t ping_recv_cb(void *arg __attribute__((unused)),
+                            struct raw_pcb *pcb __attribute__((unused)),
+                            struct pbuf *p,
+                            const ip_addr_t *addr __attribute__((unused))) {
+  if (p->len >= 20 + 8) {
+    struct icmp_echo_hdr *hdr = (struct icmp_echo_hdr *)((uint8_t *)p->payload + 20);
+    if (hdr->type == 0) {  // Echo reply
+      ping_reply_received = 1;
+      pbuf_free(p);
+      return 1;  // consumed
     }
   }
+  return 0;  // not consumed
+}
+
+// ---- Public API ----
+
+void net_init(void) {
+  rtl_init();
+  if (!rtl_io) return;
+
+  lwip_init();
+
+  ip4_addr_t ip, mask, gw;
+  IP4_ADDR(&ip, 10, 0, 2, 15);
+  IP4_ADDR(&mask, 255, 255, 255, 0);
+  IP4_ADDR(&gw, 10, 0, 2, 2);
+  netif_add(&rtl_netif, &ip, &mask, &gw, NULL, rtl_netif_init, ethernet_input);
+  netif_set_default(&rtl_netif);
+  netif_set_up(&rtl_netif);
+
+  lwip_ready = 1;
+  printf("[net] lwIP initialized, ip=10.0.2.15\n");
+}
+
+void net_poll(void) {
+  if (!lwip_ready) return;
+  rtl_rx_poll();
+  sys_check_timeouts();
+}
+
+int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
+  if (!lwip_ready) return -1;
+
+  __asm__ volatile("sti");
+
+  // Create raw ICMP PCB
+  struct raw_pcb *pcb = raw_new(IP_PROTO_ICMP);
+  if (!pcb) return -1;
+
+  raw_recv(pcb, ping_recv_cb, NULL);
+  raw_bind(pcb, IP_ADDR_ANY);
 
   // Build ICMP echo request
-  uint8_t frame[1500];
-  eth_hdr_t *eth = (eth_hdr_t *)frame;
-  ip_hdr_t *ip = (ip_hdr_t *)(frame + sizeof(eth_hdr_t));
-  icmp_hdr_t *icmp = (icmp_hdr_t *)((uint8_t *)ip + sizeof(ip_hdr_t));
-  uint8_t *payload = (uint8_t *)(icmp + 1);
-  const uint16_t payload_len = 32;
+  struct pbuf *p = pbuf_alloc(PBUF_IP, (uint16_t)(sizeof(struct icmp_echo_hdr) + 32), PBUF_RAM);
+  if (!p) {
+    raw_remove(pcb);
+    return -1;
+  }
 
-  memcpy(eth->dst, arp_mac, 6);
-  memcpy(eth->src, rtl_mac, 6);
-  eth->type = htons(ETH_TYPE_IP);
+  struct icmp_echo_hdr *hdr = (struct icmp_echo_hdr *)p->payload;
+  hdr->type = 8;  // Echo request
+  hdr->code = 0;
+  hdr->id = lwip_htons(0xBEEF);
+  hdr->seqno = lwip_htons(1);
 
-  ip->ver_ihl = 0x45;
-  ip->tos = 0;
-  ip->len = htons((uint16_t)(sizeof(ip_hdr_t) + sizeof(icmp_hdr_t) + payload_len));
-  ip->id = htons(0x1234);
-  ip->flags_frag = 0;
-  ip->ttl = 64;
-  ip->proto = 1;
-  ip->csum = 0;
-  ip->src = htonl(ip4_to_u32(net_ip));
-  ip->dst = htonl(ip_be);
-  ip->csum = checksum16(ip, sizeof(ip_hdr_t));
+  // Fill payload
+  uint8_t *payload = (uint8_t *)p->payload + sizeof(struct icmp_echo_hdr);
+  for (int i = 0; i < 32; i++) payload[i] = (uint8_t)i;
 
-  icmp->type = 8;
-  icmp->code = 0;
-  icmp->id = htons(0xBEEF);
-  icmp->seq = htons(1);
-  for (uint16_t i = 0; i < payload_len; i++) payload[i] = (uint8_t)i;
-  icmp->csum = 0;
-  icmp->csum = checksum16(icmp, (uint16_t)(sizeof(icmp_hdr_t) + payload_len));
+  // Compute checksum
+  hdr->chksum = 0;
+  uint32_t sum = 0;
+  uint16_t *ptr = (uint16_t *)p->payload;
+  uint16_t total = (uint16_t)(sizeof(struct icmp_echo_hdr) + 32);
+  for (uint16_t i = 0; i < total / 2; i++) sum += ptr[i];
+  while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+  hdr->chksum = (uint16_t)~sum;
 
-  icmp_wait_id = 0xBEEF;
-  icmp_wait_seq = 1;
-  icmp_reply_ok = 0;
+  // Send
+  ip_addr_t dst;
+  uint8_t a = (uint8_t)(ip_be >> 24);
+  uint8_t b = (uint8_t)(ip_be >> 16);
+  uint8_t c = (uint8_t)(ip_be >> 8);
+  uint8_t d = (uint8_t)(ip_be);
+  IP4_ADDR(&dst, a, b, c, d);
 
-  uint16_t total_len = (uint16_t)(sizeof(eth_hdr_t) + sizeof(ip_hdr_t) +
-                                  sizeof(icmp_hdr_t) + payload_len);
-  rtl_send(frame, total_len);
+  ping_reply_received = 0;
+  raw_sendto(pcb, p, &dst);
+  pbuf_free(p);
 
+  // Wait for reply
   uint32_t start = get_tick_count();
   uint32_t timeout_ticks = (timeout_ms + 9) / 10;
-  uint32_t spins = 0;
-  while (!icmp_reply_ok) {
-    rtl_rx_poll();
+  while (!ping_reply_received) {
+    net_poll();
     if ((get_tick_count() - start) > timeout_ticks) {
-      return -1;
-    }
-    if (++spins > timeout_ms * 10000u) {
+      raw_remove(pcb);
       return -1;
     }
     __asm__ volatile("hlt");
   }
 
+  raw_remove(pcb);
   return 0;
 }
 
 void net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be) {
-  u32_to_ip4(ip_be, net_ip);
-  u32_to_ip4(mask_be, net_mask);
-  u32_to_ip4(gw_be, net_gw);
-  arp_valid = 0;
-  printf("[net] cfg ip=%d.%d.%d.%d mask=%d.%d.%d.%d gw=%d.%d.%d.%d\n",
-         net_ip[0], net_ip[1], net_ip[2], net_ip[3],
-         net_mask[0], net_mask[1], net_mask[2], net_mask[3],
-         net_gw[0], net_gw[1], net_gw[2], net_gw[3]);
+  if (!lwip_ready) return;
+  ip4_addr_t ip, mask, gw;
+  IP4_ADDR(&ip, (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+           (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+  IP4_ADDR(&mask, (mask_be >> 24) & 0xFF, (mask_be >> 16) & 0xFF,
+           (mask_be >> 8) & 0xFF, mask_be & 0xFF);
+  IP4_ADDR(&gw, (gw_be >> 24) & 0xFF, (gw_be >> 16) & 0xFF,
+           (gw_be >> 8) & 0xFF, gw_be & 0xFF);
+  netif_set_addr(&rtl_netif, &ip, &mask, &gw);
+  printf("[net] cfg ip=%d.%d.%d.%d\n",
+         (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+         (ip_be >> 8) & 0xFF, ip_be & 0xFF);
 }
 
 void net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be) {
-  if (ip_be) *ip_be = ip4_to_u32(net_ip);
-  if (mask_be) *mask_be = ip4_to_u32(net_mask);
-  if (gw_be) *gw_be = ip4_to_u32(net_gw);
+  if (!lwip_ready) {
+    if (ip_be) *ip_be = 0;
+    if (mask_be) *mask_be = 0;
+    if (gw_be) *gw_be = 0;
+    return;
+  }
+  const ip4_addr_t *ip = netif_ip4_addr(&rtl_netif);
+  const ip4_addr_t *mask = netif_ip4_netmask(&rtl_netif);
+  const ip4_addr_t *gw = netif_ip4_gw(&rtl_netif);
+  if (ip_be) {
+    uint32_t a = ip4_addr_get_u32(ip);
+    // lwIP stores in network byte order, we return host byte order (big-endian IP)
+    *ip_be = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) |
+             (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
+  }
+  if (mask_be) {
+    uint32_t a = ip4_addr_get_u32(mask);
+    *mask_be = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) |
+               (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
+  }
+  if (gw_be) {
+    uint32_t a = ip4_addr_get_u32(gw);
+    *gw_be = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) |
+             (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
+  }
 }
 
-void net_init(void) {
-  printf("[net] init ip=%d.%d.%d.%d mask=%d.%d.%d.%d gw=%d.%d.%d.%d\n",
-         net_ip[0], net_ip[1], net_ip[2], net_ip[3],
-         net_mask[0], net_mask[1], net_mask[2], net_mask[3],
-         net_gw[0], net_gw[1], net_gw[2], net_gw[3]);
-  rtl_init();
+// ==== TCP Socket Table ====
+
+#define MAX_SOCKETS    8
+#define SOCK_RX_BUF    4096
+
+#define SOCK_UNUSED    0
+#define SOCK_LISTEN    1
+#define SOCK_STREAM    2
+
+typedef struct {
+  int in_use;
+  int type;              // SOCK_LISTEN or SOCK_STREAM
+  struct tcp_pcb *pcb;
+  int accepted_fd;       // For listeners: fd of newly accepted connection (-1 if none)
+  uint8_t rx_buf[SOCK_RX_BUF];
+  int rx_head;           // Write position
+  int rx_tail;           // Read position
+  int rx_closed;         // Remote sent FIN
+  int err;               // Error flag
+} ksocket_t;
+
+static ksocket_t sockets[MAX_SOCKETS];
+
+static int alloc_socket(void) {
+  for (int i = 0; i < MAX_SOCKETS; i++) {
+    if (!sockets[i].in_use) {
+      memset(&sockets[i], 0, sizeof(ksocket_t));
+      sockets[i].in_use = 1;
+      sockets[i].accepted_fd = -1;
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Ring buffer helpers
+static int rx_buf_used(ksocket_t *s) {
+  int used = s->rx_head - s->rx_tail;
+  if (used < 0) used += SOCK_RX_BUF;
+  return used;
+}
+
+// lwIP callback: data received on a connected socket
+static err_t sock_recv_cb(void *arg, struct tcp_pcb *tpcb,
+                          struct pbuf *p, err_t err) {
+  ksocket_t *s = (ksocket_t *)arg;
+  (void)err;
+
+  if (!p) {
+    // FIN received — remote closed
+    s->rx_closed = 1;
+    return ERR_OK;
+  }
+
+  // Copy pbuf chain into rx ring buffer
+  struct pbuf *q;
+  for (q = p; q != NULL; q = q->next) {
+    uint16_t copy_len = q->len;
+    uint8_t *src = (uint8_t *)q->payload;
+    for (uint16_t i = 0; i < copy_len; i++) {
+      int next_head = (s->rx_head + 1) % SOCK_RX_BUF;
+      if (next_head == s->rx_tail) break;  // Buffer full, drop remaining
+      s->rx_buf[s->rx_head] = src[i];
+      s->rx_head = next_head;
+    }
+  }
+
+  tcp_recved(tpcb, p->tot_len);
+  pbuf_free(p);
+  return ERR_OK;
+}
+
+// lwIP callback: error on a connected socket
+static void sock_err_cb(void *arg, err_t err) {
+  ksocket_t *s = (ksocket_t *)arg;
+  (void)err;
+  s->err = 1;
+  s->pcb = NULL;  // lwIP already freed the pcb
+}
+
+// lwIP callback: new connection accepted on listener
+static err_t sock_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err) {
+  ksocket_t *ls = (ksocket_t *)arg;
+  (void)err;
+
+  if (ls->accepted_fd >= 0) {
+    // Still have an unaccepted connection — reject this one
+    tcp_abort(newpcb);
+    return ERR_ABRT;
+  }
+
+  int fd = alloc_socket();
+  if (fd < 0) {
+    tcp_abort(newpcb);
+    return ERR_ABRT;
+  }
+
+  sockets[fd].type = SOCK_STREAM;
+  sockets[fd].pcb = newpcb;
+  tcp_arg(newpcb, &sockets[fd]);
+  tcp_recv(newpcb, sock_recv_cb);
+  tcp_err(newpcb, sock_err_cb);
+
+  ls->accepted_fd = fd;  // Signal to accept() syscall
+  return ERR_OK;
+}
+
+// ---- Public TCP socket API ----
+
+int net_sock_listen(uint16_t port) {
+  if (!lwip_ready) return -1;
+
+  int fd = alloc_socket();
+  if (fd < 0) return -1;
+
+  struct tcp_pcb *pcb = tcp_new();
+  if (!pcb) {
+    sockets[fd].in_use = 0;
+    return -1;
+  }
+
+  err_t e = tcp_bind(pcb, IP_ADDR_ANY, port);
+  if (e != ERR_OK) {
+    tcp_close(pcb);
+    sockets[fd].in_use = 0;
+    return -1;
+  }
+
+  struct tcp_pcb *lpcb = tcp_listen(pcb);
+  if (!lpcb) {
+    tcp_close(pcb);
+    sockets[fd].in_use = 0;
+    return -1;
+  }
+
+  sockets[fd].type = SOCK_LISTEN;
+  sockets[fd].pcb = lpcb;
+  tcp_arg(lpcb, &sockets[fd]);
+  tcp_accept(lpcb, sock_accept_cb);
+
+  return fd;
+}
+
+int net_sock_accept(int fd) {
+  if (fd < 0 || fd >= MAX_SOCKETS) return -1;
+  ksocket_t *s = &sockets[fd];
+  if (!s->in_use || s->type != SOCK_LISTEN) return -1;
+
+  if (s->accepted_fd >= 0) {
+    int newfd = s->accepted_fd;
+    s->accepted_fd = -1;
+    return newfd;
+  }
+
+  return -1;  // No pending connection
+}
+
+int net_sock_send(int fd, const void *buf, uint32_t len) {
+  if (fd < 0 || fd >= MAX_SOCKETS) return -1;
+  ksocket_t *s = &sockets[fd];
+  if (!s->in_use || s->type != SOCK_STREAM || !s->pcb) return -1;
+
+  uint16_t sndbuf = tcp_sndbuf(s->pcb);
+  if (sndbuf == 0) return 0;  // Send buffer full, try again later
+  if (len > sndbuf) len = sndbuf;
+
+  err_t e = tcp_write(s->pcb, buf, (uint16_t)len, TCP_WRITE_FLAG_COPY);
+  if (e != ERR_OK) return -1;
+
+  tcp_output(s->pcb);
+  return (int)len;
+}
+
+int net_sock_recv(int fd, void *buf, uint32_t len) {
+  if (fd < 0 || fd >= MAX_SOCKETS) return -1;
+  ksocket_t *s = &sockets[fd];
+  if (!s->in_use || s->type != SOCK_STREAM) return -1;
+
+  int avail = rx_buf_used(s);
+  if (avail == 0) {
+    if (s->rx_closed || s->err || !s->pcb) return 0;  // Connection closed
+    return -1;  // No data yet
+  }
+
+  if ((uint32_t)avail > len) avail = (int)len;
+
+  uint8_t *dst = (uint8_t *)buf;
+  for (int i = 0; i < avail; i++) {
+    dst[i] = s->rx_buf[s->rx_tail];
+    s->rx_tail = (s->rx_tail + 1) % SOCK_RX_BUF;
+  }
+
+  return avail;
+}
+
+int net_sock_close(int fd) {
+  if (fd < 0 || fd >= MAX_SOCKETS) return -1;
+  ksocket_t *s = &sockets[fd];
+  if (!s->in_use) return -1;
+
+  if (s->pcb) {
+    if (s->type == SOCK_STREAM) {
+      tcp_arg(s->pcb, NULL);
+      tcp_recv(s->pcb, NULL);
+      tcp_err(s->pcb, NULL);
+    }
+    tcp_close(s->pcb);
+    s->pcb = NULL;
+  }
+
+  s->in_use = 0;
+  return 0;
 }

@@ -31,6 +31,11 @@
 #define SYS_NETCFG     25  // netcfg(ip_be, mask_be, gw_be)
 #define SYS_NETGET     26  // netget(out_ip, out_mask, out_gw) -> 0
 #define SYS_SLEEPMS    27  // sleepms(ms) -> 0
+#define SYS_SOCK_LISTEN 28  // sock_listen(port) -> fd
+#define SYS_SOCK_ACCEPT 29  // sock_accept(fd) -> new_fd or -1
+#define SYS_SOCK_SEND   30  // sock_send(fd, buf, len) -> bytes
+#define SYS_SOCK_RECV   31  // sock_recv(fd, buf, len) -> bytes, 0=closed, -1=no data
+#define SYS_SOCK_CLOSE  32  // sock_close(fd) -> 0
 
 // Task info returned by SYS_TASKLIST
 typedef struct {

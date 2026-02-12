@@ -28,6 +28,11 @@
 #define SYS_NETCFG     25
 #define SYS_NETGET     26
 #define SYS_SLEEPMS    27
+#define SYS_SOCK_LISTEN 28
+#define SYS_SOCK_ACCEPT 29
+#define SYS_SOCK_SEND   30
+#define SYS_SOCK_RECV   31
+#define SYS_SOCK_CLOSE  32
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -78,5 +83,12 @@ int net_ping(unsigned int ip_be, unsigned int timeout_ms);
 void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be);
 int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be);
 int sleep_ms(unsigned int ms);
+
+// TCP socket syscalls
+int sock_listen(unsigned int port);
+int sock_accept(int fd);
+int sock_send(int fd, const void *buf, unsigned int len);
+int sock_recv(int fd, void *buf, unsigned int len);
+int sock_close(int fd);
 
 #endif

@@ -154,3 +154,23 @@ int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be) {
 int sleep_ms(unsigned int ms) {
     return __syscall1(SYS_SLEEPMS, ms);
 }
+
+int sock_listen(unsigned int port) {
+    return __syscall1(SYS_SOCK_LISTEN, port);
+}
+
+int sock_accept(int fd) {
+    return __syscall1(SYS_SOCK_ACCEPT, (unsigned int)fd);
+}
+
+int sock_send(int fd, const void *buf, unsigned int len) {
+    return __syscall3(SYS_SOCK_SEND, (unsigned int)fd, (unsigned int)buf, len);
+}
+
+int sock_recv(int fd, void *buf, unsigned int len) {
+    return __syscall3(SYS_SOCK_RECV, (unsigned int)fd, (unsigned int)buf, len);
+}
+
+int sock_close(int fd) {
+    return __syscall1(SYS_SOCK_CLOSE, (unsigned int)fd);
+}

@@ -1,6 +1,7 @@
 #include "timer.h"
 #include "../../lib.h"
 #include "../../task.h"
+#include "../../net.h"
 #include "io.h"
 #include "interrupts.h"
 
@@ -25,6 +26,8 @@ uint32_t *timer_handler_switch(uint32_t *esp, uint32_t is_hw) {
     system_ticks++;
     // Only send EOI for real hardware interrupts
     outb(MASTER_PIC_COMMAND, 0x20);
+    // Process lwIP timeouts (ARP, TCP retransmits, etc.)
+    net_poll();
   }
 
   // Call scheduler if multitasking is enabled

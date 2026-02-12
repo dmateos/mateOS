@@ -461,6 +461,21 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_SLEEPMS:
       return (uint32_t)sys_do_sleepms(ebx);
 
+    case SYS_SOCK_LISTEN:
+      return (uint32_t)net_sock_listen((uint16_t)ebx);
+
+    case SYS_SOCK_ACCEPT:
+      return (uint32_t)net_sock_accept((int)ebx);
+
+    case SYS_SOCK_SEND:
+      return (uint32_t)net_sock_send((int)ebx, (const void *)ecx, edx);
+
+    case SYS_SOCK_RECV:
+      return (uint32_t)net_sock_recv((int)ebx, (void *)ecx, edx);
+
+    case SYS_SOCK_CLOSE:
+      return (uint32_t)net_sock_close((int)ebx);
+
     default:
       printf("[syscall] Unknown syscall %d\n", eax);
       return (uint32_t)-1;

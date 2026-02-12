@@ -34,6 +34,48 @@ void *memcpy(void *dest, const void *src, size_t num) {
   return dest;
 }
 
+int strncmp(const char *s1, const char *s2, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    if (s1[i] != s2[i] || s1[i] == '\0') {
+      return (unsigned char)s1[i] - (unsigned char)s2[i];
+    }
+  }
+  return 0;
+}
+
+char *strncpy(char *dest, const char *src, size_t n) {
+  size_t i;
+  for (i = 0; i < n && src[i]; i++) {
+    dest[i] = src[i];
+  }
+  for (; i < n; i++) {
+    dest[i] = '\0';
+  }
+  return dest;
+}
+
+int memcmp(const void *s1, const void *s2, size_t n) {
+  const unsigned char *a = s1;
+  const unsigned char *b = s2;
+  for (size_t i = 0; i < n; i++) {
+    if (a[i] != b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+void *memmove(void *dest, const void *src, size_t n) {
+  unsigned char *d = dest;
+  const unsigned char *s = src;
+  if (d < s) {
+    while (n--) *d++ = *s++;
+  } else {
+    d += n;
+    s += n;
+    while (n--) *--d = *--s;
+  }
+  return dest;
+}
+
 // This is total shit and unsafe, does no bounds checks on buf etc
 void itoa(int num, char *buf, int base) {
   if (num == 0) {

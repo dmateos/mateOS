@@ -2,7 +2,8 @@ TARGET_ARCH = i686-unknown-none-elf
 CC = clang --target=$(TARGET_ARCH)
 AS = clang --target=$(TARGET_ARCH)
 LD = clang --target=$(TARGET_ARCH)
-CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes -fno-pie
+CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes -fno-pie \
+         -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip
 LDFLAGS = -T src/linker.ld -ffreestanding -O2 -nostdlib -static -Wl,--build-id=none
 ARCH = i686
 
@@ -27,6 +28,25 @@ OBJ_C_LIBALLOC = $(patsubst $(SRCDIR)/liballoc/%.c,$(BUILDDIR)/%.o,$(SRC_C_LIBAL
 OBJ_S = $(patsubst $(SRCDIR)/%.S,$(BUILDDIR)/%.o,$(SRC_S))
 OBJ_S_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.S,$(BUILDDIR)/%.o,$(SRC_S_ARCH))
 
+# lwIP sources
+LWIP_DIR = $(SRCDIR)/lwip/src
+LWIP_CFLAGS = -std=gnu99 -ffreestanding -O2 -fno-pie \
+              -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip -I$(SRCDIR)/lwip/include -Wno-address
+SRC_LWIP_CORE = $(LWIP_DIR)/core/init.c $(LWIP_DIR)/core/def.c \
+                $(LWIP_DIR)/core/inet_chksum.c $(LWIP_DIR)/core/ip.c \
+                $(LWIP_DIR)/core/mem.c $(LWIP_DIR)/core/memp.c \
+                $(LWIP_DIR)/core/netif.c $(LWIP_DIR)/core/pbuf.c \
+                $(LWIP_DIR)/core/tcp.c $(LWIP_DIR)/core/tcp_in.c \
+                $(LWIP_DIR)/core/tcp_out.c $(LWIP_DIR)/core/timeouts.c \
+                $(LWIP_DIR)/core/udp.c $(LWIP_DIR)/core/raw.c
+SRC_LWIP_IPV4 = $(LWIP_DIR)/core/ipv4/etharp.c $(LWIP_DIR)/core/ipv4/icmp.c \
+                $(LWIP_DIR)/core/ipv4/ip4.c $(LWIP_DIR)/core/ipv4/ip4_frag.c \
+                $(LWIP_DIR)/core/ipv4/ip4_addr.c
+SRC_LWIP_NETIF = $(LWIP_DIR)/netif/ethernet.c
+SRC_LWIP_API = $(LWIP_DIR)/api/err.c
+SRC_LWIP = $(SRC_LWIP_CORE) $(SRC_LWIP_IPV4) $(SRC_LWIP_NETIF) $(SRC_LWIP_API)
+OBJ_LWIP = $(patsubst $(LWIP_DIR)/%.c,$(BUILDDIR)/lwip/%.o,$(SRC_LWIP))
+
 # Default target
 all: $(TARGET)
 
@@ -37,8 +57,8 @@ rust:
 
 $(RUST_LIB): rust
 
-$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(OBJ_C_LIBALLOC) $(RUST_LIB)
-	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
+$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_LWIP) $(RUST_LIB)
+	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_LWIP) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(BUILDDIR)
@@ -60,6 +80,10 @@ $(BUILDDIR)/%.o: $(SRCDIR)/liballoc/%.c
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(LWIP_CFLAGS) -c $< -o $@
+
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
 	rm -rf out.iso
@@ -74,6 +98,11 @@ test32-gfx:
 test32-net:
 	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
 		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
+
+test32-net-http:
+	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
+		-device rtl8139,netdev=n0 \
+		-netdev user,id=n0,hostfwd=tcp::8080-:80 -no-reboot
 
 test32-gfx-net:
 	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img \
