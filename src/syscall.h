@@ -36,6 +36,8 @@
 #define SYS_SOCK_SEND   30  // sock_send(fd, buf, len) -> bytes
 #define SYS_SOCK_RECV   31  // sock_recv(fd, buf, len) -> bytes, 0=closed, -1=no data
 #define SYS_SOCK_CLOSE  32  // sock_close(fd) -> 0
+#define SYS_WIN_READ_TEXT  33  // win_read_text(wid, buf, max_len) -> bytes read
+#define SYS_WIN_SET_STDOUT 34  // win_set_stdout(wid) -> 0 (-1 to reset to console)
 
 // Task info returned by SYS_TASKLIST
 typedef struct {

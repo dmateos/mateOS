@@ -136,6 +136,17 @@ static void draw_window_frame(int slot) {
     }
 }
 
+// Clear a slot's screen area to desktop color
+static void clear_slot_area(int slot) {
+    int win_w = content_w;
+    int win_h = content_h;
+    int fx = slots[slot].x - BORDER;
+    int fy = slots[slot].y - TITLE_BAR_H - BORDER;
+    int fw = win_w + 2 * BORDER;
+    int fh = win_h + TITLE_BAR_H + 2 * BORDER;
+    ugfx_rect(fx, fy, fw, fh, COL_DESKTOP);
+}
+
 // Blit a window's content buffer onto the framebuffer
 static void composite_window(int slot) {
     if (slots[slot].wid < 0) return;
@@ -149,7 +160,16 @@ static void composite_window(int slot) {
     if (buf_size > (int)sizeof(read_buf)) buf_size = (int)sizeof(read_buf);
 
     int bytes = win_read(slots[slot].wid, read_buf, (unsigned int)buf_size);
-    if (bytes <= 0) return;
+    if (bytes <= 0) {
+        // Window was destroyed — clear slot immediately
+        clear_slot_area(slot);
+        slots[slot].wid = -1;
+        slots[slot].pid = -1;
+        slots[slot].w = 0;
+        slots[slot].h = 0;
+        slots[slot].title[0] = '\0';
+        return;
+    }
 
     int sx = slots[slot].x;
     int sy = slots[slot].y;
@@ -167,7 +187,6 @@ static void composite_window(int slot) {
 static void discover_windows(void) {
     win_info_t info[8];
     int wcount = win_list(info, 8);
-
     // Remove slots whose windows no longer exist
     for (int s = 0; s < WM_MAX_SLOTS; s++) {
         if (slots[s].wid < 0) continue;
@@ -179,6 +198,7 @@ static void discover_windows(void) {
             }
         }
         if (!alive) {
+            clear_slot_area(s);
             slots[s].wid = -1;
             slots[s].pid = -1;
             slots[s].w = 0;
@@ -191,11 +211,15 @@ static void discover_windows(void) {
     for (int i = 0; i < wcount; i++) {
         int s = find_slot_by_wid(info[i].window_id);
         if (s >= 0) {
+            // Already tracked — just update metadata
             wm_strcpy(slots[s].title, info[i].title, 32);
             slots[s].w = info[i].w;
             slots[s].h = info[i].h;
             continue;
         }
+
+        // New window — find a slot for it
+        int is_new = 1;
 
         // Prefer slot pre-reserved for this pid
         for (int k = 0; k < WM_MAX_SLOTS; k++) {
@@ -205,6 +229,8 @@ static void discover_windows(void) {
                 slots[k].w = info[i].w;
                 slots[k].h = info[i].h;
                 s = k;
+                // Pre-reserved slots are expected (initial spawn), don't auto-focus
+                is_new = 0;
                 break;
             }
         }
@@ -218,7 +244,13 @@ static void discover_windows(void) {
                 wm_strcpy(slots[free].title, info[i].title, 32);
                 slots[free].w = info[i].w;
                 slots[free].h = info[i].h;
+                s = free;
             }
+        }
+
+        // Auto-focus genuinely new windows (not pre-reserved ones)
+        if (s >= 0 && is_new) {
+            focus = s;
         }
     }
 
@@ -301,7 +333,7 @@ void _start(void) {
         }
 
         tick++;
-        if (tick % 50 == 0) {
+        if (tick % 10 == 0) {
             discover_windows();
         }
 

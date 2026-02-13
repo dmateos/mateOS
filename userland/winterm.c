@@ -181,6 +181,9 @@ void _start(void) {
         exit(1);
     }
 
+    // Redirect stdout to this window so spawned children's output appears here
+    win_set_stdout(wid);
+
     term_print("mateOS terminal\n");
     term_print("Type 'help' for commands.\n\n");
     term_redraw();
@@ -218,10 +221,25 @@ void _start(void) {
             term_print("]\n");
             term_redraw();
             // Non-blocking wait: keep rendering while child runs
+            // Drain child's stdout text from window text buffer
             int code;
+            char tbuf[256];
             while ((code = wait_nb(child)) == -1) {
+                int n = win_read_text(wid, tbuf, sizeof(tbuf) - 1);
+                if (n > 0) {
+                    tbuf[n] = '\0';
+                    term_print(tbuf);
+                }
                 term_redraw();
                 yield();
+            }
+            // Drain any remaining text after child exits
+            {
+                int n;
+                while ((n = win_read_text(wid, tbuf, sizeof(tbuf) - 1)) > 0) {
+                    tbuf[n] = '\0';
+                    term_print(tbuf);
+                }
             }
             if (code != 0) {
                 term_print("[exit ");
@@ -238,6 +256,7 @@ void _start(void) {
         term_redraw();
     }
 
+    win_set_stdout(-1);
     win_destroy(wid);
     exit(0);
 }

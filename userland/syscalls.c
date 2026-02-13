@@ -174,3 +174,12 @@ int sock_recv(int fd, void *buf, unsigned int len) {
 int sock_close(int fd) {
     return __syscall1(SYS_SOCK_CLOSE, (unsigned int)fd);
 }
+
+int win_read_text(int wid, char *buf, int max_len) {
+    return __syscall3(SYS_WIN_READ_TEXT, (unsigned int)wid,
+                      (unsigned int)buf, (unsigned int)max_len);
+}
+
+int win_set_stdout(int wid) {
+    return __syscall1(SYS_WIN_SET_STDOUT, (unsigned int)wid);
+}

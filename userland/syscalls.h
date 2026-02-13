@@ -33,6 +33,8 @@
 #define SYS_SOCK_SEND   30
 #define SYS_SOCK_RECV   31
 #define SYS_SOCK_CLOSE  32
+#define SYS_WIN_READ_TEXT  33
+#define SYS_WIN_SET_STDOUT 34
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -90,5 +92,9 @@ int sock_accept(int fd);
 int sock_send(int fd, const void *buf, unsigned int len);
 int sock_recv(int fd, void *buf, unsigned int len);
 int sock_close(int fd);
+
+// Window stdout redirection
+int win_read_text(int wid, char *buf, int max_len);
+int win_set_stdout(int wid);
 
 #endif

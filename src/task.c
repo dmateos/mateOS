@@ -61,14 +61,20 @@ void task_init(void) {
 task_t *task_create(const char *name, void (*entry)(void)) {
   // Find free task slot
   task_t *task = NULL;
+  int reusing = 0;
   for (int i = 1; i < MAX_TASKS; i++) {
-    if (tasks[i].state == TASK_TERMINATED || tasks[i].id == 0) {
+    if (tasks[i].state == TASK_TERMINATED) {
       task = &tasks[i];
+      reusing = 1;
       // Free leftover kernel stack from terminated task
       if (task->kernel_stack) {
         kfree(task->kernel_stack);
         task->kernel_stack = NULL;
       }
+      break;
+    }
+    if (tasks[i].id == 0) {
+      task = &tasks[i];
       break;
     }
   }
@@ -130,18 +136,18 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->kernel_stack = NULL;
   task->kernel_stack_top = 0;
   task->page_dir = NULL;
+  task->stdout_wid = -1;
 
-  // Add to circular task list
-  if (task_list_head == NULL) {
-    task->next = task;
-    task_list_head = task;
-  } else {
-    // Insert after current task
-    task->next = current_task->next;
-    current_task->next = task;
+  // Add to circular task list (skip if reusing — already linked)
+  if (!reusing) {
+    if (task_list_head == NULL) {
+      task->next = task;
+      task_list_head = task;
+    } else {
+      task->next = current_task->next;
+      current_task->next = task;
+    }
   }
-
-  // task created silently
 
   return task;
 }
@@ -153,14 +159,20 @@ task_t *task_create(const char *name, void (*entry)(void)) {
 task_t *task_create_user_elf(const char *filename) {
   // Find free task slot
   task_t *task = NULL;
+  int reusing = 0;
   for (int i = 1; i < MAX_TASKS; i++) {
-    if (tasks[i].state == TASK_TERMINATED || tasks[i].id == 0) {
+    if (tasks[i].state == TASK_TERMINATED) {
       task = &tasks[i];
+      reusing = 1;
       // Free leftover kernel stack from terminated task
       if (task->kernel_stack) {
         kfree(task->kernel_stack);
         task->kernel_stack = NULL;
       }
+      break;
+    }
+    if (tasks[i].id == 0) {
+      task = &tasks[i];
       break;
     }
   }
@@ -238,14 +250,17 @@ task_t *task_create_user_elf(const char *filename) {
   *(--sp) = USER_DATA_SEL;  // DS
 
   task->stack_top = sp;
+  task->stdout_wid = -1;
 
-  // Add to circular task list
-  if (task_list_head == NULL) {
-    task->next = task;
-    task_list_head = task;
-  } else {
-    task->next = current_task->next;
-    current_task->next = task;
+  // Add to circular task list (skip if reusing — already linked)
+  if (!reusing) {
+    if (task_list_head == NULL) {
+      task->next = task;
+      task_list_head = task;
+    } else {
+      task->next = current_task->next;
+      current_task->next = task;
+    }
   }
 
   return task;

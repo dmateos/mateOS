@@ -33,16 +33,19 @@ typedef struct {
   uint32_t ss;     // Only present for ring transitions
 } __attribute__((packed)) iret_frame_t;
 
-// Write to console (fd is ignored for now - only stdout supported)
-static int sys_do_write(int fd __attribute__((unused)),
-                        const char *buf, size_t len) {
-  // Basic validation - ensure buffer is in valid memory range
-  // In a real OS, we'd check if the pointer is in user space
+// Write to console or window text buffer (if stdout redirected)
+static int sys_do_write(int fd, const char *buf, size_t len) {
   if (buf == NULL || len == 0) {
     return -1;
   }
 
-  // Write each character to console
+  // If fd=1 and task has stdout redirected to a window, append text there
+  task_t *current = task_current();
+  if (fd == 1 && current && current->stdout_wid >= 0) {
+    return window_append_text(current->stdout_wid, buf, (int)len);
+  }
+
+  // Default: write to kernel console
   for (size_t i = 0; i < len; i++) {
     printf("%c", buf[i]);
   }
@@ -280,8 +283,14 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
 static int sys_do_spawn(const char *filename) {
   if (!filename) return -1;
 
+  task_t *parent = task_current();
   task_t *t = task_create_user_elf(filename);
   if (!t) return -1;
+
+  // Inherit parent's stdout redirection
+  if (parent && parent->stdout_wid >= 0) {
+    t->stdout_wid = parent->stdout_wid;
+  }
 
   if (!task_is_enabled()) {
     task_enable();
@@ -475,6 +484,20 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_SOCK_CLOSE:
       return (uint32_t)net_sock_close((int)ebx);
+
+    case SYS_WIN_READ_TEXT: {
+      task_t *cur = task_current();
+      return cur ? (uint32_t)window_read_text((int)ebx, cur->id,
+                                              (char *)ecx, (int)edx)
+                 : (uint32_t)-1;
+    }
+
+    case SYS_WIN_SET_STDOUT: {
+      task_t *cur = task_current();
+      if (!cur) return (uint32_t)-1;
+      cur->stdout_wid = (int)ebx;
+      return 0;
+    }
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);
