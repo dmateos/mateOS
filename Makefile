@@ -50,7 +50,7 @@ SRC_LWIP = $(SRC_LWIP_CORE) $(SRC_LWIP_IPV4) $(SRC_LWIP_NETIF) $(SRC_LWIP_API)
 OBJ_LWIP = $(patsubst $(LWIP_DIR)/%.c,$(BUILDDIR)/lwip/%.o,$(SRC_LWIP))
 
 # Default target
-all: $(TARGET)
+all: userland initrd $(TARGET)
 
 # Build Rust library
 rust:
@@ -93,10 +93,8 @@ $(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c
 userland:
 	@$(MAKE) -C userland
 
-USERLAND_ELFS = $(wildcard userland/*.elf)
-
 initrd: userland
-	./tools/mkinitrd initrd.img $(USERLAND_ELFS)
+	./tools/mkinitrd initrd.img userland/*.elf
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
