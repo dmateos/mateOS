@@ -12,6 +12,7 @@
 #include "pmm.h"
 #include "window.h"
 #include "net.h"
+#include "mouse.h"
 
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
@@ -222,6 +223,7 @@ static uint32_t sys_do_gfx_init(void) {
       keyboard_buffer_enable(1);
       user_gfx_active = 1;
       gfx_owner_pid = current ? current->id : 0;
+      mouse_set_bounds((int)bga_width, (int)bga_height);
 
       return bga_fb_addr;
     }
@@ -242,6 +244,7 @@ static uint32_t sys_do_gfx_init(void) {
     task_t *cur = task_current();
     gfx_owner_pid = cur ? cur->id : 0;
   }
+  mouse_set_bounds(320, 200);
 
   return 0xA0000;
 }
@@ -496,6 +499,14 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       task_t *cur = task_current();
       if (!cur) return (uint32_t)-1;
       cur->stdout_wid = (int)ebx;
+      return 0;
+    }
+
+    case SYS_GETMOUSE: {
+      mouse_state_t ms = mouse_get_state();
+      if (ebx) *(int *)ebx = ms.x;
+      if (ecx) *(int *)ecx = ms.y;
+      if (edx) *(uint8_t *)edx = ms.buttons;
       return 0;
     }
 

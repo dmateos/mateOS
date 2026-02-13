@@ -24,6 +24,7 @@ static int content_h = 78;
 #define COL_TITLE_TXT  15  // White
 #define COL_BORDER_ACT 15  // White
 #define COL_BORDER_INACT 7 // Light gray
+#define COL_CURSOR     15  // White
 
 // Window slot - WM-side tracking
 typedef struct {
@@ -38,8 +39,77 @@ static wm_slot_t slots[WM_MAX_SLOTS];
 static int focus = 0;
 static int num_slots = 0;
 
+// Mouse state
+static int drag_slot = -1;   // Slot being dragged (-1 = none)
+static int drag_ox, drag_oy; // Offset from slot.x/y to mouse at drag start
+static unsigned char prev_buttons = 0;
+
 // Buffer for reading window content (max 500*400 = 200000)
 static unsigned char read_buf[200000];
+
+// Cursor bitmap (8x16, 1=white, 0 in mask=transparent)
+#define CURSOR_W 8
+#define CURSOR_H 16
+static const unsigned char cursor_data[CURSOR_H] = {
+    0x80, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF,
+    0xF8, 0xF8, 0xFC, 0x4C, 0x0C, 0x06, 0x06, 0x00
+};
+static const unsigned char cursor_mask[CURSOR_H] = {
+    0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF, 0xFF,
+    0xFF, 0xFC, 0xFE, 0xFE, 0x4E, 0x0F, 0x0F, 0x07
+};
+
+// Save buffer for pixels under cursor
+static unsigned char cursor_save[CURSOR_W * CURSOR_H];
+static int cursor_save_x = -1, cursor_save_y = -1;
+static int cursor_visible = 0;
+
+static void hide_cursor(void) {
+    if (!cursor_visible) return;
+    for (int row = 0; row < CURSOR_H; row++) {
+        if (cursor_save_y + row < 0 || cursor_save_y + row >= ugfx_height) continue;
+        unsigned char mask = cursor_mask[row];
+        for (int col = 0; col < CURSOR_W; col++) {
+            if (cursor_save_x + col < 0 || cursor_save_x + col >= ugfx_width) continue;
+            if (mask & (0x80 >> col)) {
+                ugfx_pixel(cursor_save_x + col, cursor_save_y + row,
+                           cursor_save[row * CURSOR_W + col]);
+            }
+        }
+    }
+    cursor_visible = 0;
+}
+
+static void show_cursor(int mx, int my) {
+    // Save pixels under new position
+    cursor_save_x = mx;
+    cursor_save_y = my;
+    for (int row = 0; row < CURSOR_H; row++) {
+        if (my + row < 0 || my + row >= ugfx_height) continue;
+        unsigned char mask = cursor_mask[row];
+        for (int col = 0; col < CURSOR_W; col++) {
+            if (mx + col < 0 || mx + col >= ugfx_width) continue;
+            if (mask & (0x80 >> col)) {
+                cursor_save[row * CURSOR_W + col] =
+                    ugfx_read_pixel(mx + col, my + row);
+            }
+        }
+    }
+    // Draw cursor
+    for (int row = 0; row < CURSOR_H; row++) {
+        if (my + row < 0 || my + row >= ugfx_height) continue;
+        unsigned char mask = cursor_mask[row];
+        unsigned char bits = cursor_data[row];
+        for (int col = 0; col < CURSOR_W; col++) {
+            if (mx + col < 0 || mx + col >= ugfx_width) continue;
+            if (mask & (0x80 >> col)) {
+                unsigned char color = (bits & (0x80 >> col)) ? COL_CURSOR : 0;
+                ugfx_pixel(mx + col, my + row, color);
+            }
+        }
+    }
+    cursor_visible = 1;
+}
 
 static void wm_strcpy(char *dst, const char *src, int max) {
     int i;
@@ -68,6 +138,32 @@ static int next_active_slot(int start) {
         if (slots[s].wid >= 0) return s;
     }
     return -1;
+}
+
+static void get_slot_frame(int slot, int *fx, int *fy, int *fw, int *fh) {
+    int win_w = slots[slot].w > 0 ? slots[slot].w : content_w;
+    int win_h = slots[slot].h > 0 ? slots[slot].h : content_h;
+    if (win_w > content_w) win_w = content_w;
+    if (win_h > content_h) win_h = content_h;
+    *fx = slots[slot].x - BORDER;
+    *fy = slots[slot].y - TITLE_BAR_H - BORDER;
+    *fw = win_w + 2 * BORDER;
+    *fh = win_h + TITLE_BAR_H + 2 * BORDER;
+}
+
+// Hit-test: is (mx, my) inside slot's frame?
+static int slot_hit_test(int slot, int mx, int my) {
+    int fx, fy, fw, fh;
+    get_slot_frame(slot, &fx, &fy, &fw, &fh);
+    return (mx >= fx && mx < fx + fw && my >= fy && my < fy + fh);
+}
+
+// Is (mx, my) in slot's title bar?
+static int title_hit_test(int slot, int mx, int my) {
+    int fx, fy, fw, fh;
+    get_slot_frame(slot, &fx, &fy, &fw, &fh);
+    return (mx >= fx && mx < fx + fw &&
+            my >= fy && my < fy + TITLE_BAR_H + 2 * BORDER);
 }
 
 static void compute_layout(void) {
@@ -112,14 +208,10 @@ static void draw_taskbar(void) {
 // Draw a window frame (border + title bar)
 static void draw_window_frame(int slot) {
     int is_focused = (slot == focus);
-    int win_w = slots[slot].w > 0 ? slots[slot].w : content_w;
-    int win_h = slots[slot].h > 0 ? slots[slot].h : content_h;
-    if (win_w > content_w) win_w = content_w;
-    if (win_h > content_h) win_h = content_h;
-    int fx = slots[slot].x - BORDER;
-    int fy = slots[slot].y - TITLE_BAR_H - BORDER;
-    int fw = win_w + 2 * BORDER;
-    int fh = win_h + TITLE_BAR_H + 2 * BORDER;
+    int fx, fy, fw, fh;
+    get_slot_frame(slot, &fx, &fy, &fw, &fh);
+
+    int win_w = fw - 2 * BORDER;
 
     // Border
     ugfx_rect_outline(fx, fy, fw, fh,
@@ -138,12 +230,8 @@ static void draw_window_frame(int slot) {
 
 // Clear a slot's screen area to desktop color
 static void clear_slot_area(int slot) {
-    int win_w = content_w;
-    int win_h = content_h;
-    int fx = slots[slot].x - BORDER;
-    int fy = slots[slot].y - TITLE_BAR_H - BORDER;
-    int fw = win_w + 2 * BORDER;
-    int fh = win_h + TITLE_BAR_H + 2 * BORDER;
+    int fx, fy, fw, fh;
+    get_slot_frame(slot, &fx, &fy, &fw, &fh);
     ugfx_rect(fx, fy, fw, fh, COL_DESKTOP);
 }
 
@@ -268,6 +356,57 @@ static void discover_windows(void) {
     }
 }
 
+// Handle mouse input: click-to-focus and title bar dragging
+static void handle_mouse(int mx, int my, unsigned char buttons) {
+    int left = buttons & 1;
+    int prev_left = prev_buttons & 1;
+
+    // Left button just pressed
+    if (left && !prev_left) {
+        // Check title bar drag start (check focused window first, then others)
+        for (int i = 0; i < WM_MAX_SLOTS; i++) {
+            if (slots[i].wid < 0) continue;
+            if (title_hit_test(i, mx, my)) {
+                drag_slot = i;
+                drag_ox = mx - slots[i].x;
+                drag_oy = my - slots[i].y;
+                focus = i;
+                prev_buttons = buttons;
+                return;
+            }
+        }
+        // Click-to-focus (not on title bar)
+        for (int i = 0; i < WM_MAX_SLOTS; i++) {
+            if (slots[i].wid < 0) continue;
+            if (slot_hit_test(i, mx, my)) {
+                focus = i;
+                break;
+            }
+        }
+    }
+
+    // Dragging
+    if (left && drag_slot >= 0) {
+        int old_x = slots[drag_slot].x;
+        int old_y = slots[drag_slot].y;
+        int new_x = mx - drag_ox;
+        int new_y = my - drag_oy;
+        if (new_x != old_x || new_y != old_y) {
+            // Clear old position
+            clear_slot_area(drag_slot);
+            slots[drag_slot].x = new_x;
+            slots[drag_slot].y = new_y;
+        }
+    }
+
+    // Left button released
+    if (!left && prev_left) {
+        drag_slot = -1;
+    }
+
+    prev_buttons = buttons;
+}
+
 void _start(void) {
     // Enter graphics mode
     if (ugfx_init() != 0) {
@@ -314,8 +453,11 @@ void _start(void) {
     // Main loop
     int running = 1;
     int tick = 0;
+    int mx = 0, my = 0;
+    unsigned char btns = 0;
 
     while (running) {
+        // Keyboard input
         unsigned char key = ugfx_getkey();
         if (key) {
             if (key == 27) {
@@ -332,6 +474,10 @@ void _start(void) {
             }
         }
 
+        // Mouse input
+        getmouse(&mx, &my, &btns);
+        handle_mouse(mx, my, btns);
+
         tick++;
         if (tick % 10 == 0) {
             discover_windows();
@@ -345,6 +491,10 @@ void _start(void) {
         }
 
         draw_taskbar();
+
+        // Restore pixels under old cursor, draw at new position
+        hide_cursor();
+        show_cursor(mx, my);
         yield();
     }
 

@@ -183,3 +183,8 @@ int win_read_text(int wid, char *buf, int max_len) {
 int win_set_stdout(int wid) {
     return __syscall1(SYS_WIN_SET_STDOUT, (unsigned int)wid);
 }
+
+int getmouse(int *x, int *y, unsigned char *buttons) {
+    return __syscall3(SYS_GETMOUSE, (unsigned int)x,
+                      (unsigned int)y, (unsigned int)buttons);
+}

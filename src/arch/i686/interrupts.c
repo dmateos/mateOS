@@ -219,6 +219,8 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
     break;
   case 0x2B: // IRQ11 (e.g., RTL8139)
     break;
+  case 0x2C: // IRQ12 (PS/2 mouse)
+    break;
   default:
     printf("Unknown IRQ 0x%x 0x%x\n", number, number2);
   }

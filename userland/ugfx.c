@@ -220,6 +220,11 @@ void ugfx_pixel(int x, int y, unsigned char color) {
     framebuffer[y * ugfx_width + x] = color;
 }
 
+unsigned char ugfx_read_pixel(int x, int y) {
+    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return 0;
+    return framebuffer[y * ugfx_width + x];
+}
+
 void ugfx_rect(int x, int y, int w, int h, unsigned char color) {
     for (int row = y; row < y + h; row++) {
         if (row < 0 || row >= ugfx_height) continue;

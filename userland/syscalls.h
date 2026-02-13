@@ -35,6 +35,7 @@
 #define SYS_SOCK_CLOSE  32
 #define SYS_WIN_READ_TEXT  33
 #define SYS_WIN_SET_STDOUT 34
+#define SYS_GETMOUSE       35
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -96,5 +97,8 @@ int sock_close(int fd);
 // Window stdout redirection
 int win_read_text(int wid, char *buf, int max_len);
 int win_set_stdout(int wid);
+
+// Mouse
+int getmouse(int *x, int *y, unsigned char *buttons);
 
 #endif

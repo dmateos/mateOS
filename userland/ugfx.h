@@ -11,6 +11,7 @@ void ugfx_exit(void);
 
 // Drawing primitives
 void ugfx_pixel(int x, int y, unsigned char color);
+unsigned char ugfx_read_pixel(int x, int y);
 void ugfx_rect(int x, int y, int w, int h, unsigned char color);
 void ugfx_rect_outline(int x, int y, int w, int h, unsigned char color);
 void ugfx_clear(unsigned char color);

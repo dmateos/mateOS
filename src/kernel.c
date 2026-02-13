@@ -19,6 +19,7 @@
 #include "window.h"
 #include "arch/i686/legacytty.h"
 #include "net.h"
+#include "mouse.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -120,6 +121,11 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize window manager subsystem
   window_init();
+
+  // Initialize PS/2 mouse
+  mouse_init();
+  test.register_interrupt_handler(0x2C, mouse_irq_handler);
+  pic_unmask_irq(12);
 
   // Boot message
   console_init();

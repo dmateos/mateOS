@@ -38,6 +38,7 @@
 #define SYS_SOCK_CLOSE  32  // sock_close(fd) -> 0
 #define SYS_WIN_READ_TEXT  33  // win_read_text(wid, buf, max_len) -> bytes read
 #define SYS_WIN_SET_STDOUT 34  // win_set_stdout(wid) -> 0 (-1 to reset to console)
+#define SYS_GETMOUSE       35  // getmouse(out_x, out_y, out_buttons) -> 0
 
 // Task info returned by SYS_TASKLIST
 typedef struct {
