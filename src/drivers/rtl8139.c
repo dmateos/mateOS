@@ -1,5 +1,5 @@
 #include "rtl8139.h"
-#include "../pci.h"
+#include "../arch/i686/pci.h"
 #include "../arch/i686/io.h"
 #include "../arch/i686/interrupts.h"
 

@@ -5,14 +5,14 @@
 #include "task.h"
 #include "keyboard.h"
 #include "arch/i686/paging.h"
-#include "arch/i686/io.h"
 #include "arch/i686/vga.h"
 #include "arch/i686/timer.h"
+#include "arch/i686/cpu.h"
 #include "liballoc/liballoc_1_1.h"
 #include "pmm.h"
 #include "window.h"
 #include "net.h"
-#include "mouse.h"
+#include "arch/i686/mouse.h"
 
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
@@ -403,9 +403,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_SHUTDOWN:
       printf("Shutting down...\n");
-      outw(0x604, 0x2000);  // QEMU ACPI shutdown
-      // If that didn't work, halt
-      while (1) { __asm__ volatile("cli; hlt"); }
+      cpu_shutdown();
       return 0;
 
     case SYS_WIN_CREATE: {

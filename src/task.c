@@ -4,6 +4,7 @@
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/tss.h"
 #include "arch/i686/paging.h"
+#include "arch/i686/cpu.h"
 #include "pmm.h"
 #include "window.h"
 
@@ -18,7 +19,7 @@ static int multitasking_enabled = 0;
 static void idle_task_entry(void) {
   while (1) {
     // Just halt and wait for interrupts
-    __asm__ volatile("hlt");
+    cpu_halt();
   }
 }
 
@@ -329,7 +330,7 @@ uint32_t *schedule(uint32_t *current_esp) {
 void task_yield(void) {
   // Use dedicated yield interrupt (0x81) instead of timer interrupt (0x20)
   // to avoid sending spurious EOI to the PIC, which corrupts its state
-  __asm__ volatile("int $0x81");
+  cpu_yield_interrupt();
 }
 
 void task_exit_with_code(int code) {

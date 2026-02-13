@@ -2,6 +2,7 @@
 #include "lib.h"
 #include "drivers/rtl8139.h"
 #include "arch/i686/timer.h"
+#include "arch/i686/cpu.h"
 
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -104,7 +105,7 @@ void net_poll(void) {
 int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
   if (!lwip_ready) return -1;
 
-  __asm__ volatile("sti");
+  cpu_enable_interrupts();
 
   // Create raw ICMP PCB
   struct raw_pcb *pcb = raw_new(IP_PROTO_ICMP);
@@ -160,7 +161,7 @@ int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
       raw_remove(pcb);
       return -1;
     }
-    __asm__ volatile("hlt");
+    cpu_halt();
   }
 
   raw_remove(pcb);

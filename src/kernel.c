@@ -15,11 +15,11 @@
 #include "task.h"
 #include "syscall.h"
 #include "pmm.h"
-#include "pci.h"
+#include "arch/i686/pci.h"
 #include "window.h"
 #include "arch/i686/legacytty.h"
 #include "net.h"
-#include "mouse.h"
+#include "arch/i686/mouse.h"
 
 // External Rust functions
 extern void rust_hello(void);

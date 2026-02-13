@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include "../arch/i686/cpu.h"
 
 // Bump allocator for liballoc hooks
 // This is the simplest allocator - just advances heap pointer, no freeing
@@ -14,28 +15,13 @@ static uintptr_t heap_end = 0x600000;      // 6MB mark (2MB heap)
 // Track interrupt state for nested lock/unlock
 static int interrupt_state = 0;
 
-// Assembly helpers for interrupt control
-static inline void cli(void) {
-    __asm__ volatile("cli");
-}
-
-static inline void sti(void) {
-    __asm__ volatile("sti");
-}
-
-static inline int interrupts_enabled(void) {
-    unsigned int flags;
-    __asm__ volatile("pushf; pop %0" : "=r"(flags));
-    return (flags & 0x200) != 0;  // IF flag is bit 9
-}
-
 /**
  * Lock memory data structures by disabling interrupts
  * @return 0 on success
  */
 int liballoc_lock(void) {
-    interrupt_state = interrupts_enabled();
-    cli();
+    interrupt_state = cpu_interrupts_enabled();
+    cpu_disable_interrupts();
     return 0;
 }
 
@@ -45,7 +31,7 @@ int liballoc_lock(void) {
  */
 int liballoc_unlock(void) {
     if (interrupt_state) {
-        sti();
+        cpu_enable_interrupts();
     }
     return 0;
 }

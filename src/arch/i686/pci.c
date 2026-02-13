@@ -1,5 +1,5 @@
 #include "pci.h"
-#include "arch/i686/io.h"
+#include "io.h"
 
 static pci_device_t pci_devices[PCI_MAX_DEVICES];
 static int pci_device_count = 0;

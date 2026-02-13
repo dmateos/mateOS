@@ -1,5 +1,5 @@
 #include "mouse.h"
-#include "arch/i686/io.h"
+#include "io.h"
 
 #define PS2_DATA    0x60
 #define PS2_STATUS  0x64

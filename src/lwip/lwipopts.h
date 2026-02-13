@@ -51,13 +51,13 @@ extern unsigned int get_tick_count(void);
 #define SYS_LIGHTWEIGHT_PROT    1
 typedef int sys_prot_t;
 
+#include "../arch/i686/cpu.h"
+
 static inline sys_prot_t sys_arch_protect(void) {
-  unsigned int flags;
-  __asm__ volatile("pushf; pop %0; cli" : "=r"(flags));
-  return (sys_prot_t)flags;
+  return (sys_prot_t)cpu_irq_save();
 }
 static inline void sys_arch_unprotect(sys_prot_t pval) {
-  __asm__ volatile("push %0; popf" : : "r"((unsigned int)pval) : "memory", "cc");
+  cpu_irq_restore((uint32_t)pval);
 }
 
 #define SYS_ARCH_DECL_PROTECT(lev)  sys_prot_t lev
