@@ -90,62 +90,60 @@ $(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LWIP_CFLAGS) -c $< -o $@
 
+userland:
+	@$(MAKE) -C userland
+
+USERLAND_ELFS = $(wildcard userland/*.elf)
+
+initrd: userland
+	./tools/mkinitrd initrd.img $(USERLAND_ELFS)
+
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
-	rm -rf out.iso
+	rm -rf out.iso initrd.img
+	@$(MAKE) -C userland clean
 	@cd rust && cargo clean 2>/dev/null || true
 
-test32:
-	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img -no-reboot
+# ---- QEMU run target ----
+# Usage:
+#   make run                          # curses, no net
+#   make run GFX=1                    # sdl + vga std
+#   make run VNC=1                    # vnc + vga std
+#   make run NET=1                    # curses + user net
+#   make run GFX=1 NET=1             # sdl + user net
+#   make run NET=1 HTTP=1            # curses + user net + port fwd 8080:80
+#   make run GFX=1 NET=1 HTTP=1     # sdl + net + port fwd
+#   make run NET=tap                  # tap networking
+#   make run VNC=1 NET=1 HTTP=1     # vnc + net + port fwd
 
-test32-gfx:
-	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img -no-reboot
+QEMU = qemu-system-i386
+QEMU_BASE = -kernel $(TARGET) -initrd initrd.img -no-reboot
 
-test32-net:
-	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
+ifdef VNC
+  QEMU_DISPLAY = -display vnc=:0 -vga std
+else ifdef GFX
+  QEMU_DISPLAY = -display sdl -vga std
+else
+  QEMU_DISPLAY = -display curses
+endif
 
-test32-net-http:
-	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 \
-		-netdev user,id=n0,hostfwd=tcp::8080-:80 -no-reboot
+ifeq ($(NET),tap)
+  QEMU_NET = -device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no
+else ifdef NET
+  ifdef HTTP
+    QEMU_NET = -device rtl8139,netdev=n0 -netdev user,id=n0,hostfwd=tcp::8080-:80
+  else
+    QEMU_NET = -device rtl8139,netdev=n0 -netdev user,id=n0
+  endif
+else
+  QEMU_NET =
+endif
 
-test32-gfx-net:
-	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
-
-test32-gfx-net-http:
-	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 \
-		-netdev user,id=n0,hostfwd=tcp::8080-:80 -no-reboot
-
-test32-vnc-net-http:
+run:
+ifdef VNC
 	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
-	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 \
-		-netdev user,id=n0,hostfwd=tcp::8080-:80 -no-reboot
-
-test32-net-tap:
-	qemu-system-i386 -display curses -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no -no-reboot
-
-test32-gfx-net-tap:
-	qemu-system-i386 -display sdl -vga std -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no -no-reboot
-
-test32-vnc:
-	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
-	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img -no-reboot
-
-test32-vnc-net:
-	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
-	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 -netdev user,id=n0 -no-reboot
-
-test32-vnc-net-tap:
-	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
-	qemu-system-i386 -display vnc=:0 -vga std -kernel $(TARGET) -initrd initrd.img \
-		-device rtl8139,netdev=n0 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no -no-reboot
+endif
+	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET)
 
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)
@@ -160,4 +158,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust
+.PHONY: clean rust run userland initrd
