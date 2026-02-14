@@ -10,8 +10,8 @@ static void print(const char *str) {
     write(1, str, len);
 }
 
-// Entry point - no main(), just _start
-void _start(void) {
+void _start(int argc, char **argv) {
+  (void)argc; (void)argv;
     print("Hello from userland ELF!\n");
     print("This is a separate program loaded from initrd.\n");
     print("Exiting now...\n");

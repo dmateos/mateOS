@@ -137,7 +137,25 @@ static void cmd_jobs(void) {
     }
 }
 
-void _start(void) {
+// Parse a command line in-place into argv tokens (split on spaces).
+// Returns argc. Modifies line by inserting NULs.
+static int parse_argv(char *line, const char **argv, int max_args) {
+    int argc = 0;
+    char *p = line;
+    while (*p && argc < max_args) {
+        // Skip leading spaces
+        while (*p == ' ') p++;
+        if (*p == '\0') break;
+        argv[argc++] = p;
+        // Find end of token
+        while (*p && *p != ' ') p++;
+        if (*p) *p++ = '\0';
+    }
+    return argc;
+}
+
+void _start(int argc, char **argv) {
+    (void)argc; (void)argv;
     print("mateOS shell v0.1\n");
     print("Type 'help' for commands.\n\n");
 
@@ -190,16 +208,35 @@ void _start(void) {
 
         if (len == 0) continue;
 
+        // Parse command line into argv tokens
+        const char *args[16];
+        int ac = parse_argv(line, args, 16);
+        if (ac == 0) continue;
+
+        // Auto-append .elf if not already present
+        char elfname[64];
+        const char *cmd = args[0];
+        int cmdlen = strlen(cmd);
+        if (cmdlen < 4 || cmd[cmdlen-4] != '.' || cmd[cmdlen-3] != 'e' ||
+            cmd[cmdlen-2] != 'l' || cmd[cmdlen-1] != 'f') {
+            // Copy and append .elf
+            int i;
+            for (i = 0; i < 59 && cmd[i]; i++) elfname[i] = cmd[i];
+            elfname[i++] = '.'; elfname[i++] = 'e';
+            elfname[i++] = 'l'; elfname[i++] = 'f'; elfname[i] = '\0';
+            args[0] = elfname;
+        }
+
         // Try to run as program
-        int child = spawn(line);
+        int child = spawn_argv(args[0], args, ac);
         if (child >= 0) {
             if (background) {
                 print("[");
                 print_num(child);
                 print("] ");
-                print(line);
+                print(args[0]);
                 print("\n");
-                bg_add(child, line);
+                bg_add(child, args[0]);
             } else {
                 int code = wait(child);
                 if (code != 0) {
@@ -210,7 +247,7 @@ void _start(void) {
             }
         } else {
             print("Unknown command: ");
-            print(line);
+            print(args[0]);
             print("\n");
         }
     }

@@ -79,7 +79,12 @@ unsigned int gfx_info(void) {
 }
 
 int spawn(const char *filename) {
-    return __syscall1(SYS_SPAWN, (unsigned int)filename);
+    return __syscall3(SYS_SPAWN, (unsigned int)filename, 0, 0);
+}
+
+int spawn_argv(const char *filename, const char **argv, int argc) {
+    return __syscall3(SYS_SPAWN, (unsigned int)filename,
+                      (unsigned int)argv, (unsigned int)argc);
 }
 
 int wait(int task_id) {
@@ -187,4 +192,28 @@ int win_set_stdout(int wid) {
 int getmouse(int *x, int *y, unsigned char *buttons) {
     return __syscall3(SYS_GETMOUSE, (unsigned int)x,
                       (unsigned int)y, (unsigned int)buttons);
+}
+
+int open(const char *path, int flags) {
+    return __syscall2(SYS_OPEN, (unsigned int)path, (unsigned int)flags);
+}
+
+int fread(int fd, void *buf, unsigned int len) {
+    return __syscall3(SYS_FREAD, (unsigned int)fd, (unsigned int)buf, len);
+}
+
+int fwrite(int fd, const void *buf, unsigned int len) {
+    return __syscall3(SYS_FWRITE, (unsigned int)fd, (unsigned int)buf, len);
+}
+
+int close(int fd) {
+    return __syscall1(SYS_CLOSE, (unsigned int)fd);
+}
+
+int seek(int fd, int offset, int whence) {
+    return __syscall3(SYS_SEEK, (unsigned int)fd, (unsigned int)offset, (unsigned int)whence);
+}
+
+int stat(const char *path, stat_t *st) {
+    return __syscall2(SYS_STAT, (unsigned int)path, (unsigned int)st);
 }

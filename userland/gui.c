@@ -407,7 +407,8 @@ static void handle_mouse(int mx, int my, unsigned char buttons) {
     prev_buttons = buttons;
 }
 
-void _start(void) {
+void _start(int argc, char **argv) {
+    (void)argc; (void)argv;
     // Enter graphics mode
     if (ugfx_init() != 0) {
         write(1, "WM: gfx_init failed\n", 20);

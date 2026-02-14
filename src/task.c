@@ -1,6 +1,7 @@
 #include "task.h"
 #include "syscall.h"  // for load_elf_into
 #include "lib.h"
+#include "vfs.h"
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/tss.h"
 #include "arch/i686/paging.h"
@@ -157,7 +158,16 @@ task_t *task_create(const char *name, void (*entry)(void)) {
 // The ELF is loaded entirely in kernel mode — the task starts directly
 // at the ELF entry point with no kernel trampoline. No kernel pages are
 // marked user-accessible.
-task_t *task_create_user_elf(const char *filename) {
+// If argv==NULL or argc<=0, defaults to argc=1 with argv={filename}.
+task_t *task_create_user_elf(const char *filename, const char **argv, int argc) {
+  // Default argv if not provided
+  const char *default_argv[1];
+  if (!argv || argc <= 0) {
+    default_argv[0] = filename;
+    argv = default_argv;
+    argc = 1;
+  }
+
   // Find free task slot
   task_t *task = NULL;
   int reusing = 0;
@@ -191,11 +201,67 @@ task_t *task_create_user_elf(const char *filename) {
   }
 
   // Load ELF into the new address space (allocates code + stack pages)
-  uint32_t elf_entry = load_elf_into(page_dir, filename);
+  uint32_t stack_phys = 0;
+  uint32_t elf_entry = load_elf_into(page_dir, filename, &stack_phys);
   if (!elf_entry) {
     paging_destroy_address_space(page_dir);
     return NULL;
   }
+
+  // --- Place argc/argv on user stack ---
+  // The stack page physical address is identity-mapped in kernel space,
+  // so we can write directly to stack_phys. Virtual address = 0x7F0000.
+  // Layout (top-down):
+  //   strings packed at top of page
+  //   argv[argc] = NULL
+  //   argv[0..argc-1] = pointers to strings (virtual addrs)
+  //   argv pointer (char **)
+  //   argc
+  //   ESP points here on entry
+
+  uint8_t *page = (uint8_t *)stack_phys;
+  uint32_t str_off = 0x1000;  // start from top, grow down
+
+  // Step 1: Copy arg strings to top of stack page (top-down)
+  uint32_t str_vaddrs[16];  // max 16 args
+  if (argc > 16) argc = 16;
+
+  for (int i = argc - 1; i >= 0; i--) {
+    size_t slen = strlen(argv[i]) + 1;  // include null terminator
+    if (str_off < slen + 64) break;     // safety: keep room for pointers
+    str_off -= slen;
+    memcpy(page + str_off, argv[i], slen);
+    str_vaddrs[i] = 0x7F0000 + str_off;
+  }
+
+  // Step 2: Align down to 4-byte boundary
+  str_off &= ~3;
+
+  // Step 3: Write argv[] array + NULL terminator (below strings)
+  // argv[argc] = NULL, then argv[argc-1] .. argv[0]
+  str_off -= 4;
+  *(uint32_t *)(page + str_off) = 0;  // argv[argc] = NULL
+  uint32_t argv_end = str_off;  // remember where NULL is
+
+  for (int i = argc - 1; i >= 0; i--) {
+    str_off -= 4;
+    *(uint32_t *)(page + str_off) = str_vaddrs[i];
+  }
+  uint32_t argv_vaddr = 0x7F0000 + str_off;  // virtual addr of argv[0]
+  (void)argv_end;
+
+  // Step 4: Write argc, argv pointer, and fake return address below the array.
+  // gcc compiles _start(int argc, char **argv) with cdecl convention,
+  // expecting [ret_addr][argc][argv] on the stack. Since iret jumps
+  // directly (no 'call'), we must place a dummy return address.
+  str_off -= 4;
+  *(uint32_t *)(page + str_off) = argv_vaddr;  // char **argv  (esp+8)
+  str_off -= 4;
+  *(uint32_t *)(page + str_off) = (uint32_t)argc;  // int argc  (esp+4)
+  str_off -= 4;
+  *(uint32_t *)(page + str_off) = 0;  // fake return address  (esp)
+
+  uint32_t user_esp = 0x7F0000 + str_off;
 
   // Allocate kernel stack (for interrupts/syscalls when in user mode)
   uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
@@ -229,7 +295,7 @@ task_t *task_create_user_elf(const char *filename) {
 
   // User mode iret frame
   *(--sp) = USER_DATA_SEL;          // SS
-  *(--sp) = 0x7F0000 + 0x1000;     // ESP (top of user stack page)
+  *(--sp) = user_esp;               // ESP (points at argc on user stack)
   *(--sp) = 0x202;                  // EFLAGS (IF=1)
   *(--sp) = USER_CODE_SEL;          // CS
   *(--sp) = elf_entry;              // EIP - directly at ELF entry point
@@ -252,6 +318,12 @@ task_t *task_create_user_elf(const char *filename) {
 
   task->stack_top = sp;
   task->stdout_wid = -1;
+
+  // Allocate per-task file descriptor table
+  task->fd_table = (vfs_fd_table_t *)kmalloc(sizeof(vfs_fd_table_t));
+  if (task->fd_table) {
+    memset(task->fd_table, 0, sizeof(vfs_fd_table_t));
+  }
 
   // Add to circular task list (skip if reusing — already linked)
   if (!reusing) {
@@ -349,6 +421,13 @@ void task_exit_with_code(int code) {
 
     // Clean up any windows owned by this process
     window_cleanup_pid(current_task->id);
+
+    // Close all open file descriptors
+    if (current_task->fd_table) {
+      vfs_close_all(current_task->fd_table);
+      kfree(current_task->fd_table);
+      current_task->fd_table = NULL;
+    }
 
     // Switch to kernel page directory before freeing process pages
     paging_switch(paging_get_kernel_dir());

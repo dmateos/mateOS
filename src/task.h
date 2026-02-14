@@ -3,6 +3,7 @@
 
 #include "lib.h"
 #include "arch/i686/paging.h"
+#include "vfs.h"
 
 // Task states
 typedef enum {
@@ -80,6 +81,9 @@ typedef struct task {
 
   // stdout redirection: window ID for write(1,...) output (-1 = kernel console)
   int stdout_wid;
+
+  // Per-task file descriptors
+  vfs_fd_table_t *fd_table;
 } task_t;
 
 // Maximum number of tasks
@@ -92,7 +96,9 @@ void task_init(void);
 task_t *task_create(const char *name, void (*entry)(void));
 
 // Create a new user-mode task by loading an ELF from ramfs
-task_t *task_create_user_elf(const char *filename);
+// If argv/argc are provided, places them on the user stack for _start(argc, argv).
+// If argv==NULL or argc==0, defaults to argc=1 with argv={filename}.
+task_t *task_create_user_elf(const char *filename, const char **argv, int argc);
 
 // Get current running task
 task_t *task_current(void);

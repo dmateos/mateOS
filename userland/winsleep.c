@@ -44,7 +44,8 @@ static void draw_frame(int sec) {
     ugfx_buf_string(buf, W, H, 8, 60, "Run multiple instances to test scheduling.", 7);
 }
 
-void _start(void) {
+void _start(int argc, char **argv) {
+    (void)argc; (void)argv;
     int wid = win_create(W, H, "Sleep");
     if (wid < 0) exit(1);
 

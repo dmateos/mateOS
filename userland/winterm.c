@@ -167,7 +167,22 @@ static void cmd_clear(void) {
 
 // ---- Main ----
 
-void _start(void) {
+// Parse a command line in-place into argv tokens (split on spaces).
+static int parse_argv(char *line, const char **argv, int max_args) {
+    int argc = 0;
+    char *p = line;
+    while (*p && argc < max_args) {
+        while (*p == ' ') p++;
+        if (*p == '\0') break;
+        argv[argc++] = p;
+        while (*p && *p != ' ') p++;
+        if (*p) *p++ = '\0';
+    }
+    return argc;
+}
+
+void _start(int argc_unused, char **argv_unused) {
+    (void)argc_unused; (void)argv_unused;
     // Initialize screen buffer
     for (int r = 0; r < TERM_ROWS; r++) {
         for (int c = 0; c < TERM_COLS; c++) {
@@ -214,10 +229,28 @@ void _start(void) {
             break;
         }
 
-        int child = spawn(line);
+        const char *args[16];
+        int ac = parse_argv(line, args, 16);
+        if (ac == 0) continue;
+
+        // Auto-append .elf if not already present
+        char elfname[64];
+        const char *cmd = args[0];
+        int cmdlen = 0;
+        while (cmd[cmdlen]) cmdlen++;
+        if (cmdlen < 4 || cmd[cmdlen-4] != '.' || cmd[cmdlen-3] != 'e' ||
+            cmd[cmdlen-2] != 'l' || cmd[cmdlen-1] != 'f') {
+            int i;
+            for (i = 0; i < 59 && cmd[i]; i++) elfname[i] = cmd[i];
+            elfname[i++] = '.'; elfname[i++] = 'e';
+            elfname[i++] = 'l'; elfname[i++] = 'f'; elfname[i] = '\0';
+            args[0] = elfname;
+        }
+
+        int child = spawn_argv(args[0], args, ac);
         if (child >= 0) {
             term_print("[run ");
-            term_print(line);
+            term_print(args[0]);
             term_print("]\n");
             term_redraw();
             // Non-blocking wait: keep rendering while child runs
@@ -250,7 +283,7 @@ void _start(void) {
             }
         } else {
             term_print("Unknown: ");
-            term_print(line);
+            term_print(args[0]);
             term_print("\n");
         }
         term_redraw();

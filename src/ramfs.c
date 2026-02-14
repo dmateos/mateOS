@@ -1,4 +1,5 @@
 #include "ramfs.h"
+#include "vfs.h"
 #include "lib.h"
 
 static ramfs_file_t files[RAMFS_MAX_FILES];
@@ -114,5 +115,126 @@ ramfs_file_t *ramfs_get_file_by_index(int index) {
   if (index < 0 || index >= file_count) return NULL;
   if (!files[index].in_use) return NULL;
   return &files[index];
+}
+
+// --- VFS backend ---
+
+#define RAMFS_MAX_OPEN 16
+
+static struct {
+  int file_idx;
+  uint32_t offset;
+  int in_use;
+} ramfs_open_files[RAMFS_MAX_OPEN];
+
+static int ramfs_vfs_open(const char *path, int flags) {
+  (void)flags;
+  ramfs_file_t *f = ramfs_lookup(path);
+  if (!f) return -1;
+
+  // Find file index
+  int file_idx = -1;
+  for (int i = 0; i < file_count; i++) {
+    if (&files[i] == f) { file_idx = i; break; }
+  }
+  if (file_idx < 0) return -1;
+
+  // Find free open slot
+  for (int i = 0; i < RAMFS_MAX_OPEN; i++) {
+    if (!ramfs_open_files[i].in_use) {
+      ramfs_open_files[i].in_use = 1;
+      ramfs_open_files[i].file_idx = file_idx;
+      ramfs_open_files[i].offset = 0;
+      return i;
+    }
+  }
+  return -1;  // Too many open files
+}
+
+static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
+  if (handle < 0 || handle >= RAMFS_MAX_OPEN) return -1;
+  if (!ramfs_open_files[handle].in_use) return -1;
+
+  int idx = ramfs_open_files[handle].file_idx;
+  ramfs_file_t *f = &files[idx];
+  uint32_t off = ramfs_open_files[handle].offset;
+
+  if (off >= f->size) return 0;  // EOF
+
+  uint32_t avail = f->size - off;
+  if (len > avail) len = avail;
+
+  memcpy(buf, (void *)(f->data + off), len);
+  ramfs_open_files[handle].offset += len;
+  return (int)len;
+}
+
+static int ramfs_vfs_write(int handle, const void *buf, uint32_t len) {
+  (void)handle; (void)buf; (void)len;
+  return -1;  // Read-only filesystem
+}
+
+static int ramfs_vfs_close(int handle) {
+  if (handle < 0 || handle >= RAMFS_MAX_OPEN) return -1;
+  if (!ramfs_open_files[handle].in_use) return -1;
+  ramfs_open_files[handle].in_use = 0;
+  return 0;
+}
+
+static int ramfs_vfs_seek(int handle, int offset, int whence) {
+  if (handle < 0 || handle >= RAMFS_MAX_OPEN) return -1;
+  if (!ramfs_open_files[handle].in_use) return -1;
+
+  int idx = ramfs_open_files[handle].file_idx;
+  uint32_t size = files[idx].size;
+  int pos;
+
+  switch (whence) {
+    case SEEK_SET: pos = offset; break;
+    case SEEK_CUR: pos = (int)ramfs_open_files[handle].offset + offset; break;
+    case SEEK_END: pos = (int)size + offset; break;
+    default: return -1;
+  }
+
+  if (pos < 0) pos = 0;
+  if ((uint32_t)pos > size) pos = (int)size;
+
+  ramfs_open_files[handle].offset = (uint32_t)pos;
+  return pos;
+}
+
+static int ramfs_vfs_stat(const char *path, vfs_stat_t *st) {
+  ramfs_file_t *f = ramfs_lookup(path);
+  if (!f) return -1;
+  st->size = f->size;
+  st->type = VFS_FILE;
+  return 0;
+}
+
+static int ramfs_vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
+  (void)path;  // ramfs has no subdirectories
+  ramfs_file_t *f = ramfs_get_file_by_index(index);
+  if (!f) return 0;
+
+  size_t name_len = strlen(f->name);
+  if (name_len >= size) name_len = size - 1;
+  memcpy(buf, f->name, name_len);
+  buf[name_len] = '\0';
+  return (int)(name_len + 1);
+}
+
+static const vfs_fs_ops_t ramfs_ops = {
+  .name = "ramfs",
+  .open = ramfs_vfs_open,
+  .read = ramfs_vfs_read,
+  .write = ramfs_vfs_write,
+  .close = ramfs_vfs_close,
+  .seek = ramfs_vfs_seek,
+  .stat = ramfs_vfs_stat,
+  .readdir = ramfs_vfs_readdir,
+};
+
+const vfs_fs_ops_t *ramfs_get_ops(void) {
+  return &ramfs_ops;
 }
 

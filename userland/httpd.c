@@ -33,7 +33,8 @@ static const char *response =
     "running on a custom x86 operating system.</p>"
     "</body></html>";
 
-void _start(void) {
+void _start(int argc, char **argv) {
+    (void)argc; (void)argv;
     int server = sock_listen(80);
     if (server < 0) {
         print("httpd: listen failed\n");

@@ -584,7 +584,8 @@ static int test_process_isolation(void) {
 // ============================================================
 // Entry point
 // ============================================================
-void _start(void) {
+void _start(int argc, char **argv) {
+    (void)argc; (void)argv;
     print("========================================\n");
     print("  mateOS User Program Test Suite\n");
     print("========================================\n\n");

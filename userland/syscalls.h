@@ -36,6 +36,12 @@
 #define SYS_WIN_READ_TEXT  33
 #define SYS_WIN_SET_STDOUT 34
 #define SYS_GETMOUSE       35
+#define SYS_OPEN           36
+#define SYS_FREAD          37
+#define SYS_FWRITE         38
+#define SYS_CLOSE          39
+#define SYS_SEEK           40
+#define SYS_STAT           41
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -50,6 +56,7 @@ unsigned int gfx_info(void);  // Returns (width << 16) | height
 
 // Process management syscalls
 int spawn(const char *filename);
+int spawn_argv(const char *filename, const char **argv, int argc);
 int wait(int task_id);
 int readdir(unsigned int index, char *buf, unsigned int size);
 int getpid(void);
@@ -100,5 +107,24 @@ int win_set_stdout(int wid);
 
 // Mouse
 int getmouse(int *x, int *y, unsigned char *buttons);
+
+// Seek whence constants
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+// Stat result (must match kernel's vfs_stat_t)
+typedef struct {
+    unsigned int size;
+    unsigned int type;  // 0=file, 1=dir
+} stat_t;
+
+// File I/O syscalls
+int open(const char *path, int flags);
+int fread(int fd, void *buf, unsigned int len);
+int fwrite(int fd, const void *buf, unsigned int len);
+int close(int fd);
+int seek(int fd, int offset, int whence);
+int stat(const char *path, stat_t *st);
 
 #endif

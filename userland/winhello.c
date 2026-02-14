@@ -9,7 +9,8 @@
 static unsigned char buf[W * H];
 static char last_key_str[] = "Key: _";
 
-void _start(void) {
+void _start(int argc, char **argv) {
+    (void)argc; (void)argv;
     int wid = win_create(W, H, "Hello");
     if (wid < 0) {
         exit(1);

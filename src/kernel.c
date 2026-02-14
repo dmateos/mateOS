@@ -12,6 +12,7 @@
 #include "liballoc/liballoc_1_1.h"
 #include "multiboot.h"
 #include "ramfs.h"
+#include "vfs.h"
 #include "task.h"
 #include "syscall.h"
 #include "pmm.h"
@@ -113,6 +114,10 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   // Initialize network (RTL8139 + minimal ARP/ICMP)
   net_init();
 
+  // Initialize VFS and register ramfs
+  vfs_init();
+  vfs_register_fs(ramfs_get_ops());
+
   // Initialize task system
   task_init();
 
@@ -135,7 +140,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   keyboard_buffer_enable(1);
 
   // Auto-launch shell.elf — loaded directly, no kernel trampoline
-  task_t *shell_task = task_create_user_elf("shell.elf");
+  task_t *shell_task = task_create_user_elf("shell.elf", NULL, 0);
   if (shell_task) {
     task_enable();
   } else {

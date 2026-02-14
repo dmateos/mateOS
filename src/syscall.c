@@ -2,6 +2,7 @@
 #include "elf.h"
 #include "lib.h"
 #include "ramfs.h"
+#include "vfs.h"
 #include "task.h"
 #include "keyboard.h"
 #include "arch/i686/paging.h"
@@ -90,17 +91,20 @@ static int sys_do_sleepms(uint32_t ms) {
 }
 
 // Load ELF segments into a page directory. Returns entry point, or 0 on error.
-// Used by sys_do_exec, task_create_user_elf, and kernel shell launch.
-uint32_t load_elf_into(struct page_directory *page_dir, const char *filename) {
-  ramfs_file_t *file = ramfs_lookup(filename);
-  if (!file) {
+// If stack_phys_out is non-NULL, stores the physical address of the user stack page.
+uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
+                       uint32_t *stack_phys_out) {
+  void *data = NULL;
+  uint32_t size = 0;
+  if (vfs_read_file(filename, &data, &size) < 0) {
     printf("[exec] file not found: %s\n", filename);
     return 0;
   }
 
-  elf32_ehdr_t *elf = (elf32_ehdr_t *)file->data;
+  elf32_ehdr_t *elf = (elf32_ehdr_t *)data;
   if (!elf_validate(elf)) {
     printf("[exec] invalid ELF: %s\n", filename);
+    kfree(data);
     return 0;
   }
 
@@ -124,6 +128,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename) {
       uint32_t phys = pmm_alloc_frame();
       if (!phys) {
         printf("[exec] out of physical frames\n");
+        kfree(data);
         return 0;
       }
 
@@ -148,6 +153,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename) {
   uint32_t stack_phys = pmm_alloc_frame();
   if (!stack_phys) {
     printf("[exec] failed to allocate stack frame\n");
+    kfree(data);
     return 0;
   }
   memset((void *)stack_phys, 0, 0x1000);
@@ -155,7 +161,13 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename) {
   paging_map_page(page_dir, 0x7F0000, stack_phys,
                   PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
 
-  return elf->e_entry;
+  if (stack_phys_out) {
+    *stack_phys_out = stack_phys;
+  }
+
+  uint32_t entry = elf->e_entry;
+  kfree(data);
+  return entry;
 }
 
 // Execute ELF binary from ramfs - replaces current process
@@ -167,7 +179,7 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     return -1;
   }
 
-  uint32_t entry = load_elf_into(current->page_dir, filename);
+  uint32_t entry = load_elf_into(current->page_dir, filename, NULL);
   if (!entry) return -1;
 
   // Flush TLB
@@ -282,12 +294,40 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
 }
 
 // Spawn: create a child process from an ELF in ramfs.
-// ELF is loaded entirely in kernel mode — no user-mode trampoline needed.
-static int sys_do_spawn(const char *filename) {
+// If argv/argc are provided (argv != NULL, argc > 0), they are placed on
+// the child's stack. Otherwise defaults to argv={filename}, argc=1.
+// argv strings must be in the calling process's address space — they are
+// copied into kernel buffers before the child's address space is created.
+static int sys_do_spawn(const char *filename, const char **argv, int argc) {
   if (!filename) return -1;
 
+  // Copy argv strings into kernel buffers (they're in parent's address space
+  // which will not be accessible after we switch to the child's page dir).
+  const char *kargv[16];
+  char kargbuf[512];  // flat buffer for all arg strings
+  int kargc = 0;
+
+  if (argv && argc > 0) {
+    if (argc > 16) argc = 16;
+    uint32_t off = 0;
+    for (int i = 0; i < argc; i++) {
+      if (!argv[i]) break;
+      size_t slen = strlen(argv[i]) + 1;
+      if (off + slen > sizeof(kargbuf)) break;
+      memcpy(kargbuf + off, argv[i], slen);
+      kargv[i] = kargbuf + off;
+      off += slen;
+      kargc++;
+    }
+  }
+
   task_t *parent = task_current();
-  task_t *t = task_create_user_elf(filename);
+  task_t *t;
+  if (kargc > 0) {
+    t = task_create_user_elf(filename, kargv, kargc);
+  } else {
+    t = task_create_user_elf(filename, NULL, 0);
+  }
   if (!t) return -1;
 
   // Inherit parent's stdout redirection
@@ -334,20 +374,10 @@ static int sys_do_wait_nb(uint32_t task_id) {
   return -1;  // Still running
 }
 
-// Readdir: copy filename at index from ramfs into user buffer
+// Readdir: copy filename at index into user buffer (via VFS)
 static int sys_do_readdir(uint32_t index, char *buf, uint32_t size) {
   if (!buf || size == 0) return 0;
-
-  ramfs_file_t *file = ramfs_get_file_by_index((int)index);
-  if (!file) return 0;
-
-  // Copy filename to user buffer
-  size_t name_len = strlen(file->name);
-  if (name_len >= size) name_len = size - 1;
-  memcpy(buf, file->name, name_len);
-  buf[name_len] = '\0';
-
-  return (int)(name_len + 1);
+  return vfs_readdir("/", (int)index, buf, size);
 }
 
 // Getpid: return current task ID
@@ -386,7 +416,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return sys_do_getkey(ebx);
 
     case SYS_SPAWN:
-      return (uint32_t)sys_do_spawn((const char *)ebx);
+      return (uint32_t)sys_do_spawn((const char *)ebx,
+                                     (const char **)ecx, (int)edx);
 
     case SYS_WAIT:
       return (uint32_t)sys_do_wait(ebx);
@@ -506,6 +537,41 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       if (ecx) *(int *)ecx = ms.y;
       if (edx) *(uint8_t *)edx = ms.buttons;
       return 0;
+    }
+
+    case SYS_OPEN: {
+      task_t *cur = task_current();
+      if (!cur || !cur->fd_table) return (uint32_t)-1;
+      return (uint32_t)vfs_open(cur->fd_table, (const char *)ebx, (int)ecx);
+    }
+
+    case SYS_FREAD: {
+      task_t *cur = task_current();
+      if (!cur || !cur->fd_table) return (uint32_t)-1;
+      return (uint32_t)vfs_read(cur->fd_table, (int)ebx, (void *)ecx, edx);
+    }
+
+    case SYS_FWRITE: {
+      task_t *cur = task_current();
+      if (!cur || !cur->fd_table) return (uint32_t)-1;
+      return (uint32_t)vfs_write(cur->fd_table, (int)ebx, (const void *)ecx, edx);
+    }
+
+    case SYS_CLOSE: {
+      task_t *cur = task_current();
+      if (!cur || !cur->fd_table) return (uint32_t)-1;
+      return (uint32_t)vfs_close(cur->fd_table, (int)ebx);
+    }
+
+    case SYS_SEEK: {
+      task_t *cur = task_current();
+      if (!cur || !cur->fd_table) return (uint32_t)-1;
+      return (uint32_t)vfs_seek(cur->fd_table, (int)ebx, (int)ecx, (int)edx);
+    }
+
+    case SYS_STAT: {
+      if (!ebx || !ecx) return (uint32_t)-1;
+      return (uint32_t)vfs_stat((const char *)ebx, (vfs_stat_t *)ecx);
     }
 
     default:

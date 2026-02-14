@@ -39,6 +39,12 @@
 #define SYS_WIN_READ_TEXT  33  // win_read_text(wid, buf, max_len) -> bytes read
 #define SYS_WIN_SET_STDOUT 34  // win_set_stdout(wid) -> 0 (-1 to reset to console)
 #define SYS_GETMOUSE       35  // getmouse(out_x, out_y, out_buttons) -> 0
+#define SYS_OPEN           36  // open(path, flags) -> fd
+#define SYS_FREAD          37  // fread(fd, buf, len) -> bytes read
+#define SYS_FWRITE         38  // fwrite(fd, buf, len) -> bytes written
+#define SYS_CLOSE          39  // close(fd) -> 0
+#define SYS_SEEK           40  // seek(fd, offset, whence) -> position
+#define SYS_STAT           41  // stat(path, buf) -> 0
 
 // Task info returned by SYS_TASKLIST
 typedef struct {
@@ -51,8 +57,10 @@ typedef struct {
 void syscall_init(void);
 
 // Load ELF from ramfs into a page directory. Returns entry point, or 0 on error.
+// If stack_phys_out is non-NULL, stores the physical address of the user stack page.
 struct page_directory;
-uint32_t load_elf_into(struct page_directory *page_dir, const char *filename);
+uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
+                       uint32_t *stack_phys_out);
 
 // Syscall handler called from assembly
 // Arguments passed in registers: eax=syscall#, ebx=arg1, ecx=arg2, edx=arg3

@@ -33,4 +33,8 @@ int ramfs_get_file_count(void);
 // Get file by index (for readdir)
 ramfs_file_t *ramfs_get_file_by_index(int index);
 
+// VFS backend
+struct vfs_fs_ops;
+const struct vfs_fs_ops *ramfs_get_ops(void);
+
 #endif
