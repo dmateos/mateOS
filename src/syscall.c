@@ -342,10 +342,28 @@ static int sys_do_spawn(const char *filename, const char **argv, int argc) {
   return (int)t->id;
 }
 
+// Detach: mark current task as detached from parent's wait
+static int sys_do_detach(void) {
+  task_t *current = task_current();
+  if (!current) return -1;
+  current->detached = 1;
+  // Wake up any task waiting for us
+  for (int i = 0; i < MAX_TASKS; i++) {
+    task_t *t = task_get_by_index(i);
+    if (t && t->state == TASK_BLOCKED && t->waiting_for == current->id) {
+      t->state = TASK_READY;
+      t->waiting_for = 0;
+    }
+  }
+  return 0;
+}
+
 // Wait: block until a child task exits, return its exit code
 static int sys_do_wait(uint32_t task_id) {
   task_t *child = task_get_by_id(task_id);
   if (!child) return -1;
+
+  if (child->detached) return -3;  // Child has detached
 
   if (child->state == TASK_TERMINATED) {
     return child->exit_code;
@@ -359,6 +377,9 @@ static int sys_do_wait(uint32_t task_id) {
 
   current->waiting_for = 0;
 
+  // Check if we were woken because child detached
+  if (child->detached) return -3;
+
   return child->exit_code;
 }
 
@@ -366,6 +387,8 @@ static int sys_do_wait(uint32_t task_id) {
 static int sys_do_wait_nb(uint32_t task_id) {
   task_t *child = task_get_by_id(task_id);
   if (!child) return -2;  // No such task
+
+  if (child->detached) return -3;  // Child has detached
 
   if (child->state == TASK_TERMINATED) {
     return child->exit_code;
@@ -573,6 +596,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       if (!ebx || !ecx) return (uint32_t)-1;
       return (uint32_t)vfs_stat((const char *)ebx, (vfs_stat_t *)ecx);
     }
+
+    case SYS_DETACH:
+      return (uint32_t)sys_do_detach();
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

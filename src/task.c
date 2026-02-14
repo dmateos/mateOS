@@ -139,6 +139,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->kernel_stack_top = 0;
   task->page_dir = NULL;
   task->stdout_wid = -1;
+  task->detached = 0;
 
   // Add to circular task list (skip if reusing — already linked)
   if (!reusing) {
@@ -318,6 +319,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
 
   task->stack_top = sp;
   task->stdout_wid = -1;
+  task->detached = 0;
 
   // Allocate per-task file descriptor table
   task->fd_table = (vfs_fd_table_t *)kmalloc(sizeof(vfs_fd_table_t));
@@ -462,6 +464,11 @@ task_t *task_get_by_id(uint32_t id) {
     }
   }
   return NULL;
+}
+
+task_t *task_get_by_index(int idx) {
+  if (idx < 0 || idx >= MAX_TASKS) return NULL;
+  return &tasks[idx];
 }
 
 // Fill user buffer with task info, return count

@@ -2,6 +2,7 @@
 
 #include "ugfx.h"
 #include "syscalls.h"
+#include "libc.h"
 
 #define W 500
 #define H 350
@@ -44,8 +45,10 @@ void _start(int argc, char **argv) {
     (void)argc; (void)argv;
     int wid = win_create(W, H, "Editor");
     if (wid < 0) {
+        print("error: requires window manager\n");
         exit(1);
     }
+    detach();
 
     text[0] = '\0';
     redraw();

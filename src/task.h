@@ -76,6 +76,9 @@ typedef struct task {
   int exit_code;                  // Exit code set by sys_exit
   uint32_t waiting_for;           // Task ID this task is blocked waiting for (0 = not waiting)
 
+  // Detach flag: process has detached from parent's wait
+  int detached;
+
   // Per-process address space
   page_directory_t *page_dir;     // Per-process page directory (NULL for kernel tasks)
 
@@ -124,6 +127,9 @@ int task_list_info(taskinfo_entry_t *buf, int max);
 
 // Look up a task by its ID
 task_t *task_get_by_id(uint32_t id);
+
+// Look up a task by array index (0..MAX_TASKS-1)
+task_t *task_get_by_index(int idx);
 
 // Check if multitasking is enabled
 int task_is_enabled(void);

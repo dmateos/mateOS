@@ -45,6 +45,7 @@
 #define SYS_CLOSE          39  // close(fd) -> 0
 #define SYS_SEEK           40  // seek(fd, offset, whence) -> position
 #define SYS_STAT           41  // stat(path, buf) -> 0
+#define SYS_DETACH         42  // detach() - detach from parent's wait
 
 // Task info returned by SYS_TASKLIST
 typedef struct {

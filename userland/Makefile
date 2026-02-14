@@ -22,11 +22,11 @@ shell.elf: shell.o syscalls.o cmd_shared.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-winhello.elf: winhello.o ugfx.o syscalls.o
+winhello.elf: winhello.o ugfx.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-winedit.elf: winedit.o ugfx.o syscalls.o
+winedit.elf: winedit.o ugfx.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 

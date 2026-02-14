@@ -25,7 +25,11 @@ static void draw_frame(int sec) {
 void _start(int argc, char **argv) {
     (void)argc; (void)argv;
     int wid = win_create(W, H, "Sleep");
-    if (wid < 0) exit(1);
+    if (wid < 0) {
+        print("error: requires window manager\n");
+        exit(1);
+    }
+    detach();
 
     int sec = 0;
     while (1) {

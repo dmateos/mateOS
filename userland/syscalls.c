@@ -217,3 +217,7 @@ int seek(int fd, int offset, int whence) {
 int stat(const char *path, stat_t *st) {
     return __syscall2(SYS_STAT, (unsigned int)path, (unsigned int)st);
 }
+
+int detach(void) {
+    return __syscall0(SYS_DETACH);
+}

@@ -193,6 +193,8 @@ void _start(int argc_unused, char **argv_unused) {
     // Create window
     wid = win_create(W, H, "Term");
     if (wid < 0) {
+        // Can't print to window, use kernel console
+        write(1, "error: requires window manager\n", 31);
         exit(1);
     }
 
@@ -274,7 +276,9 @@ void _start(int argc_unused, char **argv_unused) {
                     term_print(tbuf);
                 }
             }
-            if (code != 0) {
+            if (code == -3) {
+                term_print("[detached]\n");
+            } else if (code != 0) {
                 term_print("[exit ");
                 term_print_num(code);
                 term_print("]\n");

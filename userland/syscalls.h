@@ -42,6 +42,7 @@
 #define SYS_CLOSE          39
 #define SYS_SEEK           40
 #define SYS_STAT           41
+#define SYS_DETACH         42
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -126,5 +127,8 @@ int fwrite(int fd, const void *buf, unsigned int len);
 int close(int fd);
 int seek(int fd, int offset, int whence);
 int stat(const char *path, stat_t *st);
+
+// Process detach (for GUI apps)
+int detach(void);
 
 #endif

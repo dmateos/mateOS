@@ -2,6 +2,7 @@
 
 #include "ugfx.h"
 #include "syscalls.h"
+#include "libc.h"
 
 #define W 500
 #define H 350
@@ -13,8 +14,10 @@ void _start(int argc, char **argv) {
     (void)argc; (void)argv;
     int wid = win_create(W, H, "Hello");
     if (wid < 0) {
+        print("error: requires window manager\n");
         exit(1);
     }
+    detach();
 
     // Draw initial content
     ugfx_buf_clear(buf, W, H, 7);  // Light gray background
