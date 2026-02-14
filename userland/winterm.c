@@ -132,6 +132,10 @@ static int readline(char *buf, int max) {
     int pos = 0;
     while (1) {
         unsigned char key = term_waitkey();
+        if (key == 27) {  // Esc: allow WM close button to terminate terminal
+            buf[0] = '\0';
+            return -1;
+        }
         if (key == '\n') {
             term_putchar('\n');
             term_redraw();
@@ -218,6 +222,7 @@ void _start(int argc_unused, char **argv_unused) {
         term_print("$ ");
         term_redraw();
         int len = readline(line, sizeof(line));
+        if (len < 0) break;
 
         if (len == 0) continue;
 

@@ -26,6 +26,15 @@
 #define COL_BORDER_INACT 7
 #define COL_CURSOR      15
 
+#define DS_ICON_W    40
+#define DS_ICON_H    44
+#define DS_TERM_X    12
+#define DS_TERM_Y    (TASKBAR_H + 10)
+#define DS_FILES_X   12
+#define DS_FILES_Y   (TASKBAR_H + 60)
+#define DS_TASK_X    12
+#define DS_TASK_Y    (TASKBAR_H + 110)
+
 typedef struct {
     int x, y;       // content area top-left
     int wid;        // kernel window id
@@ -244,6 +253,38 @@ static void bb_string(int x, int y, const char *s, unsigned char c) {
     ugfx_buf_string(wm_backbuf, ugfx_width, ugfx_height, x, y, s, c);
 }
 
+static int hit_rect(int x, int y, int rx, int ry, int rw, int rh) {
+    return (x >= rx && x < rx + rw && y >= ry && y < ry + rh);
+}
+
+static void launch_term(void) {
+    int pid = spawn("winterm.elf");
+    (void)pid;
+}
+
+static void launch_files(void) {
+    int pid = spawn("winfm.elf");
+    (void)pid;
+}
+
+static void launch_tasks(void) {
+    int pid = spawn("wintask.elf");
+    (void)pid;
+}
+
+static void draw_desktop_icon(int x, int y, unsigned char body, const char *label) {
+    bb_rect(x + 6, y, 24, 20, body);
+    bb_rect_outline(x + 6, y, 24, 20, 15);
+    bb_rect(x + 22, y, 8, 6, 15);
+    bb_string(x, y + 26, label, 15);
+}
+
+static void draw_desktop_icons(void) {
+    draw_desktop_icon(DS_TERM_X, DS_TERM_Y, 2, "TERM");
+    draw_desktop_icon(DS_FILES_X, DS_FILES_Y, 3, "FILES");
+    draw_desktop_icon(DS_TASK_X, DS_TASK_Y, 6, "TASKS");
+}
+
 static void draw_taskbar(void) {
     bb_rect(0, 0, ugfx_width, TASKBAR_H, COL_TASKBAR);
     bb_string(8, 6, "mateOS WM", COL_TASKBAR_TXT);
@@ -419,6 +460,32 @@ static void handle_mouse(int mx, int my, unsigned char buttons) {
     int prev_left = prev_buttons & 1;
 
     if (left && !prev_left) {
+        int hit_window = 0;
+        for (int zi = z_count - 1; zi >= 0; zi--) {
+            int s = z_order[zi];
+            if (slot_hit_test(s, mx, my)) {
+                hit_window = 1;
+                break;
+            }
+        }
+        if (!hit_window) {
+            if (hit_rect(mx, my, DS_TERM_X, DS_TERM_Y, DS_ICON_W, DS_ICON_H)) {
+                launch_term();
+                prev_buttons = buttons;
+                return;
+            }
+            if (hit_rect(mx, my, DS_FILES_X, DS_FILES_Y, DS_ICON_W, DS_ICON_H)) {
+                launch_files();
+                prev_buttons = buttons;
+                return;
+            }
+            if (hit_rect(mx, my, DS_TASK_X, DS_TASK_Y, DS_ICON_W, DS_ICON_H)) {
+                launch_tasks();
+                prev_buttons = buttons;
+                return;
+            }
+        }
+
         // Front-to-back close-button hit-test first.
         for (int zi = z_count - 1; zi >= 0; zi--) {
             int s = z_order[zi];
@@ -426,7 +493,14 @@ static void handle_mouse(int mx, int my, unsigned char buttons) {
                 focus = s;
                 z_bring_front(s);
                 if (slot_is_active(s)) {
-                    (void)kill(slots[s].pid);
+                    // Prefer graceful close for detached GUI apps.
+                    int rc = win_sendkey(slots[s].wid, 27);
+                    if (rc != 0) {
+                        rc = win_sendkey(slots[s].wid, (unsigned char)'q');
+                    }
+                    if (rc != 0) {
+                        (void)kill(slots[s].pid);
+                    }
                 }
                 prev_buttons = buttons;
                 return;
@@ -472,6 +546,7 @@ static void handle_mouse(int mx, int my, unsigned char buttons) {
 
 static void render_frame(int mx, int my) {
     bb_clear(COL_DESKTOP);
+    draw_desktop_icons();
 
     // Back to front
     for (int i = 0; i < z_count; i++) {
