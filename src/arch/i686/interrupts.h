@@ -23,6 +23,13 @@ void idt_exception_handler(uint32_t, uint32_t);
 void idt_irq_handler(uint32_t, uint32_t);
 void pic_unmask_irq(uint8_t irq);
 void irq_list(void);
+typedef struct {
+  uint8_t irq;
+  uint8_t vec;
+  uint8_t masked;
+  uint8_t has_handler;
+} irq_info_t;
+int irq_get_snapshot(irq_info_t *out, int max);
 
 extern void flush_idt(idt_ptr_t *idt_ptr);
 

@@ -134,3 +134,12 @@ void pci_list(void) {
     printf("\n");
   }
 }
+
+int pci_get_devices(pci_device_t *out, int max) {
+  if (!out || max <= 0) return 0;
+  int count = (pci_device_count < max) ? pci_device_count : max;
+  for (int i = 0; i < count; i++) {
+    out[i] = pci_devices[i];
+  }
+  return count;
+}

@@ -1,15 +1,9 @@
 #include "syscalls.h"
 #include "libc.h"
 
-// Simple substring search
-static int has_end_of_headers(const char *buf, int len) {
-    for (int i = 0; i + 3 < len; i++) {
-        if (buf[i] == '\r' && buf[i+1] == '\n' &&
-            buf[i+2] == '\r' && buf[i+3] == '\n')
-            return 1;
-    }
-    return 0;
-}
+#define ROUTE_NONE 0
+#define ROUTE_INDEX 1
+#define ROUTE_OS 2
 
 static const char *ok_header =
     "HTTP/1.0 200 OK\r\n"
@@ -17,14 +11,16 @@ static const char *ok_header =
     "Connection: close\r\n"
     "\r\n";
 
-static char file_body[8192];
-
 static const char *not_found_response =
     "HTTP/1.0 404 Not Found\r\n"
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<html><body><h1>404 Not Found</h1><p>index.htm not found</p></body></html>\n";
+    "<html><body><h1>404 Not Found</h1><p>Try /index.htm or /os</p></body></html>\n";
+
+static char file_body[8192];
+static char os_log[8192];
+static char os_page[16384];
 
 static int send_all(int client, const char *buf, int len) {
     int sent = 0;
@@ -39,55 +35,160 @@ static int send_all(int client, const char *buf, int len) {
     return 0;
 }
 
-static int request_targets_index(const char *req, int req_len) {
+static int has_end_of_headers(const char *buf, int len) {
+    for (int i = 0; i + 3 < len; i++) {
+        if (buf[i] == '\r' && buf[i + 1] == '\n' &&
+            buf[i + 2] == '\r' && buf[i + 3] == '\n') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int parse_route(const char *req, int req_len) {
     int line_end = 0;
     while (line_end < req_len && req[line_end] != '\r' && req[line_end] != '\n') {
         line_end++;
     }
-    if (line_end <= 0) {
-        return 0;
+    if (line_end <= 0) return ROUTE_NONE;
+    if (line_end < 6) return ROUTE_NONE;
+    if (strncmp(req, "GET ", 4) != 0) return ROUTE_NONE;
+
+    int path_start = 4;
+    int path_end = path_start;
+    while (path_end < line_end && req[path_end] != ' ') {
+        path_end++;
+    }
+    if (path_end <= path_start) return ROUTE_NONE;
+
+    int path_len = path_end - path_start;
+    if (path_len == 1 && req[path_start] == '/') {
+        return ROUTE_INDEX;
+    }
+    if (path_len == 10 && strncmp(req + path_start, "/index.htm", 10) == 0) {
+        return ROUTE_INDEX;
+    }
+    if (path_len == 3 && strncmp(req + path_start, "/os", 3) == 0) {
+        return ROUTE_OS;
+    }
+    if (path_len > 3 && strncmp(req + path_start, "/os?", 4) == 0) {
+        return ROUTE_OS;
     }
 
-    if (line_end >= 6 && strncmp(req, "GET / ", 6) == 0) {
-        return 1;
-    }
-    if (line_end >= 15 && strncmp(req, "GET /index.htm ", 15) == 0) {
-        return 1;
-    }
-    return 0;
+    return ROUTE_NONE;
 }
 
 static int serve_index_htm(int client) {
     int total = 0;
     int fd = open("index.htm", O_RDONLY);
-    if (fd < 0) {
-        fd = open("/index.htm", O_RDONLY);
-    }
-    if (fd < 0) {
-        return -1;
-    }
+    if (fd < 0) fd = open("/index.htm", O_RDONLY);
+    if (fd < 0) return -1;
 
     while (total < (int)sizeof(file_body)) {
-        int n = fread(fd, file_body + total, (unsigned int)(sizeof(file_body) - (unsigned int)total));
-        if (n > 0) {
-            total += n;
-            continue;
-        }
-        break;
+        int n = fread(fd, file_body + total,
+                      (unsigned int)(sizeof(file_body) - (unsigned int)total));
+        if (n <= 0) break;
+        total += n;
     }
     close(fd);
 
-    if (total <= 0) {
-        return -1;
-    }
+    if (total <= 0) return -1;
 
     send_all(client, ok_header, strlen(ok_header));
     send_all(client, file_body, total);
     return 0;
 }
 
+static int read_file(const char *path, char *dst, int cap) {
+    int total = 0;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+
+    while (total < cap) {
+        int n = fread(fd, dst + total, (unsigned int)(cap - total));
+        if (n <= 0) break;
+        total += n;
+    }
+    close(fd);
+    return total;
+}
+
+static int append_char(char *dst, int cap, int *len, char c) {
+    if (*len >= cap) return -1;
+    dst[*len] = c;
+    (*len)++;
+    return 0;
+}
+
+static int append_cstr(char *dst, int cap, int *len, const char *s) {
+    while (*s) {
+        if (append_char(dst, cap, len, *s++) < 0) return -1;
+    }
+    return 0;
+}
+
+static int append_escaped(char *dst, int cap, int *len, const char *src, int src_len) {
+    for (int i = 0; i < src_len; i++) {
+        char c = src[i];
+        if (c == '&') {
+            if (append_cstr(dst, cap, len, "&amp;") < 0) return -1;
+        } else if (c == '<') {
+            if (append_cstr(dst, cap, len, "&lt;") < 0) return -1;
+        } else if (c == '>') {
+            if (append_cstr(dst, cap, len, "&gt;") < 0) return -1;
+        } else if (c == '\"') {
+            if (append_cstr(dst, cap, len, "&quot;") < 0) return -1;
+        } else {
+            if (append_char(dst, cap, len, c) < 0) return -1;
+        }
+    }
+    return 0;
+}
+
+static int append_section(int *out_len, const char *title, const char *path) {
+    if (append_cstr(os_page, sizeof(os_page), out_len, "<h2>") < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len, title) < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len, "</h2><pre>") < 0) return -1;
+
+    int n = read_file(path, os_log, sizeof(os_log));
+    if (n > 0) {
+        if (append_escaped(os_page, sizeof(os_page), out_len, os_log, n) < 0) return -1;
+    } else {
+        if (append_cstr(os_page, sizeof(os_page), out_len, "(unavailable)") < 0) return -1;
+    }
+    if (append_cstr(os_page, sizeof(os_page), out_len, "</pre>") < 0) return -1;
+    return 0;
+}
+
+static int serve_os_page(int client) {
+    int out_len = 0;
+    if (append_cstr(os_page, sizeof(os_page), &out_len,
+                    "<html><head><title>mateOS /os</title></head><body>") < 0) {
+        return -1;
+    }
+    if (append_cstr(os_page, sizeof(os_page), &out_len,
+                    "<h1>mateOS /os</h1><p>virtual kernel files</p>") < 0) {
+        return -1;
+    }
+    if (append_section(&out_len, "cpuinfo.ker", "/cpuinfo.ker") < 0) return -1;
+    if (append_section(&out_len, "meminfo.ker", "/meminfo.ker") < 0) return -1;
+    if (append_section(&out_len, "lsirq.ker", "/lsirq.ker") < 0) return -1;
+    if (append_section(&out_len, "pci.ker", "/pci.ker") < 0) return -1;
+
+    if (append_cstr(os_page, sizeof(os_page), &out_len,
+                    "</body></html>\n") < 0) {
+        return -1;
+    }
+
+    send_all(client, ok_header, strlen(ok_header));
+    send_all(client, os_page, out_len);
+    return 0;
+}
+
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
+
     int server = sock_listen(80);
     if (server < 0) {
         print("httpd: listen failed\n");
@@ -102,7 +203,6 @@ void _start(int argc, char **argv) {
             continue;
         }
 
-        // Read HTTP request (drain until end of headers)
         char buf[512];
         int total = 0;
         int tries = 0;
@@ -113,25 +213,30 @@ void _start(int argc, char **argv) {
                 buf[total] = '\0';
                 if (has_end_of_headers(buf, total)) break;
             } else if (n == 0) {
-                break;  // Connection closed
+                break;
             } else {
                 yield();
                 tries++;
             }
         }
 
-        // Log the request line (first line of HTTP request)
         if (total > 0) {
             print("httpd: ");
-            // Find end of first line
             int end = 0;
             while (end < total && buf[end] != '\r' && buf[end] != '\n') end++;
-            write(1, buf, end);
+            write(1, buf, (unsigned int)end);
             print("\n");
         }
 
-        // Serve filesystem index.htm or return HTML 404.
-        if (total <= 0 || !request_targets_index(buf, total) || serve_index_htm(client) < 0) {
+        int route = parse_route(buf, total);
+        int served = -1;
+        if (route == ROUTE_INDEX) {
+            served = serve_index_htm(client);
+        } else if (route == ROUTE_OS) {
+            served = serve_os_page(client);
+        }
+
+        if (served < 0) {
             send_all(client, not_found_response, strlen(not_found_response));
         }
 

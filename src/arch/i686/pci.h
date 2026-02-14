@@ -60,5 +60,6 @@ void pci_enable_bus_mastering(pci_device_t *dev);
 
 // Print discovered PCI devices to console
 void pci_list(void);
+int pci_get_devices(pci_device_t *out, int max);
 
 #endif

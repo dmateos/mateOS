@@ -649,11 +649,11 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       uint32_t hused = (hcur > hstart) ? (hcur - hstart) : 0;
       uint32_t hfree = (htotal > hused) ? (htotal - hused) : 0;
 
-      printf("PMM: total=%d used=%d free=%d frames (%dKB each)\n",
-             total, used, free_frames, PMM_FRAME_SIZE / 1024);
-      printf("Heap: start=0x%x end=0x%x cur=0x%x\n", hstart, hend, hcur);
-      printf("Heap: used=%d bytes free=%d bytes total=%d bytes\n",
-             hused, hfree, htotal);
+      kprintf("PMM: total=%d used=%d free=%d frames (%dKB each)\n",
+              total, used, free_frames, PMM_FRAME_SIZE / 1024);
+      kprintf("Heap: start=0x%x end=0x%x cur=0x%x\n", hstart, hend, hcur);
+      kprintf("Heap: used=%d bytes free=%d bytes total=%d bytes\n",
+              hused, hfree, htotal);
       return 0;
     }
 

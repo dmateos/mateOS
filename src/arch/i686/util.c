@@ -74,21 +74,19 @@ void print_stack(uint32_t entries) {
   }
 }
 
-void print_cpu_info(void) {
+void cpu_get_info(cpu_info_t *out) {
+  if (!out) return;
   uint32_t eax, ebx, ecx, edx;
-  char vendor[13];
 
   __asm__ volatile("cpuid"
                    : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
                    : "a"(0));
 
-  *(uint32_t *)&vendor[0] = ebx;
-  *(uint32_t *)&vendor[4] = edx;
-  *(uint32_t *)&vendor[8] = ecx;
-  vendor[12] = '\0';
-
-  printf("CPU vendor: %s\n", vendor);
-  printf("CPUID max leaf: 0x%x\n", eax);
+  *(uint32_t *)&out->vendor[0] = ebx;
+  *(uint32_t *)&out->vendor[4] = edx;
+  *(uint32_t *)&out->vendor[8] = ecx;
+  out->vendor[12] = '\0';
+  out->max_leaf = eax;
 
   __asm__ volatile("cpuid"
                    : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
@@ -105,8 +103,21 @@ void print_cpu_info(void) {
   if (family == 0xF) display_family += ext_family;
   if (family == 0x6 || family == 0xF) display_model += (ext_model << 4);
 
-  printf("Family: %d  Model: %d  Stepping: %d\n",
-         display_family, display_model, stepping);
-  printf("Feature ECX: 0x%x\n", ecx);
-  printf("Feature EDX: 0x%x\n", edx);
+  out->family = display_family;
+  out->model = display_model;
+  out->stepping = stepping;
+  out->feature_ecx = ecx;
+  out->feature_edx = edx;
+}
+
+void print_cpu_info(void) {
+  cpu_info_t info;
+  cpu_get_info(&info);
+
+  kprintf("CPU vendor: %s\n", info.vendor);
+  kprintf("CPUID max leaf: 0x%x\n", info.max_leaf);
+  kprintf("Family: %d  Model: %d  Stepping: %d\n",
+          info.family, info.model, info.stepping);
+  kprintf("Feature ECX: 0x%x\n", info.feature_ecx);
+  kprintf("Feature EDX: 0x%x\n", info.feature_edx);
 }

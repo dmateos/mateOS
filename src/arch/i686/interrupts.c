@@ -240,14 +240,32 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
 void irq_list(void) {
   uint8_t master_mask = inb(MASTER_PIC_DATA);
   uint8_t slave_mask = inb(SLAVE_PIC_DATA);
-  printf("IRQ  Vec  Masked  Handler\n");
+  kprintf("IRQ  Vec  Masked  Handler\n");
   for (uint8_t irq = 0; irq < 16; irq++) {
     uint8_t vec = 0x20 + irq;
     int masked = (irq < 8) ? ((master_mask >> irq) & 1)
                            : ((slave_mask >> (irq - 8)) & 1);
-    printf("%d    0x%x   %s      %s\n",
-           irq, vec,
-           masked ? "yes" : "no ",
-           interruptPointers[vec] ? "yes" : "no ");
+    kprintf("%d    0x%x   %s      %s\n",
+            irq, vec,
+            masked ? "yes" : "no ",
+            interruptPointers[vec] ? "yes" : "no ");
   }
+}
+
+int irq_get_snapshot(irq_info_t *out, int max) {
+  if (!out || max <= 0) return 0;
+  int count = (max < 16) ? max : 16;
+  uint8_t master_mask = inb(MASTER_PIC_DATA);
+  uint8_t slave_mask = inb(SLAVE_PIC_DATA);
+  for (int i = 0; i < count; i++) {
+    uint8_t irq = (uint8_t)i;
+    uint8_t vec = (uint8_t)(0x20 + irq);
+    int masked = (irq < 8) ? ((master_mask >> irq) & 1)
+                           : ((slave_mask >> (irq - 8)) & 1);
+    out[i].irq = irq;
+    out[i].vec = vec;
+    out[i].masked = (uint8_t)(masked ? 1 : 0);
+    out[i].has_handler = (uint8_t)(interruptPointers[vec] ? 1 : 0);
+  }
+  return count;
 }
