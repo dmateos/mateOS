@@ -6,11 +6,11 @@ PROGRAMS = hello.elf test.elf gui.elf shell.elf winhello.elf winedit.elf winterm
 
 all: $(PROGRAMS)
 
-hello.elf: hello.o syscalls.o
+hello.elf: hello.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-test.elf: test.o syscalls.o
+test.elf: test.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
@@ -18,7 +18,7 @@ gui.elf: gui.o ugfx.o syscalls.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-shell.elf: shell.o syscalls.o cmd_shared.o
+shell.elf: shell.o syscalls.o cmd_shared.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
@@ -30,39 +30,39 @@ winedit.elf: winedit.o ugfx.o syscalls.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-winterm.elf: winterm.o ugfx.o syscalls.o cmd_shared.o
+winterm.elf: winterm.o ugfx.o syscalls.o cmd_shared.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-ping.elf: ping.o syscalls.o
+ping.elf: ping.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-winsleep.elf: winsleep.o ugfx.o syscalls.o
+winsleep.elf: winsleep.o ugfx.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-httpd.elf: httpd.o syscalls.o
+httpd.elf: httpd.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-cat.elf: cat.o syscalls.o
+cat.elf: cat.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-echo.elf: echo.o syscalls.o
+echo.elf: echo.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-ls.elf: ls.o syscalls.o
+ls.elf: ls.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-tasks.elf: tasks.o syscalls.o
+tasks.elf: tasks.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
-ifconfig.elf: ifconfig.o syscalls.o
+ifconfig.elf: ifconfig.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 

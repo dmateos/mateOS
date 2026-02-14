@@ -1,57 +1,5 @@
 #include "syscalls.h"
-
-static int slen(const char *s) {
-    int n = 0;
-    while (s[n]) n++;
-    return n;
-}
-
-static void print(const char *s) {
-    write(1, s, slen(s));
-}
-
-static void print_num(int n) {
-    if (n < 0) { write(1, "-", 1); n = -n; }
-    if (n == 0) { write(1, "0", 1); return; }
-    char buf[12];
-    int i = 0;
-    while (n > 0) { buf[i++] = '0' + (n % 10); n /= 10; }
-    while (i > 0) write(1, &buf[--i], 1);
-}
-
-static void print_ip(unsigned int ip_be) {
-    print_num((int)((ip_be >> 24) & 0xFF)); print(".");
-    print_num((int)((ip_be >> 16) & 0xFF)); print(".");
-    print_num((int)((ip_be >> 8) & 0xFF));  print(".");
-    print_num((int)(ip_be & 0xFF));
-}
-
-static int parse_ip4(const char *s, unsigned int *out_be) {
-    unsigned int a = 0, b = 0, c = 0, d = 0;
-    int part = 0;
-    unsigned int val = 0;
-    for (int i = 0; ; i++) {
-        char ch = s[i];
-        if (ch >= '0' && ch <= '9') {
-            val = val * 10 + (unsigned int)(ch - '0');
-            if (val > 255) return -1;
-        } else if (ch == '.' || ch == '\0' || ch == ' ') {
-            if (part == 0) a = val;
-            else if (part == 1) b = val;
-            else if (part == 2) c = val;
-            else if (part == 3) d = val;
-            else return -1;
-            part++;
-            val = 0;
-            if (ch == '\0' || ch == ' ') break;
-        } else {
-            return -1;
-        }
-    }
-    if (part != 4) return -1;
-    *out_be = (a << 24) | (b << 16) | (c << 8) | d;
-    return 0;
-}
+#include "libc.h"
 
 void _start(int argc, char **argv) {
     if (argc < 2) {
@@ -61,9 +9,10 @@ void _start(int argc, char **argv) {
             print("ifconfig: failed to read config\n");
             exit(1);
         }
-        print("ip   "); print_ip(ip_be); print("\n");
-        print("mask "); print_ip(mask_be); print("\n");
-        print("gw   "); print_ip(gw_be); print("\n");
+        char buf[16];
+        print("ip   "); format_ip4(ip_be, buf); print(buf); print("\n");
+        print("mask "); format_ip4(mask_be, buf); print(buf); print("\n");
+        print("gw   "); format_ip4(gw_be, buf); print(buf); print("\n");
         exit(0);
     }
 

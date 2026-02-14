@@ -1,16 +1,5 @@
 #include "syscalls.h"
-
-static void print(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    write(1, s, len);
-}
-
-static int strlen_s(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
+#include "libc.h"
 
 // Simple substring search
 static int has_end_of_headers(const char *buf, int len) {
@@ -78,7 +67,7 @@ void _start(int argc, char **argv) {
         }
 
         // Send HTTP response
-        int rlen = strlen_s(response);
+        int rlen = strlen(response);
         int sent = 0;
         while (sent < rlen) {
             int n = sock_send(client, response + sent, rlen - sent);

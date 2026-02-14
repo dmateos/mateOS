@@ -1,41 +1,6 @@
 #include "syscalls.h"
 #include "cmd_shared.h"
-
-// Simple string helpers (no libc)
-static int strlen(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static void print(const char *s) {
-    write(1, s, strlen(s));
-}
-
-static void print_char(char c) {
-    write(1, &c, 1);
-}
-
-// Print a decimal number
-static void print_num(int n) {
-    if (n < 0) {
-        print_char('-');
-        n = -n;
-    }
-    if (n == 0) {
-        print_char('0');
-        return;
-    }
-    char buf[12];
-    int i = 0;
-    while (n > 0) {
-        buf[i++] = '0' + (n % 10);
-        n /= 10;
-    }
-    while (i > 0) {
-        print_char(buf[--i]);
-    }
-}
+#include "libc.h"
 
 // Wait for a keypress (blocking via yield loop)
 static unsigned char waitkey(void) {

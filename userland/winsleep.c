@@ -1,38 +1,16 @@
 // Windowed multitasking test: updates once per second.
 #include "ugfx.h"
 #include "syscalls.h"
+#include "libc.h"
 
 #define W 320
 #define H 120
 
 static unsigned char buf[W * H];
 
-static void itoa10(int n, char *out) {
-    if (n == 0) {
-        out[0] = '0';
-        out[1] = '\0';
-        return;
-    }
-    char tmp[16];
-    int i = 0;
-    int neg = 0;
-    if (n < 0) {
-        neg = 1;
-        n = -n;
-    }
-    while (n > 0 && i < 15) {
-        tmp[i++] = (char)('0' + (n % 10));
-        n /= 10;
-    }
-    int p = 0;
-    if (neg) out[p++] = '-';
-    while (i > 0) out[p++] = tmp[--i];
-    out[p] = '\0';
-}
-
 static void draw_frame(int sec) {
     char num[16];
-    itoa10(sec, num);
+    itoa(sec, num);
 
     ugfx_buf_clear(buf, W, H, 1);
     ugfx_buf_rect(buf, W, H, 0, 0, W, 12, 9);

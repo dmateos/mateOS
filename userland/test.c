@@ -2,76 +2,7 @@
 // Tests syscalls, process management, memory isolation, and user mode functionality
 
 #include "syscalls.h"
-
-// Helper to write a string
-static void print(const char *str) {
-    const char *p = str;
-    int len = 0;
-    while (*p++) len++;
-    write(1, str, len);
-}
-
-// Helper to write a number
-static void print_num(int n) {
-    char buf[16];
-    int i = 0;
-
-    if (n == 0) {
-        write(1, "0", 1);
-        return;
-    }
-
-    if (n < 0) {
-        write(1, "-", 1);
-        n = -n;
-    }
-
-    // Build string in reverse
-    while (n > 0) {
-        buf[i++] = '0' + (n % 10);
-        n /= 10;
-    }
-
-    // Print in correct order
-    while (i > 0) {
-        write(1, &buf[--i], 1);
-    }
-}
-
-// Print hex value
-static void print_hex(unsigned int val) {
-    char buf[9];
-    const char *hex = "0123456789abcdef";
-    for (int i = 7; i >= 0; i--) {
-        buf[i] = hex[val & 0xF];
-        val >>= 4;
-    }
-    buf[8] = '\0';
-    print("0x");
-    print(buf);
-}
-
-// Simple memset
-static void *my_memset(void *s, int c, unsigned int n) {
-    unsigned char *p = (unsigned char *)s;
-    for (unsigned int i = 0; i < n; i++) {
-        p[i] = (unsigned char)c;
-    }
-    return s;
-}
-
-// Simple strcmp
-static int my_strcmp(const char *a, const char *b) {
-    while (*a && *a == *b) { a++; b++; }
-    return (unsigned char)*a - (unsigned char)*b;
-}
-
-// Simple strlen
-static int my_strlen(const char *s) {
-    int len = 0;
-    while (s[len]) len++;
-    return len;
-}
+#include "libc.h"
 
 // ============================================================
 // Test 1: Basic syscall functionality
@@ -116,7 +47,7 @@ static int test_strings(void) {
     print(str);
     print("\n");
 
-    int len = my_strlen(str);
+    int len = strlen(str);
     print("  - Length: ");
     print_num(len);
     print("\n");
@@ -316,11 +247,11 @@ static int test_memory(void) {
     print("  - Alternating 0xAA/0x55 pattern: OK\n");
 
     // Fill with 0xFF then zero
-    my_memset(buf, 0xFF, 256);
+    memset(buf, 0xFF, 256);
     for (int i = 0; i < 256; i++) {
         if (buf[i] != 0xFF) { print("  FAILED: fill 0xFF\n"); return 0; }
     }
-    my_memset(buf, 0, 256);
+    memset(buf, 0, 256);
     for (int i = 0; i < 256; i++) {
         if (buf[i] != 0) { print("  FAILED: fill 0x00\n"); return 0; }
     }
@@ -377,9 +308,9 @@ static int test_readdir(void) {
         print(name);
         print("\n");
 
-        if (my_strcmp(name, "shell.elf") == 0) found_shell = 1;
-        if (my_strcmp(name, "hello.elf") == 0) found_hello = 1;
-        if (my_strcmp(name, "test.elf") == 0)  found_test = 1;
+        if (strcmp(name, "shell.elf") == 0) found_shell = 1;
+        if (strcmp(name, "hello.elf") == 0) found_hello = 1;
+        if (strcmp(name, "test.elf") == 0)  found_test = 1;
 
         count++;
         if (count > 20) break;  // Safety limit
