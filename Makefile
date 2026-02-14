@@ -94,8 +94,11 @@ $(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c
 userland:
 	@$(MAKE) -C userland
 
-initrd: userland
+initrd.img:
+	@$(MAKE) -C userland
 	./tools/mkinitrd initrd.img userland/*.elf
+
+initrd: initrd.img
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
@@ -114,6 +117,8 @@ clean:
 #   make run GFX=1 NET=1 HTTP=1     # sdl + net + port fwd
 #   make run NET=tap                  # tap networking
 #   make run VNC=1 NET=1 HTTP=1     # vnc + net + port fwd
+#   make run FAT16=1                  # attach FAT16 test disk
+#   make run GFX=1 NET=1 FAT16=1      # combine options
 
 QEMU = qemu-system-i386
 QEMU_BASE = -kernel $(TARGET) -initrd initrd.img -no-reboot
@@ -138,20 +143,27 @@ else
   QEMU_NET =
 endif
 
-run:
+RUN_DEPS = $(TARGET) initrd.img
+ifdef FAT16
+  QEMU_DISK = -drive file=$(FAT16_IMG),format=raw,if=ide
+  RUN_DEPS += $(FAT16_IMG)
+else
+  QEMU_DISK =
+endif
+
+run: $(RUN_DEPS)
 ifdef VNC
 	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
 endif
-	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET)
+	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET) $(QEMU_DISK)
 
-fat16img:
+$(FAT16_IMG):
 	python3 tools/mkfat16_test_disk.py $(FAT16_IMG)
 
-run-fat16: fat16img
-ifdef VNC
-	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
-endif
-	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET) -drive file=$(FAT16_IMG),format=raw,if=ide
+fat16img: $(FAT16_IMG)
+
+run-fat16:
+	$(MAKE) run FAT16=1
 
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)

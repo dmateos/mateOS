@@ -600,6 +600,10 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_DETACH:
       return (uint32_t)sys_do_detach();
 
+    case SYS_UNLINK:
+      if (!ebx) return (uint32_t)-1;
+      return (uint32_t)vfs_unlink((const char *)ebx);
+
     default:
       printf("[syscall] Unknown syscall %d\n", eax);
       return (uint32_t)-1;

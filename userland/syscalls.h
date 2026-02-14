@@ -43,6 +43,7 @@
 #define SYS_SEEK           40
 #define SYS_STAT           41
 #define SYS_DETACH         42
+#define SYS_UNLINK         43
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -114,6 +115,13 @@ int getmouse(int *x, int *y, unsigned char *buttons);
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+// Open flags
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR   2
+#define O_CREAT  4
+#define O_TRUNC  8
+
 // Stat result (must match kernel's vfs_stat_t)
 typedef struct {
     unsigned int size;
@@ -127,6 +135,7 @@ int fwrite(int fd, const void *buf, unsigned int len);
 int close(int fd);
 int seek(int fd, int offset, int whence);
 int stat(const char *path, stat_t *st);
+int unlink(const char *path);
 
 // Process detach (for GUI apps)
 int detach(void);

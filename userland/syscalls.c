@@ -218,6 +218,10 @@ int stat(const char *path, stat_t *st) {
     return __syscall2(SYS_STAT, (unsigned int)path, (unsigned int)st);
 }
 
+int unlink(const char *path) {
+    return __syscall1(SYS_UNLINK, (unsigned int)path);
+}
+
 int detach(void) {
     return __syscall0(SYS_DETACH);
 }

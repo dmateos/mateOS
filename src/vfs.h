@@ -16,6 +16,7 @@
 #define O_WRONLY    1
 #define O_RDWR      2
 #define O_CREAT     4
+#define O_TRUNC     8
 
 // Seek whence
 #define SEEK_SET    0
@@ -38,6 +39,7 @@ typedef struct vfs_fs_ops {
     int (*seek)(int handle, int offset, int whence);
     int (*stat)(const char *path, vfs_stat_t *st);
     int (*readdir)(const char *path, int index, char *buf, uint32_t size);
+    int (*unlink)(const char *path);
 } vfs_fs_ops_t;
 
 // Open file descriptor (kernel-side)
@@ -64,6 +66,7 @@ int vfs_close(vfs_fd_table_t *fdt, int fd);
 int vfs_seek(vfs_fd_table_t *fdt, int fd, int offset, int whence);
 int vfs_stat(const char *path, vfs_stat_t *st);
 int vfs_readdir(const char *path, int index, char *buf, uint32_t size);
+int vfs_unlink(const char *path);
 
 // Helper: read entire file into kmalloc'd buffer (caller must kfree)
 int vfs_read_file(const char *path, void **out_data, uint32_t *out_size);

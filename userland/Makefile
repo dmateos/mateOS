@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 LDFLAGS = -m32 -T user.ld -nostdlib -static -Wl,--build-id=none
 
-PROGRAMS = hello.elf test.elf gui.elf shell.elf winhello.elf winedit.elf winterm.elf ping.elf winsleep.elf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf
+PROGRAMS = hello.elf test.elf gui.elf shell.elf winhello.elf winedit.elf winterm.elf ping.elf winsleep.elf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf
 
 all: $(PROGRAMS)
 
@@ -67,6 +67,18 @@ ifconfig.elf: ifconfig.o syscalls.o libc.o
 	@echo "Built $@"
 
 shutdown.elf: shutdown.o syscalls.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+touch.elf: touch.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+writefile.elf: writefile.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+del.elf: del.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 

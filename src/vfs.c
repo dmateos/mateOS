@@ -116,6 +116,16 @@ int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
     return 0;
 }
 
+int vfs_unlink(const char *path) {
+    if (!path) return -1;
+
+    for (int fs = 0; fs < fs_count; fs++) {
+        if (!filesystems[fs]->unlink) continue;
+        if (filesystems[fs]->unlink(path) == 0) return 0;
+    }
+    return -1;
+}
+
 int vfs_read_file(const char *path, void **out_data, uint32_t *out_size) {
     if (!path || !out_data || !out_size) return -1;
 

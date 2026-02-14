@@ -232,9 +232,9 @@ static const vfs_fs_ops_t ramfs_ops = {
   .seek = ramfs_vfs_seek,
   .stat = ramfs_vfs_stat,
   .readdir = ramfs_vfs_readdir,
+  .unlink = NULL,
 };
 
 const vfs_fs_ops_t *ramfs_get_ops(void) {
   return &ramfs_ops;
 }
-

@@ -16,6 +16,7 @@
 #define ATA_REG_ALTSTATUS  (ATA_CTRL_BASE + 0)
 
 #define ATA_CMD_READ_SECTORS 0x20
+#define ATA_CMD_WRITE_SECTORS 0x30
 #define ATA_CMD_IDENTIFY     0xEC
 
 #define ATA_SR_ERR 0x01
@@ -113,6 +114,33 @@ int ata_pio_read(uint32_t lba, uint8_t count, void *buf) {
         }
     }
 
+    return 0;
+}
+
+int ata_pio_write(uint32_t lba, uint8_t count, const void *buf) {
+    if (!ata_ready || !buf || count == 0) return -1;
+    if (lba & 0xF0000000u) return -1;
+
+    if (ata_wait_not_busy(1000000) < 0) return -1;
+
+    outb(ATA_REG_HDDEVSEL, (uint8_t)(0xE0 | ((lba >> 24) & 0x0F)));
+    outb(ATA_REG_SECCOUNT0, count);
+    outb(ATA_REG_LBA0, (uint8_t)(lba & 0xFF));
+    outb(ATA_REG_LBA1, (uint8_t)((lba >> 8) & 0xFF));
+    outb(ATA_REG_LBA2, (uint8_t)((lba >> 16) & 0xFF));
+    outb(ATA_REG_COMMAND, ATA_CMD_WRITE_SECTORS);
+    ata_delay_400ns();
+
+    const uint16_t *in = (const uint16_t *)buf;
+    for (uint8_t s = 0; s < count; s++) {
+        if (ata_wait_drq(1000000) < 0) return -1;
+        for (int i = 0; i < 256; i++) {
+            outw(ATA_REG_DATA, in[s * 256 + i]);
+        }
+    }
+
+    // Ensure command is fully completed.
+    if (ata_wait_not_busy(1000000) < 0) return -1;
     return 0;
 }
 

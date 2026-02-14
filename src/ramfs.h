@@ -4,7 +4,7 @@
 #include "lib.h"
 
 // Maximum number of files in ramfs
-#define RAMFS_MAX_FILES 16
+#define RAMFS_MAX_FILES 64
 
 // Maximum filename length
 #define RAMFS_NAME_MAX 32
