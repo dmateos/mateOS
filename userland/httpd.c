@@ -17,12 +17,14 @@ static const char *ok_header =
     "Connection: close\r\n"
     "\r\n";
 
+static char file_body[8192];
+
 static const char *not_found_response =
     "HTTP/1.0 404 Not Found\r\n"
-    "Content-Type: text/plain\r\n"
+    "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "404 Not Found\n";
+    "<html><body><h1>404 Not Found</h1><p>index.htm not found</p></body></html>\n";
 
 static int send_all(int client, const char *buf, int len) {
     int sent = 0;
@@ -56,7 +58,6 @@ static int request_targets_index(const char *req, int req_len) {
 }
 
 static int serve_index_htm(int client) {
-    char body[8192];
     int total = 0;
     int fd = open("index.htm", O_RDONLY);
     if (fd < 0) {
@@ -66,8 +67,8 @@ static int serve_index_htm(int client) {
         return -1;
     }
 
-    while (total < (int)sizeof(body)) {
-        int n = fread(fd, body + total, (unsigned int)(sizeof(body) - (unsigned int)total));
+    while (total < (int)sizeof(file_body)) {
+        int n = fread(fd, file_body + total, (unsigned int)(sizeof(file_body) - (unsigned int)total));
         if (n > 0) {
             total += n;
             continue;
@@ -81,7 +82,7 @@ static int serve_index_htm(int client) {
     }
 
     send_all(client, ok_header, strlen(ok_header));
-    send_all(client, body, total);
+    send_all(client, file_body, total);
     return 0;
 }
 
@@ -129,7 +130,7 @@ void _start(int argc, char **argv) {
             print("\n");
         }
 
-        // Serve filesystem index.htm or return 404.
+        // Serve filesystem index.htm or return HTML 404.
         if (total <= 0 || !request_targets_index(buf, total) || serve_index_htm(client) < 0) {
             send_all(client, not_found_response, strlen(not_found_response));
         }
