@@ -11,16 +11,79 @@ static int has_end_of_headers(const char *buf, int len) {
     return 0;
 }
 
-static const char *response =
+static const char *ok_header =
     "HTTP/1.0 200 OK\r\n"
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
+    "\r\n";
+
+static const char *not_found_response =
+    "HTTP/1.0 404 Not Found\r\n"
+    "Content-Type: text/plain\r\n"
+    "Connection: close\r\n"
     "\r\n"
-    "<html><body>"
-    "<h1>Hello from mateOS!</h1>"
-    "<p>This page is served by a userland HTTP server "
-    "running on a custom x86 operating system.</p>"
-    "</body></html>";
+    "404 Not Found\n";
+
+static int send_all(int client, const char *buf, int len) {
+    int sent = 0;
+    while (sent < len) {
+        int n = sock_send(client, buf + sent, (unsigned int)(len - sent));
+        if (n > 0) {
+            sent += n;
+            continue;
+        }
+        yield();
+    }
+    return 0;
+}
+
+static int request_targets_index(const char *req, int req_len) {
+    int line_end = 0;
+    while (line_end < req_len && req[line_end] != '\r' && req[line_end] != '\n') {
+        line_end++;
+    }
+    if (line_end <= 0) {
+        return 0;
+    }
+
+    if (line_end >= 6 && strncmp(req, "GET / ", 6) == 0) {
+        return 1;
+    }
+    if (line_end >= 15 && strncmp(req, "GET /index.htm ", 15) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static int serve_index_htm(int client) {
+    char body[8192];
+    int total = 0;
+    int fd = open("index.htm", O_RDONLY);
+    if (fd < 0) {
+        fd = open("/index.htm", O_RDONLY);
+    }
+    if (fd < 0) {
+        return -1;
+    }
+
+    while (total < (int)sizeof(body)) {
+        int n = fread(fd, body + total, (unsigned int)(sizeof(body) - (unsigned int)total));
+        if (n > 0) {
+            total += n;
+            continue;
+        }
+        break;
+    }
+    close(fd);
+
+    if (total <= 0) {
+        return -1;
+    }
+
+    send_all(client, ok_header, strlen(ok_header));
+    send_all(client, body, total);
+    return 0;
+}
 
 void _start(int argc, char **argv) {
     (void)argc; (void)argv;
@@ -66,16 +129,9 @@ void _start(int argc, char **argv) {
             print("\n");
         }
 
-        // Send HTTP response
-        int rlen = strlen(response);
-        int sent = 0;
-        while (sent < rlen) {
-            int n = sock_send(client, response + sent, rlen - sent);
-            if (n > 0) {
-                sent += n;
-            } else {
-                yield();
-            }
+        // Serve filesystem index.htm or return 404.
+        if (total <= 0 || !request_targets_index(buf, total) || serve_index_htm(client) < 0) {
+            send_all(client, not_found_response, strlen(not_found_response));
         }
 
         sock_close(client);
