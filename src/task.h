@@ -57,6 +57,7 @@ typedef struct {
 
 typedef struct task {
   uint32_t id;                    // Task ID
+  uint32_t parent_id;             // Parent task ID (0 for kernel/root)
   char name[TASK_NAME_MAX];       // Task name
   task_state_t state;             // Current state
 

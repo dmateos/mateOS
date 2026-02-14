@@ -43,6 +43,7 @@ void task_init(void) {
   // Create the idle/kernel task (task 0) - represents the current execution context
   task_t *idle = &tasks[0];
   idle->id = 0;
+  idle->parent_id = 0;
   memcpy(idle->name, "kernel", 7);
   idle->state = TASK_RUNNING;
   idle->stack = NULL;  // Uses existing kernel stack
@@ -94,7 +95,9 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   }
 
   // Initialize task
+  task_t *parent = task_current();
   task->id = next_task_id++;
+  task->parent_id = parent ? parent->id : 0;
   size_t name_len = strlen(name);
   if (name_len >= TASK_NAME_MAX) {
     name_len = TASK_NAME_MAX - 1;
@@ -273,7 +276,9 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   }
 
   // Initialize task
+  task_t *parent = task_current();
   task->id = next_task_id++;
+  task->parent_id = parent ? parent->id : 0;
   size_t name_len = strlen(filename);
   if (name_len >= TASK_NAME_MAX) {
     name_len = TASK_NAME_MAX - 1;
@@ -494,6 +499,7 @@ int task_list_info(taskinfo_entry_t *buf, int max) {
     if (tasks[i].state == TASK_TERMINATED) continue;
 
     buf[count].id = tasks[i].id;
+    buf[count].parent_id = tasks[i].parent_id;
     buf[count].state = (uint32_t)tasks[i].state;
 
     // Copy name

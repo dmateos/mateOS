@@ -58,6 +58,7 @@
 // Task info returned by SYS_TASKLIST
 typedef struct {
   uint32_t id;
+  uint32_t parent_id;
   uint32_t state;     // 0=ready, 1=running, 2=blocked, 3=terminated
   char name[32];
 } taskinfo_entry_t;

@@ -75,6 +75,7 @@ void shutdown(void);
 // Task info entry (must match kernel's taskinfo_entry_t)
 typedef struct {
     unsigned int id;
+    unsigned int parent_id;
     unsigned int state;    // 0=ready, 1=running, 2=blocked, 3=terminated
     char name[32];
 } taskinfo_entry_t;
