@@ -10,6 +10,7 @@ ARCH = i686
 SRCDIR = src
 BUILDDIR = build
 TARGET = dmos.bin
+FAT16_IMG = fat16_test.img
 
 # Rust configuration
 RUST_TARGET = rust/i686-unknown-none.json
@@ -143,6 +144,15 @@ ifdef VNC
 endif
 	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET)
 
+fat16img:
+	python3 tools/mkfat16_test_disk.py $(FAT16_IMG)
+
+run-fat16: fat16img
+ifdef VNC
+	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
+endif
+	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET) -drive file=$(FAT16_IMG),format=raw,if=ide
+
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)
 
@@ -156,4 +166,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run userland initrd
+.PHONY: clean rust run run-fat16 fat16img userland initrd

@@ -95,12 +95,23 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
 }
 
 int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
-    if (!buf || size == 0) return 0;
+    if (!buf || size == 0 || index < 0) return 0;
 
+    int remaining = index;
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->readdir) continue;
-        int ret = filesystems[fs]->readdir(path, index, buf, size);
-        if (ret > 0) return ret;
+
+        int local = 0;
+        while (1) {
+            int ret = filesystems[fs]->readdir(path, local, buf, size);
+            if (ret <= 0) break;
+
+            if (remaining == 0) {
+                return ret;
+            }
+            remaining--;
+            local++;
+        }
     }
     return 0;
 }

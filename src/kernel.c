@@ -13,6 +13,7 @@
 #include "multiboot.h"
 #include "ramfs.h"
 #include "vfs.h"
+#include "fat16.h"
 #include "task.h"
 #include "syscall.h"
 #include "pmm.h"
@@ -117,6 +118,9 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   // Initialize VFS and register ramfs
   vfs_init();
   vfs_register_fs(ramfs_get_ops());
+  if (fat16_init() == 0) {
+    vfs_register_fs(fat16_get_ops());
+  }
 
   // Initialize task system
   task_init();
