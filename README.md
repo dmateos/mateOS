@@ -6,6 +6,10 @@ A minimal educational operating system for learning x86 architecture, written in
 
 Inspired by experimenting with a simple OS on the 6502.
 
+![Window manager with terminal, file manager, and task manager](s1.png)
+
+![Running on Proxmox with HTTP server](s2.png)
+
 ## Features
 
 ### Core System
