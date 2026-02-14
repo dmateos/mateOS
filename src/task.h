@@ -116,6 +116,7 @@ uint32_t *schedule(uint32_t *current_esp);
 // Terminate current task
 void task_exit(void);
 void task_exit_with_code(int code);
+int task_kill(uint32_t task_id, int code);
 
 // Print task list
 void task_list(void);

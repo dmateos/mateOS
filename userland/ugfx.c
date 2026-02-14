@@ -374,6 +374,20 @@ void ugfx_buf_hline(unsigned char *buf, int bw, int bh,
     }
 }
 
+void ugfx_present(const unsigned char *buf, int bw, int bh) {
+    if (!framebuffer || !buf) return;
+
+    int w = (bw < ugfx_width) ? bw : ugfx_width;
+    int h = (bh < ugfx_height) ? bh : ugfx_height;
+    if (w <= 0 || h <= 0) return;
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            framebuffer[y * ugfx_width + x] = buf[y * bw + x];
+        }
+    }
+}
+
 unsigned char ugfx_getkey(void) {
     return getkey(0);
 }

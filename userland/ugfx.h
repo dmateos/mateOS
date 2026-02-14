@@ -40,4 +40,7 @@ void ugfx_buf_string(unsigned char *buf, int bw, int bh,
 void ugfx_buf_hline(unsigned char *buf, int bw, int bh,
                     int x, int y, int w, unsigned char color);
 
+// Present an offscreen buffer to the active framebuffer.
+void ugfx_present(const unsigned char *buf, int bw, int bh);
+
 #endif

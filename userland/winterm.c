@@ -197,6 +197,7 @@ void _start(int argc_unused, char **argv_unused) {
         write(1, "error: requires window manager\n", 31);
         exit(1);
     }
+    detach();
 
     // Redirect stdout to this window so spawned children's output appears here
     win_set_stdout(wid);

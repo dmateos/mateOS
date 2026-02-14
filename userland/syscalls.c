@@ -222,6 +222,10 @@ int unlink(const char *path) {
     return __syscall1(SYS_UNLINK, (unsigned int)path);
 }
 
+int kill(int task_id) {
+    return __syscall1(SYS_KILL, (unsigned int)task_id);
+}
+
 int detach(void) {
     return __syscall0(SYS_DETACH);
 }

@@ -409,6 +409,11 @@ static int sys_do_getpid(void) {
   return current ? (int)current->id : -1;
 }
 
+// Kill a task by task id.
+static int sys_do_kill(uint32_t task_id) {
+  return task_kill(task_id, -9);
+}
+
 // Main syscall dispatcher - called from assembly
 // frame_ptr points to the iret frame on the kernel stack
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
@@ -603,6 +608,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_UNLINK:
       if (!ebx) return (uint32_t)-1;
       return (uint32_t)vfs_unlink((const char *)ebx);
+
+    case SYS_KILL:
+      return (uint32_t)sys_do_kill(ebx);
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

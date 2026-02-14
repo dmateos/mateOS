@@ -44,6 +44,7 @@
 #define SYS_STAT           41
 #define SYS_DETACH         42
 #define SYS_UNLINK         43
+#define SYS_KILL           44
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -142,6 +143,7 @@ int close(int fd);
 int seek(int fd, int offset, int whence);
 int stat(const char *path, stat_t *st);
 int unlink(const char *path);
+int kill(int task_id);
 
 // Process detach (for GUI apps)
 int detach(void);

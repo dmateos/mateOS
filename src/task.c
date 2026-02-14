@@ -407,44 +407,45 @@ void task_yield(void) {
   cpu_yield_interrupt();
 }
 
+static void task_terminate(task_t *task, int code) {
+  if (!task || task->id == 0 || task->state == TASK_TERMINATED) return;
+
+  task->state = TASK_TERMINATED;
+  task->exit_code = code;
+
+  // Wake up any task waiting for this task.
+  for (int i = 0; i < MAX_TASKS; i++) {
+    if (tasks[i].state == TASK_BLOCKED && tasks[i].waiting_for == task->id) {
+      tasks[i].state = TASK_READY;
+      tasks[i].waiting_for = 0;
+    }
+  }
+
+  // Clean up any windows owned by this process.
+  window_cleanup_pid(task->id);
+
+  // Close all open file descriptors.
+  if (task->fd_table) {
+    vfs_close_all(task->fd_table);
+    kfree(task->fd_table);
+    task->fd_table = NULL;
+  }
+
+  // Free user address-space resources from kernel address space.
+  paging_switch(paging_get_kernel_dir());
+  if (task->page_dir) {
+    paging_destroy_address_space(task->page_dir);
+    task->page_dir = NULL;
+  }
+
+  task->stack = NULL;
+}
+
 void task_exit_with_code(int code) {
   if (current_task && current_task->id != 0) {
-    current_task->state = TASK_TERMINATED;
-    current_task->exit_code = code;
-
-    // Wake up any task waiting for us
-    for (int i = 0; i < MAX_TASKS; i++) {
-      if (tasks[i].state == TASK_BLOCKED &&
-          tasks[i].waiting_for == current_task->id) {
-        tasks[i].state = TASK_READY;
-        tasks[i].waiting_for = 0;
-      }
-    }
-
-    // Clean up any windows owned by this process
-    window_cleanup_pid(current_task->id);
-
-    // Close all open file descriptors
-    if (current_task->fd_table) {
-      vfs_close_all(current_task->fd_table);
-      kfree(current_task->fd_table);
-      current_task->fd_table = NULL;
-    }
-
-    // Switch to kernel page directory before freeing process pages
-    paging_switch(paging_get_kernel_dir());
-
-    // Destroy per-process address space (frees PMM frames + page tables)
-    if (current_task->page_dir) {
-      paging_destroy_address_space(current_task->page_dir);
-      current_task->page_dir = NULL;
-    }
-
-    // NOTE: Do NOT free kernel_stack here — we are currently executing on it!
-    // The kernel stack will be freed when the task slot is reused in
-    // task_create_user_elf(). For now, just mark the user stack as freed
-    // (it was already freed by paging_destroy_address_space).
-    current_task->stack = NULL;
+    // NOTE: Do NOT free kernel_stack here — we are currently executing on it.
+    // The kernel stack will be freed when the task slot is reused.
+    task_terminate(current_task, code);
   }
 
   // Yield to let scheduler pick next task
@@ -455,6 +456,20 @@ void task_exit_with_code(int code) {
 
 void task_exit(void) {
   task_exit_with_code(0);
+}
+
+int task_kill(uint32_t task_id, int code) {
+  task_t *task = task_get_by_id(task_id);
+  if (!task || task->id == 0 || task->is_kernel) return -1;
+  if (task->state == TASK_TERMINATED) return -2;
+
+  if (task == current_task) {
+    task_exit_with_code(code);
+    return 0;
+  }
+
+  task_terminate(task, code);
+  return 0;
 }
 
 task_t *task_get_by_id(uint32_t id) {
