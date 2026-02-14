@@ -6,6 +6,8 @@
 #define H 350
 #define MAX_FILES 256
 #define NAME_MAX 32
+#define MAX_EXTS 32
+#define EXT_MAX 16
 
 #define TOPBAR_H 16
 #define STATUS_H 14
@@ -32,12 +34,19 @@
 
 static unsigned char buf[W * H];
 static char files[MAX_FILES][NAME_MAX];
+static char all_files[MAX_FILES][NAME_MAX];
+static char ext_filters[MAX_EXTS][EXT_MAX];
 static int file_count = 0;
+static int all_count = 0;
 static int file_total = 0;
+static int ext_filter_count = 0;
+static int ext_filter_idx = 0;  // 0=all, 1..N from ext_filters
 static int selected = 0;
 static int view_first = 0;
 static int wid = -1;
-static char status[80] = "Arrows/WASD Move  [/ ] Page  Enter Open  Del Delete  R Refresh  Q Quit";
+static char status[80] = "Arrows/WASD Move  [/ ] Page  Enter Open  Del Delete  F Filter  R Refresh  Q Quit";
+
+static void ensure_selected_visible(void);
 
 static int str_ends_with(const char *s, const char *suffix) {
     int sl = strlen(s);
@@ -48,10 +57,96 @@ static int str_ends_with(const char *s, const char *suffix) {
 
 static unsigned char icon_color_for_name(const char *name) {
     if (str_ends_with(name, ".elf")) return 2;   // green: executable
-    if (str_ends_with(name, ".ker")) return 14;  // yellow: kernel virtual file
+    if (str_ends_with(name, ".wlf")) return 13;  // magenta: window executable
+    if (str_ends_with(name, ".mos")) return 14;  // yellow: virtual OS file
     if (str_ends_with(name, ".htm")) return 11;  // cyan: web/html
     if (str_ends_with(name, ".txt")) return 10;  // light green: text
     return COL_ICON;
+}
+
+static void copy_name(char *dst, const char *src, int cap) {
+    int i = 0;
+    while (src[i] && i < cap - 1) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
+static char tolower_ascii(char c) {
+    if (c >= 'A' && c <= 'Z') return (char)(c - 'A' + 'a');
+    return c;
+}
+
+static void file_ext_token(const char *name, char *out, int cap) {
+    int last_dot = -1;
+    for (int i = 0; name[i]; i++) {
+        if (name[i] == '.') last_dot = i;
+    }
+    if (last_dot < 0 || !name[last_dot + 1]) {
+        copy_name(out, "<none>", cap);
+        return;
+    }
+    int j = 0;
+    for (int i = last_dot + 1; name[i] && j < cap - 1; i++) {
+        out[j++] = tolower_ascii(name[i]);
+    }
+    out[j] = '\0';
+}
+
+static int ext_exists(const char *tok) {
+    for (int i = 0; i < ext_filter_count; i++) {
+        if (strcmp(ext_filters[i], tok) == 0) return 1;
+    }
+    return 0;
+}
+
+static void sort_ext_filters(void) {
+    for (int i = 0; i < ext_filter_count; i++) {
+        int best = i;
+        for (int j = i + 1; j < ext_filter_count; j++) {
+            if (strcmp(ext_filters[j], ext_filters[best]) < 0) best = j;
+        }
+        if (best != i) {
+            char tmp[EXT_MAX];
+            copy_name(tmp, ext_filters[i], EXT_MAX);
+            copy_name(ext_filters[i], ext_filters[best], EXT_MAX);
+            copy_name(ext_filters[best], tmp, EXT_MAX);
+        }
+    }
+}
+
+static void rebuild_ext_filters(void) {
+    ext_filter_count = 0;
+    for (int i = 0; i < all_count && ext_filter_count < MAX_EXTS; i++) {
+        char tok[EXT_MAX];
+        file_ext_token(all_files[i], tok, sizeof(tok));
+        if (!ext_exists(tok)) {
+            copy_name(ext_filters[ext_filter_count], tok, EXT_MAX);
+            ext_filter_count++;
+        }
+    }
+    sort_ext_filters();
+    if (ext_filter_idx > ext_filter_count) ext_filter_idx = 0;
+}
+
+static int filter_match(const char *name) {
+    if (ext_filter_idx == 0) return 1;
+    char tok[EXT_MAX];
+    file_ext_token(name, tok, sizeof(tok));
+    return strcmp(tok, ext_filters[ext_filter_idx - 1]) == 0;
+}
+
+static void rebuild_visible_files(void) {
+    file_count = 0;
+    for (int i = 0; i < all_count && file_count < MAX_FILES; i++) {
+        if (!filter_match(all_files[i])) continue;
+        copy_name(files[file_count], all_files[i], NAME_MAX);
+        file_count++;
+    }
+    if (selected >= file_count) selected = (file_count > 0) ? (file_count - 1) : 0;
+    if (selected < 0) selected = 0;
+    ensure_selected_visible();
 }
 
 static void copy_status(const char *s) {
@@ -136,27 +231,22 @@ static void ensure_selected_visible(void) {
 }
 
 static void load_files(void) {
-    file_count = 0;
+    all_count = 0;
     file_total = 0;
 
     char name[NAME_MAX];
     int i = 0;
     while (readdir((unsigned int)i, name, sizeof(name)) > 0) {
-        if (i < MAX_FILES) {
-            int j = 0;
-            while (name[j] && j < NAME_MAX - 1) {
-                files[i][j] = name[j];
-                j++;
-            }
-            files[i][j] = '\0';
-            file_count++;
+        if (all_count < MAX_FILES) {
+            copy_name(all_files[all_count], name, NAME_MAX);
+            all_count++;
         }
         i++;
     }
     file_total = i;
 
-    if (selected >= file_count) selected = (file_count > 0) ? (file_count - 1) : 0;
-    ensure_selected_visible();
+    rebuild_ext_filters();
+    rebuild_visible_files();
 }
 
 static void draw_scrollbar(int cols, int rows) {
@@ -252,7 +342,7 @@ static void page_selection(int delta_pages) {
 }
 
 static void spawn_for_entry(const char *name) {
-    if (str_ends_with(name, ".elf")) {
+    if (str_ends_with(name, ".elf") || str_ends_with(name, ".wlf")) {
         int pid = spawn(name);
         if (pid < 0) {
             copy_status("Open failed");
@@ -278,8 +368,8 @@ static void delete_selected(void) {
     if (file_count <= 0) return;
 
     const char *name = files[selected];
-    if (str_ends_with(name, ".elf")) {
-        copy_status("Refusing to delete .elf");
+    if (str_ends_with(name, ".elf") || str_ends_with(name, ".wlf")) {
+        copy_status("Refusing to delete executable");
         return;
     }
     if (unlink(name) != 0) {
@@ -289,6 +379,32 @@ static void delete_selected(void) {
 
     copy_status("Deleted");
     load_files();
+}
+
+static void cycle_filter(void) {
+    if (ext_filter_count <= 0) {
+        ext_filter_idx = 0;
+        copy_status("Filter: all");
+        rebuild_visible_files();
+        return;
+    }
+    ext_filter_idx++;
+    if (ext_filter_idx > ext_filter_count) ext_filter_idx = 0;
+
+    char msg[80];
+    if (ext_filter_idx == 0) {
+        copy_name(msg, "Filter: all", sizeof(msg));
+    } else {
+        int p = 0;
+        const char *pre = "Filter: .";
+        while (pre[p]) { msg[p] = pre[p]; p++; }
+        int j = 0;
+        const char *ext = ext_filters[ext_filter_idx - 1];
+        while (ext[j] && p < (int)sizeof(msg) - 1) msg[p++] = ext[j++];
+        msg[p] = '\0';
+    }
+    copy_status(msg);
+    rebuild_visible_files();
 }
 
 void _start(int argc, char **argv) {
@@ -317,6 +433,8 @@ void _start(int argc, char **argv) {
         if (k == 'r' || k == 'R') {
             load_files();
             copy_status("Refreshed");
+        } else if (k == 'f' || k == 'F') {
+            cycle_filter();
         } else if (k == '\n' || k == '\r') {
             if (file_count > 0) spawn_for_entry(files[selected]);
         } else if (k == 127 || k == '\b') {

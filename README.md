@@ -31,6 +31,8 @@ Inspired by experimenting with a simple OS on the 6502.
 - **spawn + wait** - Fork-like process creation from ELF binaries
 - **argc/argv** - Programs receive command-line arguments via `_start(int argc, char **argv)`
 - **Non-blocking wait** - `wait_nb()` polls child status without blocking
+- **Process detach** - GUI apps call `detach()` to release from parent's wait
+- **Process kill** - `kill(pid)` terminates any task by PID
 - **Process Isolation** - Child processes run in separate address spaces, parent memory is never touched
 - **ELF Loader** - Loads ELF32 binaries from ramfs into per-process physical frames
 - **Exit Codes** - Processes return exit codes to their parent via wait()
@@ -45,30 +47,38 @@ Inspired by experimenting with a simple OS on the 6502.
 - **DHCP via QEMU** - Automatic IP configuration with QEMU user-mode networking
 
 ### Window Manager
-- **Compositing WM** - `gui` owns the framebuffer and composites child windows
+- **Compositing WM** - `gui` owns the framebuffer and composites child windows via backbuffer
 - **Window Syscalls** - create, destroy, read, write, getkey, sendkey, list
-- **2x2 Tiled Layout** - Up to 4 windows in a grid with title bars and borders
-- **Focus Management** - Tab key cycles focus between windows
-- **Window Terminal** - `winterm` provides a shell inside a WM window
-- **Double-Buffered Windows** - Child apps render to pixel buffers, WM composites flicker-free
-- **Mouse Support** - PS/2 mouse driver with cursor tracking
+- **Drag & Z-order** - Click title bar to drag, click to focus and raise, up to 16 windows
+- **Close Button** - X button in title bar sends ESC → 'q' → kill() as graceful shutdown
+- **Desktop Icons** - Clickable TERM, FILES, TASKS icons to launch apps
+- **Taskbar** - Top bar showing "mateOS WM", focused window title, and keyboard hints
+- **Mouse Cursor** - Custom arrow cursor with transparency mask
+- **Focus Management** - Tab key cycles focus through z-order, ESC closes focused window
+- **Window Terminal** - `winterm` provides a full shell with stdout redirection and 61x34 char grid
+- **File Manager** - `winfm` with icon grid, color-coded file types, extension filter (F key), scrollbar
+- **Task Manager** - `wintask` with CPU% tracking, process kill, auto-refresh
+- **Auto-launch** - WM spawns winterm and winfm on startup
 
 ### Filesystem
 - **Virtual File System (VFS)** - Abstraction layer supporting multiple filesystem backends
 - **Ramfs** - In-memory filesystem loaded from multiboot initrd module
+- **FAT16** - Read/write FAT16 on IDE disk with MBR partition detection, cluster allocation, file create/delete
+- **Virtual OS Files** - Synthetic `.mos` files exposing runtime system info (cpuinfo, meminfo, lsirq, pci, kdebug)
 - **Per-Process File Descriptors** - Each task has its own FD table (16 max)
-- **File I/O Syscalls** - open, read, write, close, seek, stat
-- **Initrd Tool** - `tools/mkinitrd` packs ELF binaries into a bootable initrd image
+- **File I/O Syscalls** - open, read, write, close, seek, stat, unlink
+- **Initrd Tool** - `tools/mkinitrd` packs `.elf` and `.wlf` binaries into a bootable initrd image
 
 ### User Mode Support
 - **TSS (Task State Segment)** - Kernel stack switching on ring transitions
-- **41 Syscalls** via int 0x80:
-  - **Process:** write, exit, yield, exec, spawn, wait, wait_nb, getpid, tasklist, shutdown, sleep_ms
+- **50 Syscalls** via int 0x80:
+  - **Process:** write, exit, yield, exec, spawn, wait, wait_nb, getpid, tasklist, shutdown, sleep_ms, detach, kill, getticks
   - **Graphics:** gfx_init, gfx_exit, gfx_info, getmouse
   - **Keyboard:** getkey
-  - **Filesystem:** readdir, open, fread, fwrite, close, seek, stat
+  - **Filesystem:** readdir, open, fread, fwrite, close, seek, stat, unlink
   - **Window Manager:** win_create, win_destroy, win_write, win_read, win_getkey, win_sendkey, win_list, win_read_text, win_set_stdout
-  - **Networking:** net_ping, net_cfg, net_get, sock_listen, sock_accept, sock_send, sock_recv, sock_close
+  - **Networking:** net_ping, net_cfg, net_get, sock_listen, sock_accept, sock_send, sock_recv, sock_close, netstats
+  - **System Info:** lspci, lsirq, meminfo, cpuinfo
 - **Memory Isolation** - User pages marked non-supervisor, kernel pages protected
 - **Separate Stacks** - Each user process has independent kernel and user stacks
 
@@ -79,11 +89,15 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Userland Graphics Library** - `ugfx.h` provides pixel drawing, rectangles, text rendering, buffer operations
 
 ### Other
-- **Rust Integration** - Hybrid C/Rust kernel with `no_std` Rust components
-- **Keyboard Driver** - PS/2 keyboard with scancode translation, shift key support, buffered input
-- **Mouse Driver** - PS/2 mouse with position tracking and button state
+- **Rust Integration** - Hybrid C/Rust kernel with `no_std` Rust components and userland Rust programs
+- **PCI Bus Enumeration** - Scans bus 0, reads vendor/device IDs, class codes, BARs, IRQ lines
+- **ATA PIO Driver** - Primary-master IDE disk access with 28-bit LBA addressing
+- **Keyboard Driver** - PS/2 keyboard with scancode translation, extended scancodes (arrow keys), shift support, 256-byte ring buffer
+- **Mouse Driver** - PS/2 mouse with 3-byte packet assembly, sign-extended deltas, bounds clamping
+- **System Info** - cpuinfo, meminfo, lspci, lsirq, netstats syscalls + virtual .mos files
 - **Userland Shell** - Interactive command-line shell running in Ring 3
-- **Test Suite** - 15-test userland test suite covering syscalls, memory, process isolation
+- **DOOM Port** - doomgeneric DOOM engine running in a WM window (320x200, 8bpp)
+- **Test Suite** - 23-test userland test suite covering syscalls, memory, process isolation, VFS, argv
 
 ## Building
 
@@ -109,8 +123,8 @@ make run VNC=1                    # VNC display (connect to port 5900)
 make run NET=1                    # User-mode networking
 make run NET=tap                  # TAP networking
 make run NET=1 HTTP=1             # Networking + port forward 8080->80
+make run FAT16=1                  # Attach FAT16 disk image
 make run GFX=1 NET=1 HTTP=1      # Graphics + networking + HTTP
-make run VNC=1 NET=1 HTTP=1      # VNC + networking + HTTP
 ```
 
 Flags can be combined freely:
@@ -119,6 +133,7 @@ Flags can be combined freely:
 - **NET=1** - QEMU user-mode networking with RTL8139
 - **NET=tap** - TAP networking with RTL8139
 - **HTTP=1** - Port forward host 8080 to guest 80 (use with NET=1)
+- **FAT16=1** - Attach `fat16_test.img` as IDE secondary disk
 
 ### Testing the HTTP Server
 
@@ -141,7 +156,12 @@ curl http://localhost:8080
 
 ## Shell
 
-The shell runs as a Ring 3 user process (`shell.elf`). Programs can be run by name without the `.elf` extension — the shell appends it automatically.
+The shell runs as a Ring 3 user process (`shell.elf`). Programs can be run by name without an extension — the shell tries `.elf` first, then `.wlf` automatically.
+
+**File extensions:**
+- `.elf` — CLI programs (shell, ls, cat, ping, etc.)
+- `.wlf` — Window/GUI programs (winterm, winfm, wintask, winhello, etc.)
+- `.mos` — Virtual OS interface files (cpuinfo, meminfo, lsirq, pci, kdebug)
 
 ### Built-in Commands
 
@@ -154,18 +174,28 @@ The shell runs as a Ring 3 user process (`shell.elf`). Programs can be run by na
 
 These are separate ELF binaries invoked by name:
 
-- `ls` - List files in ramfs
-- `tasks` - Show all tasks with PID, state, and name
-- `echo <text>` - Print text
+- `ls` - List files in ramfs/FAT16
 - `cat <file>` - Display file contents
+- `cp <src> <dst>` - Copy a file
+- `del <file>` - Delete a file
+- `touch <file>` - Create an empty file
+- `writefile <file> <text>` - Write text to a file
+- `echo <text>` - Print text
+- `tasks` - Show all tasks with PID, state, and name
+- `kill <pid>` - Kill a process by PID
+- `uptime` - Show system uptime (days, hours, minutes, seconds)
 - `ping <ip>` - Ping an IP address (e.g. `ping 10.0.2.2`)
 - `ifconfig [ip mask gw]` - Show or set network configuration
 - `shutdown` - Power off (ACPI)
 - `hello` - Hello world demo
-- `test` - Run comprehensive test suite
-- `gui` - Start window manager
-- `winterm` - Terminal emulator (inside WM)
-- `httpd` - HTTP server (port 80)
+- `test` - Run 23-test suite
+- `gui` - Start window manager (launches winterm + file manager)
+- `winterm` - Terminal emulator (inside WM) `.wlf`
+- `winedit` - GUI text editor `.wlf`
+- `winfm` - GUI file manager with icon grid and extension filter `.wlf`
+- `wintask` - GUI task manager with CPU% and kill `.wlf`
+- `httpd` - HTTP server (port 80, serves `/os` system status page)
+- `doom` - DOOM (requires WM + DOOM1.WAD in filesystem)
 
 Run any program by name: `hello`, `test`, `gui`
 
@@ -179,7 +209,7 @@ Append `&` to run in background: `httpd &`
 $ test
 ```
 
-Tests cover:
+23 tests covering:
 1. Basic syscalls (write, yield)
 2. String operations
 3. Math (addition, multiplication, division, modulo)
@@ -195,10 +225,72 @@ Tests cover:
 13. Write return value validation
 14. Deep stack usage (recursion with padding, large locals)
 15. Process isolation (memory markers survive child spawn)
+16. libc helpers (strncmp, memcpy, itoa)
+17. wait_nb syscall (non-blocking wait)
+18. sleep_ms syscall
+19. tasklist syscall (PID, state, name validation)
+20. detach behavior (spawn + detach returns -3)
+21. VFS file I/O (open, read, seek, close, stat, ELF magic check)
+22. spawn_argv syscall (pass arguments to child)
+23. write edge cases (len=0, NULL buffer, fd=2)
+
+## FAT16 Filesystem
+
+mateOS includes a full read/write FAT16 driver that mounts IDE disks automatically at boot.
+
+```bash
+# Create a test disk image
+python3 tools/mkfat16_test_disk.py fat16_test.img
+
+# Boot with disk attached
+make run FAT16=1
+```
+
+Supported operations:
+- **Read/write files** with cluster-chain following and on-demand allocation
+- **Create files** via `open()` with `O_CREAT`
+- **Delete files** via `unlink()` — frees cluster chain, marks directory entry 0xE5
+- **MBR partition detection** — scans for FAT16 partition types (0x04, 0x06, 0x0E)
+- **Seek** — SEEK_SET, SEEK_CUR, SEEK_END
+- **Directory listing** — root directory entries via `readdir()`
+
+FAT16 files are accessible through the same VFS syscalls as ramfs files. The shell commands `ls`, `cat`, `cp`, `del`, `touch`, and `writefile` all work on FAT16.
+
+## HTTP Server
+
+`httpd` serves both static files and a dynamic system status page:
+
+```bash
+make run GFX=1 NET=1 HTTP=1
+# In winterm: httpd &
+# From host: curl http://localhost:8080/os
+```
+
+- `GET /` — serves `index.htm` from filesystem
+- `GET /os` — dynamic page aggregating system info:
+  - CPU info (vendor, family/model/stepping, feature flags)
+  - Memory stats (PMM frames used/free, heap usage)
+  - IRQ table (masked/unmasked, handler status)
+  - PCI devices (vendor/device ID, class, IRQ)
+  - Process list (PID, parent, ring, state, name)
+  - Uptime
+  - Kernel debug log
+
+## Virtual OS Files
+
+The VFS exposes synthetic read-only `.mos` files that provide runtime system information:
+
+- `/cpuinfo.mos` — CPUID vendor, family, model, stepping, feature flags
+- `/meminfo.mos` — PMM total/used/free frames, heap start/end/current, bytes used/free
+- `/lsirq.mos` — IRQ table (vector, masked status, handler presence)
+- `/pci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
+- `/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
+
+These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server's `/os` page reads all of them.
 
 ## Syscall Reference
 
-41 syscalls via int 0x80 (eax=syscall#, ebx/ecx/edx=args, return in eax):
+50 syscalls via int 0x80 (eax=syscall#, ebx/ecx/edx=args, return in eax):
 
 | # | Name | Signature | Description |
 |---|------|-----------|-------------|
@@ -243,6 +335,15 @@ Tests cover:
 | 39 | SYS_CLOSE | close(fd) | Close file |
 | 40 | SYS_SEEK | seek(fd, offset, whence) | Seek in file |
 | 41 | SYS_STAT | stat(path, buf) | Get file info |
+| 42 | SYS_DETACH | detach() | Detach from parent's wait |
+| 43 | SYS_UNLINK | unlink(path) | Delete file |
+| 44 | SYS_KILL | kill(pid) | Terminate task by PID |
+| 45 | SYS_GETTICKS | getticks() | Get timer ticks (100Hz) |
+| 46 | SYS_LSPCI | lspci() | Print PCI device list |
+| 47 | SYS_LSIRQ | lsirq() | Print IRQ status table |
+| 48 | SYS_MEMINFO | meminfo() | Print memory statistics |
+| 49 | SYS_CPUINFO | cpuinfo() | Print CPU information |
+| 50 | SYS_NETSTATS | netstats(&rx, &tx) | Get network packet counts |
 
 ## Project Structure
 
@@ -250,21 +351,22 @@ Tests cover:
 Main kernel source files:
 - `kernel.c` - Kernel entry point and initialization
 - `task.c/h` - Task management, scheduler, per-process CR3 switching
-- `syscall.c/h` - System call dispatcher and handlers (41 syscalls)
+- `syscall.c/h` - System call dispatcher and handlers (50 syscalls)
 - `pmm.c/h` - Physical memory manager (bitmap frame allocator)
 - `elf.c/h` - ELF32 binary loader
-- `ramfs.c/h` - In-memory filesystem
-- `vfs.c/h` - Virtual file system abstraction layer
+- `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
+- `fat16.c/h` - FAT16 filesystem driver (read/write, MBR partition, cluster alloc, unlink)
+- `vfs.c/h` - Virtual file system abstraction layer + synthetic `.mos` files
 - `multiboot.c/h` - Multiboot info parsing, initrd detection
 - `console.c/h` - Early boot console
-- `keyboard.c/h` - PS/2 keyboard driver with shift support and input buffering
-- `net.c/h` - Networking layer (lwIP integration, TCP socket table, ICMP ping)
+- `keyboard.c/h` - PS/2 keyboard driver with extended scancodes, shift support, ring buffer
+- `net.c/h` - Networking layer (lwIP integration, DHCP, TCP socket table, ICMP ping)
 - `window.c/h` - Window manager subsystem (create, destroy, composite, focus)
-- `pci.c/h` - PCI bus enumeration
 
 ### `src/drivers/`
 Hardware drivers:
 - `rtl8139.c/h` - RTL8139 NIC driver (PCI, DMA, interrupt-driven)
+- `ata_pio.c/h` - ATA PIO IDE disk driver (28-bit LBA, primary-master)
 
 ### `src/arch/i686/`
 x86 architecture-specific code:
@@ -273,7 +375,8 @@ x86 architecture-specific code:
 - `interrupts.c/h` - IDT setup, exception/IRQ handlers
 - `interrupts_asm.S` - Low-level interrupt stubs, syscall entry, context switch
 - `tss.c/h` - Task State Segment for ring transitions
-- `paging.c/h` - Page directory/table management, per-process address spaces
+- `paging.c/h` - Page directory/table management, per-process address spaces, COW for shared tables
+- `pci.c/h` - PCI bus 0 enumeration (vendor/device ID, class, BARs, IRQ)
 - `timer.c/h` - PIT timer driver (100Hz)
 - `vga.c/h` - BGA/VGA graphics driver
 - `legacytty.c/h` - VGA text mode driver
@@ -293,27 +396,45 @@ Rust components compiled with `no_std` and custom i686 target
 User-space programs:
 - `shell.c` - Interactive shell with background job support and auto `.elf` extension
 - `hello.c` - Hello world test program
-- `test.c` - Comprehensive test suite (15 tests)
-- `gui.c` - Window manager (compositing WM, 2x2 tiled layout)
-- `winterm.c` - Terminal emulator running inside WM windows
-- `winhello.c` - Window hello world demo
-- `winedit.c` - Window text editor demo
-- `winsleep.c` - Window sleep demo
-- `httpd.c` - HTTP server (serves HTML on port 80)
-- `ping.c` - ICMP ping utility (takes IP as argument)
+- `test.c` - Comprehensive test suite (23 tests)
+- `gui.c` - Window manager (compositing, drag, z-order, close buttons, desktop icons, mouse cursor)
+- `winterm.c` - Terminal emulator (61x34 chars, stdout redirect, argv passing) → `.wlf`
+- `winhello.c` - Window hello world demo → `.wlf`
+- `winedit.c` - GUI text editor → `.wlf`
+- `winfm.c` - GUI file manager (icon grid, color-coded types, extension filter, scrollbar) → `.wlf`
+- `wintask.c` - GUI task manager (CPU%, kill, auto-refresh) → `.wlf`
+- `winsleep.c` - Window sleep demo → `.wlf`
+- `httpd.c` - HTTP server (port 80, static files + dynamic `/os` system status page)
+- `ping.c` - ICMP ping utility
 - `cat.c` - Display file contents
+- `cp.c` - Copy files
+- `del.c` - Delete files
+- `touch.c` - Create empty files
+- `writefile.c` - Write text to files
 - `echo.c` - Print arguments
-- `ls.c` - List ramfs directory
+- `ls.c` - List directory
 - `tasks.c` - Show task list
+- `kill.c` - Kill process by PID
+- `uptime.c` - Show system uptime
 - `ifconfig.c` - Network configuration
 - `shutdown.c` - ACPI power off
 - `ugfx.c/h` - Userland graphics library (pixel, rect, text, buffer ops)
-- `syscalls.c/h` - Syscall wrappers (int 0x80, 41 syscalls)
+- `syscalls.c/h` - Syscall wrappers (int 0x80, 50 syscalls)
 - `cmd_shared.c/h` - Shared shell builtins (help, clear, exit)
 - `user.ld` - Linker script (loads at 0x700000)
 
+### `userland/doom/`
+doomgeneric DOOM port:
+- `doom_mateos_start.c` - Entry point, WAD file selection
+- `doomgeneric_mateos.c` - Platform layer (window, input, timing)
+- `compat/` - libc compatibility shims (malloc, printf, file I/O)
+
+### `userland/rust-winhello/`
+Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` + LTO) → `winhello_rust.wlf`
+
 ### `tools/`
 - `mkinitrd` - Initrd image builder
+- `mkfat16_test_disk.py` - FAT16 test disk image creator (8MB, optional DOOM1.WAD)
 
 ## Architecture Notes
 
@@ -344,6 +465,7 @@ User-space programs:
 - 8 page tables identity-map 0-32MB for kernel access
 - Per-process page directories share kernel page tables (0-7)
 - Page table 1 (0x400000-0x7FFFFF) is copied per-process: heap entries shared, user code entries (0x700000+) are private
+- Copy-on-write: when a process maps pages into shared kernel page tables (e.g. large BSS), the table is privately copied first
 - ELF segments loaded into PMM frames, mapped at virtual addresses in process page directory
 - BGA framebuffer pages identity-mapped into graphics-owning process
 - CR3 swapped on every context switch

@@ -258,17 +258,17 @@ static int hit_rect(int x, int y, int rx, int ry, int rw, int rh) {
 }
 
 static void launch_term(void) {
-    int pid = spawn("winterm.elf");
+    int pid = spawn("winterm.wlf");
     (void)pid;
 }
 
 static void launch_files(void) {
-    int pid = spawn("winfm.elf");
+    int pid = spawn("winfm.wlf");
     (void)pid;
 }
 
 static void launch_tasks(void) {
-    int pid = spawn("wintask.elf");
+    int pid = spawn("wintask.wlf");
     (void)pid;
 }
 
@@ -589,13 +589,13 @@ void _start(int argc, char **argv) {
     }
     z_count = 0;
 
-    int pid0 = spawn("winterm.elf");
+    int pid0 = spawn("winterm.wlf");
     if (pid0 >= 0) {
         slots[0].pid = pid0;
         wm_strcpy(slots[0].title, "Term 1", 32);
     }
 
-    int pid1 = spawn("winfm.elf");
+    int pid1 = spawn("winfm.wlf");
     if (pid1 >= 0) {
         slots[1].pid = pid1;
         wm_strcpy(slots[1].title, "FileMgr", 32);

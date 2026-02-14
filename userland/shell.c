@@ -178,22 +178,31 @@ void _start(int argc, char **argv) {
         int ac = parse_argv(line, args, 16);
         if (ac == 0) continue;
 
-        // Auto-append .elf if not already present
-        char elfname[64];
+        // Auto-append .elf for legacy CLI commands; fall back to .wlf.
+        char progname[64];
         const char *cmd = args[0];
         int cmdlen = strlen(cmd);
-        if (cmdlen < 4 || cmd[cmdlen-4] != '.' || cmd[cmdlen-3] != 'e' ||
-            cmd[cmdlen-2] != 'l' || cmd[cmdlen-1] != 'f') {
-            // Copy and append .elf
+        int has_ext = (cmdlen >= 4 && cmd[cmdlen - 4] == '.' &&
+                       ((cmd[cmdlen - 3] == 'e' && cmd[cmdlen - 2] == 'l' && cmd[cmdlen - 1] == 'f') ||
+                        (cmd[cmdlen - 3] == 'w' && cmd[cmdlen - 2] == 'l' && cmd[cmdlen - 1] == 'f')));
+        if (!has_ext) {
             int i;
-            for (i = 0; i < 59 && cmd[i]; i++) elfname[i] = cmd[i];
-            elfname[i++] = '.'; elfname[i++] = 'e';
-            elfname[i++] = 'l'; elfname[i++] = 'f'; elfname[i] = '\0';
-            args[0] = elfname;
+            for (i = 0; i < 59 && cmd[i]; i++) progname[i] = cmd[i];
+            progname[i++] = '.'; progname[i++] = 'e';
+            progname[i++] = 'l'; progname[i++] = 'f'; progname[i] = '\0';
+            args[0] = progname;
         }
 
         // Try to run as program
         int child = spawn_argv(args[0], args, ac);
+        if (child < 0 && !has_ext) {
+            int i;
+            for (i = 0; i < 59 && cmd[i]; i++) progname[i] = cmd[i];
+            progname[i++] = '.'; progname[i++] = 'w';
+            progname[i++] = 'l'; progname[i++] = 'f'; progname[i] = '\0';
+            args[0] = progname;
+            child = spawn_argv(args[0], args, ac);
+        }
         if (child >= 0) {
             if (background) {
                 print("[");

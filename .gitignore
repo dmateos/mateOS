@@ -3,6 +3,7 @@
 *.o
 */*.o
 */*.elf
+*/*.wlf
 
 # Rust build artifacts
 rust/target/

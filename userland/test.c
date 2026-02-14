@@ -668,11 +668,11 @@ static int test_tasklist(void) {
 static int test_detach(void) {
     print("TEST 20: detach behavior\n");
 
-    // Existing detached app in tree: winsleep.elf (detaches after win_create).
+    // Existing detached app in tree: winsleep.wlf (detaches after win_create).
     // In text mode (no WM), it exits before detach, so we treat that as skipped.
-    int child = spawn("winsleep.elf");
+    int child = spawn("winsleep.wlf");
     if (child < 0) {
-        print("  SKIP: couldn't spawn winsleep.elf\n\n");
+        print("  SKIP: couldn't spawn winsleep.wlf\n\n");
         return 1;
     }
 

@@ -103,7 +103,7 @@ endif
 
 initrd.img:
 	@$(MAKE) -C userland
-	./tools/mkinitrd initrd.img userland/*.elf $(INITRD_EXTRA)
+	./tools/mkinitrd initrd.img userland/*.elf userland/*.wlf $(INITRD_EXTRA)
 
 initrd: initrd.img
 
