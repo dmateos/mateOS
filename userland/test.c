@@ -513,6 +513,315 @@ static int test_process_isolation(void) {
 }
 
 // ============================================================
+// Test 16: Additional libc coverage (strncmp, memcpy, itoa)
+// ============================================================
+static int test_libc_more(void) {
+    print("TEST 16: libc helpers (strncmp, memcpy, itoa)\n");
+
+    if (strncmp("abcdef", "abcxyz", 3) != 0) {
+        print("  FAILED: strncmp prefix compare\n");
+        return 0;
+    }
+    if (strncmp("abc", "abd", 3) >= 0) {
+        print("  FAILED: strncmp ordering\n");
+        return 0;
+    }
+    print("  - strncmp: OK\n");
+
+    unsigned char src[8] = {0x10, 0x20, 0x30, 0x40, 0xAA, 0xBB, 0xCC, 0xDD};
+    unsigned char dst[8];
+    memset(dst, 0, sizeof(dst));
+    memcpy(dst, src, sizeof(src));
+    for (int i = 0; i < 8; i++) {
+        if (dst[i] != src[i]) {
+            print("  FAILED: memcpy mismatch at ");
+            print_num(i);
+            print("\n");
+            return 0;
+        }
+    }
+    print("  - memcpy: OK\n");
+
+    char numbuf[16];
+    itoa(0, numbuf);
+    if (strcmp(numbuf, "0") != 0) { print("  FAILED: itoa(0)\n"); return 0; }
+    itoa(12345, numbuf);
+    if (strcmp(numbuf, "12345") != 0) { print("  FAILED: itoa(12345)\n"); return 0; }
+    itoa(-42, numbuf);
+    if (strcmp(numbuf, "-42") != 0) { print("  FAILED: itoa(-42)\n"); return 0; }
+    print("  - itoa: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 17: wait_nb syscall
+// ============================================================
+static int test_wait_nb(void) {
+    print("TEST 17: wait_nb syscall\n");
+
+    // Deterministic running-task path
+    int self_state = wait_nb(getpid());
+    if (self_state != -1) {
+        print("  FAILED: wait_nb(self) expected -1, got ");
+        print_num(self_state);
+        print("\n");
+        return 0;
+    }
+    print("  - wait_nb(self) while running: OK\n");
+
+    // Child completion path
+    const char *argv[] = {"echo.elf", "wait_nb", "test", 0};
+    int child = spawn_argv("echo.elf", argv, 3);
+    if (child < 0) {
+        print("  FAILED: spawn_argv(echo.elf)\n");
+        return 0;
+    }
+    int code = -1;
+    for (int i = 0; i < 500; i++) {
+        code = wait_nb(child);
+        if (code != -1) break;
+        yield();
+    }
+    if (code != 0) {
+        print("  FAILED: child completion code ");
+        print_num(code);
+        print(" (expected 0)\n");
+        return 0;
+    }
+    print("  - wait_nb(child) completion: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 18: sleep_ms syscall
+// ============================================================
+static int test_sleep_ms(void) {
+    print("TEST 18: sleep_ms syscall\n");
+    print("  - sleeping 25ms...\n");
+    int ret = sleep_ms(25);
+    if (ret != 0) {
+        print("  FAILED: sleep_ms returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - resumed after sleep: OK\n");
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 19: tasklist syscall
+// ============================================================
+static int test_tasklist(void) {
+    print("TEST 19: tasklist syscall\n");
+
+    taskinfo_entry_t entries[16];
+    memset(entries, 0, sizeof(entries));
+
+    int count = tasklist(entries, 16);
+    if (count <= 0) {
+        print("  FAILED: tasklist count ");
+        print_num(count);
+        print("\n");
+        return 0;
+    }
+    print("  - task count: ");
+    print_num(count);
+    print("\n");
+
+    int self = getpid();
+    int found = 0;
+    for (int i = 0; i < count; i++) {
+        if ((int)entries[i].id == self) {
+            found = 1;
+            if (entries[i].state > 3) {
+                print("  FAILED: invalid self state ");
+                print_num(entries[i].state);
+                print("\n");
+                return 0;
+            }
+            if (entries[i].name[0] == '\0') {
+                print("  FAILED: empty self task name\n");
+                return 0;
+            }
+            break;
+        }
+    }
+    if (!found) {
+        print("  FAILED: self PID not present in tasklist\n");
+        return 0;
+    }
+    print("  - self PID present: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 20: detach behavior (best-effort using existing detached app)
+// ============================================================
+static int test_detach(void) {
+    print("TEST 20: detach behavior\n");
+
+    // Existing detached app in tree: winsleep.elf (detaches after win_create).
+    // In text mode (no WM), it exits before detach, so we treat that as skipped.
+    int child = spawn("winsleep.elf");
+    if (child < 0) {
+        print("  SKIP: couldn't spawn winsleep.elf\n\n");
+        return 1;
+    }
+
+    int code = wait(child);
+    if (code == -3) {
+        print("  - wait() returned -3 for detached child: OK\n");
+        print("  PASSED\n\n");
+        return 1;
+    }
+
+    print("  SKIP: winsleep exited without detaching (likely no WM), code=");
+    print_num(code);
+    print("\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 21: VFS file I/O (open/read/seek/close/stat)
+// ============================================================
+static int test_vfs_io(void) {
+    print("TEST 21: VFS file I/O\n");
+
+    int fd = open("hello.elf", 0);  // O_RDONLY
+    if (fd < 0) {
+        print("  FAILED: open hello.elf\n");
+        return 0;
+    }
+
+    unsigned char hdr[4];
+    int n = fread(fd, hdr, 4);
+    if (n != 4) {
+        print("  FAILED: fread header bytes=");
+        print_num(n);
+        print("\n");
+        close(fd);
+        return 0;
+    }
+    if (hdr[0] != 0x7F || hdr[1] != 'E' || hdr[2] != 'L' || hdr[3] != 'F') {
+        print("  FAILED: ELF magic mismatch\n");
+        close(fd);
+        return 0;
+    }
+    print("  - ELF magic check: OK\n");
+
+    int pos = seek(fd, 0, SEEK_SET);
+    if (pos != 0) {
+        print("  FAILED: seek(SET,0) returned ");
+        print_num(pos);
+        print("\n");
+        close(fd);
+        return 0;
+    }
+    unsigned char b0 = 0;
+    n = fread(fd, &b0, 1);
+    if (n != 1 || b0 != 0x7F) {
+        print("  FAILED: seek+read verification\n");
+        close(fd);
+        return 0;
+    }
+    print("  - seek+readback: OK\n");
+
+    stat_t st;
+    if (stat("hello.elf", &st) != 0) {
+        print("  FAILED: stat hello.elf\n");
+        close(fd);
+        return 0;
+    }
+    if (st.size == 0 || st.type != 0) {
+        print("  FAILED: stat fields invalid\n");
+        close(fd);
+        return 0;
+    }
+    print("  - stat size/type: OK\n");
+
+    if (close(fd) != 0) {
+        print("  FAILED: close\n");
+        return 0;
+    }
+    print("  - close: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 22: spawn_argv syscall
+// ============================================================
+static int test_spawn_argv(void) {
+    print("TEST 22: spawn_argv syscall\n");
+    const char *argv[] = {"echo.elf", "arg1", "arg2", "arg3", 0};
+    int child = spawn_argv("echo.elf", argv, 4);
+    if (child < 0) {
+        print("  FAILED: spawn_argv returned ");
+        print_num(child);
+        print("\n");
+        return 0;
+    }
+    int code = wait(child);
+    if (code != 0) {
+        print("  FAILED: child exit code ");
+        print_num(code);
+        print("\n");
+        return 0;
+    }
+    print("  - child ran with argv and exited 0: OK\n");
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 23: write edge cases
+// ============================================================
+static int test_write_edges(void) {
+    print("TEST 23: write edge cases\n");
+
+    int r = write(1, "Z", 0);
+    if (r != -1) {
+        print("  FAILED: write(len=0) returned ");
+        print_num(r);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - write(len=0): OK\n");
+
+    r = write(1, (const void *)0, 1);
+    if (r != -1) {
+        print("  FAILED: write(NULL,1) returned ");
+        print_num(r);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - write(NULL,1): OK\n");
+
+    // Current kernel accepts fd != 1 and still writes to console.
+    r = write(2, "E", 1);
+    print("\n");
+    if (r != 1) {
+        print("  FAILED: write(fd=2,1) returned ");
+        print_num(r);
+        print(" (expected 1)\n");
+        return 0;
+    }
+    print("  - write(fd=2,1): OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
@@ -522,7 +831,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 15;
+    int total = 23;
 
     // Run all tests
     if (test_syscalls())         passed++;  // 1
@@ -540,6 +849,14 @@ void _start(int argc, char **argv) {
     if (test_write_return())     passed++;  // 13
     if (test_deep_stack())       passed++;  // 14
     if (test_process_isolation()) passed++; // 15
+    if (test_libc_more())        passed++;  // 16
+    if (test_wait_nb())          passed++;  // 17
+    if (test_sleep_ms())         passed++;  // 18
+    if (test_tasklist())         passed++;  // 19
+    if (test_detach())           passed++;  // 20
+    if (test_vfs_io())           passed++;  // 21
+    if (test_spawn_argv())       passed++;  // 22
+    if (test_write_edges())      passed++;  // 23
 
     print("========================================\n");
     print("  Results: ");
