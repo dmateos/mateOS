@@ -177,13 +177,16 @@ static int append_tasks_section(int *out_len) {
         return 0;
     }
 
-    if (append_cstr(os_page, sizeof(os_page), out_len, "PID  PPID  STATE       NAME\n") < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len, "PID  PPID  RING  STATE       NAME\n") < 0) return -1;
     for (int i = 0; i < n; i++) {
         char num[16];
         itoa((int)t[i].id, num);
         if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
         if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
         itoa((int)t[i].parent_id, num);
+        if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
+        if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
+        itoa((int)t[i].ring, num);
         if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
         if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
         if (append_cstr(os_page, sizeof(os_page), out_len, task_state_name(t[i].state)) < 0) return -1;

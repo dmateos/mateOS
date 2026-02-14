@@ -500,6 +500,7 @@ int task_list_info(taskinfo_entry_t *buf, int max) {
 
     buf[count].id = tasks[i].id;
     buf[count].parent_id = tasks[i].parent_id;
+    buf[count].ring = tasks[i].is_kernel ? 0u : 3u;
     buf[count].state = (uint32_t)tasks[i].state;
 
     // Copy name

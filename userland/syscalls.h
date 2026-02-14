@@ -76,6 +76,7 @@ void shutdown(void);
 typedef struct {
     unsigned int id;
     unsigned int parent_id;
+    unsigned int ring;     // 0=kernel, 3=user
     unsigned int state;    // 0=ready, 1=running, 2=blocked, 3=terminated
     char name[32];
 } taskinfo_entry_t;
