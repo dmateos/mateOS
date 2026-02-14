@@ -73,3 +73,40 @@ void print_stack(uint32_t entries) {
     printf("0x%x\n", ebp[i]);
   }
 }
+
+void print_cpu_info(void) {
+  uint32_t eax, ebx, ecx, edx;
+  char vendor[13];
+
+  __asm__ volatile("cpuid"
+                   : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                   : "a"(0));
+
+  *(uint32_t *)&vendor[0] = ebx;
+  *(uint32_t *)&vendor[4] = edx;
+  *(uint32_t *)&vendor[8] = ecx;
+  vendor[12] = '\0';
+
+  printf("CPU vendor: %s\n", vendor);
+  printf("CPUID max leaf: 0x%x\n", eax);
+
+  __asm__ volatile("cpuid"
+                   : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                   : "a"(1));
+
+  uint32_t stepping = eax & 0xF;
+  uint32_t model = (eax >> 4) & 0xF;
+  uint32_t family = (eax >> 8) & 0xF;
+  uint32_t ext_model = (eax >> 16) & 0xF;
+  uint32_t ext_family = (eax >> 20) & 0xFF;
+
+  uint32_t display_family = family;
+  uint32_t display_model = model;
+  if (family == 0xF) display_family += ext_family;
+  if (family == 0x6 || family == 0xF) display_model += (ext_model << 4);
+
+  printf("Family: %d  Model: %d  Stepping: %d\n",
+         display_family, display_model, stepping);
+  printf("Feature ECX: 0x%x\n", ecx);
+  printf("Feature EDX: 0x%x\n", edx);
+}

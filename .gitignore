@@ -2,6 +2,7 @@
 *.iso
 *.o
 */*.o
+*/*.elf
 
 # Rust build artifacts
 rust/target/

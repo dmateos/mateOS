@@ -24,4 +24,6 @@ uint32_t pmm_alloc_frames(uint32_t count);
 // Free count contiguous frames starting at physical_addr
 void pmm_free_frames(uint32_t physical_addr, uint32_t count);
 
+void pmm_get_stats(uint32_t *total, uint32_t *used, uint32_t *free_frames);
+
 #endif

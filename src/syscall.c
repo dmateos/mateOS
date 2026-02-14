@@ -9,7 +9,11 @@
 #include "arch/i686/vga.h"
 #include "arch/i686/timer.h"
 #include "arch/i686/cpu.h"
+#include "arch/i686/interrupts.h"
+#include "arch/i686/util.h"
+#include "arch/i686/pci.h"
 #include "liballoc/liballoc_1_1.h"
+#include "liballoc/liballoc_hooks.h"
 #include "pmm.h"
 #include "window.h"
 #include "net.h"
@@ -627,6 +631,35 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_GETTICKS:
       return sys_do_getticks();
+
+    case SYS_LSPCI:
+      pci_list();
+      return 0;
+
+    case SYS_LSIRQ:
+      irq_list();
+      return 0;
+
+    case SYS_MEMINFO: {
+      uint32_t total = 0, used = 0, free_frames = 0;
+      uint32_t hstart = 0, hend = 0, hcur = 0;
+      pmm_get_stats(&total, &used, &free_frames);
+      liballoc_heap_info(&hstart, &hend, &hcur);
+      uint32_t htotal = hend - hstart;
+      uint32_t hused = (hcur > hstart) ? (hcur - hstart) : 0;
+      uint32_t hfree = (htotal > hused) ? (htotal - hused) : 0;
+
+      printf("PMM: total=%d used=%d free=%d frames (%dKB each)\n",
+             total, used, free_frames, PMM_FRAME_SIZE / 1024);
+      printf("Heap: start=0x%x end=0x%x cur=0x%x\n", hstart, hend, hcur);
+      printf("Heap: used=%d bytes free=%d bytes total=%d bytes\n",
+             hused, hfree, htotal);
+      return 0;
+    }
+
+    case SYS_CPUINFO:
+      print_cpu_info();
+      return 0;
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

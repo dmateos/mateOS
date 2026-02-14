@@ -58,4 +58,7 @@ pci_device_t *pci_find_device(uint16_t vendor_id, uint16_t device_id);
 // Enable bus mastering for a device (required for DMA)
 void pci_enable_bus_mastering(pci_device_t *dev);
 
+// Print discovered PCI devices to console
+void pci_list(void);
+
 #endif

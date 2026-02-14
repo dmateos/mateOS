@@ -22,6 +22,7 @@ void idt_breakpoint(void);
 void idt_exception_handler(uint32_t, uint32_t);
 void idt_irq_handler(uint32_t, uint32_t);
 void pic_unmask_irq(uint8_t irq);
+void irq_list(void);
 
 extern void flush_idt(idt_ptr_t *idt_ptr);
 

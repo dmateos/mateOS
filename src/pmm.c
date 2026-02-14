@@ -75,3 +75,13 @@ void pmm_free_frames(uint32_t physical_addr, uint32_t count) {
     pmm_free_frame(physical_addr + i * PMM_FRAME_SIZE);
   }
 }
+
+void pmm_get_stats(uint32_t *total, uint32_t *used, uint32_t *free_frames) {
+  uint32_t used_count = 0;
+  for (uint32_t i = 0; i < PMM_FRAME_COUNT; i++) {
+    if (bitmap_test(i)) used_count++;
+  }
+  if (total) *total = PMM_FRAME_COUNT;
+  if (used) *used = used_count;
+  if (free_frames) *free_frames = PMM_FRAME_COUNT - used_count;
+}

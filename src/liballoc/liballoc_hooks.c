@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../arch/i686/cpu.h"
+#include "liballoc_hooks.h"
 
 // Bump allocator for liballoc hooks
 // This is the simplest allocator - just advances heap pointer, no freeing
@@ -73,4 +74,10 @@ int liballoc_free(void* ptr, size_t num_pages) {
     (void)ptr;
     (void)num_pages;
     return 0;
+}
+
+void liballoc_heap_info(uint32_t *start, uint32_t *end, uint32_t *current) {
+    if (start) *start = (uint32_t)0x400000;
+    if (end) *end = (uint32_t)0x600000;
+    if (current) *current = (uint32_t)heap_current;
 }

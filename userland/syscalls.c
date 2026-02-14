@@ -230,6 +230,22 @@ unsigned int get_ticks(void) {
     return (unsigned int)__syscall0(SYS_GETTICKS);
 }
 
+int lspci(void) {
+    return __syscall0(SYS_LSPCI);
+}
+
+int lsirq(void) {
+    return __syscall0(SYS_LSIRQ);
+}
+
+int meminfo(void) {
+    return __syscall0(SYS_MEMINFO);
+}
+
+int cpuinfo(void) {
+    return __syscall0(SYS_CPUINFO);
+}
+
 int detach(void) {
     return __syscall0(SYS_DETACH);
 }

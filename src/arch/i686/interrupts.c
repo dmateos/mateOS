@@ -236,3 +236,18 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
     interruptPointers[number](number, number2);
   }
 }
+
+void irq_list(void) {
+  uint8_t master_mask = inb(MASTER_PIC_DATA);
+  uint8_t slave_mask = inb(SLAVE_PIC_DATA);
+  printf("IRQ  Vec  Masked  Handler\n");
+  for (uint8_t irq = 0; irq < 16; irq++) {
+    uint8_t vec = 0x20 + irq;
+    int masked = (irq < 8) ? ((master_mask >> irq) & 1)
+                           : ((slave_mask >> (irq - 8)) & 1);
+    printf("%d    0x%x   %s      %s\n",
+           irq, vec,
+           masked ? "yes" : "no ",
+           interruptPointers[vec] ? "yes" : "no ");
+  }
+}

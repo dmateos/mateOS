@@ -117,3 +117,20 @@ void pci_enable_bus_mastering(pci_device_t *dev) {
   cmd |= PCI_CMD_BUS_MASTER | PCI_CMD_IO_SPACE | PCI_CMD_MEM_SPACE;
   pci_config_write16(dev->bus, dev->device, dev->function, PCI_COMMAND, cmd);
 }
+
+void pci_list(void) {
+  printf("PCI devices (%d):\n", pci_device_count);
+  for (int i = 0; i < pci_device_count; i++) {
+    pci_device_t *d = &pci_devices[i];
+    printf("  %d:%d.%d vendor=%x device=%x class=%x.%x",
+           d->bus, d->device, d->function,
+           d->vendor_id, d->device_id, d->class_code, d->subclass);
+    if (d->irq_line && d->irq_line != 0xFF) {
+      printf(" irq=%d", d->irq_line);
+    }
+    if (d->bar[0] & 0x01) {
+      printf(" iobar=0x%x", d->bar[0] & 0xFFFC);
+    }
+    printf("\n");
+  }
+}
