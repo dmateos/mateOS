@@ -438,10 +438,10 @@ void _start(int argc, char **argv) {
         num_slots = 1;
     }
 
-    int pid1 = spawn("winterm.elf");
+    int pid1 = spawn("winfm.elf");
     if (pid1 >= 0) {
         slots[1].pid = pid1;
-        wm_strcpy(slots[1].title, "Term 2", 32);
+        wm_strcpy(slots[1].title, "FileMgr", 32);
         num_slots = 2;
     }
 

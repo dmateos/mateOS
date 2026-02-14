@@ -55,6 +55,17 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
       } else if (scancode == 0x51) { // Page Down
         terminal_scroll_down();
         return;
+      } else if (keyboard_buffer_is_enabled()) {
+        uint8_t key = 0;
+        // Arrow keys (set 1, E0-prefixed)
+        if (scancode == 0x4B) key = KEY_LEFT;
+        else if (scancode == 0x4D) key = KEY_RIGHT;
+        else if (scancode == 0x48) key = KEY_UP;
+        else if (scancode == 0x50) key = KEY_DOWN;
+        if (key) {
+          keyboard_buffer_push(key);
+          return;
+        }
       }
     }
     // Other extended keys: ignore

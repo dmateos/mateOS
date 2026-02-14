@@ -5,6 +5,12 @@
 
 #define KEY_BUFFER_SIZE 32
 
+// Non-printable special key codes passed through keyboard buffer.
+#define KEY_LEFT   0x80
+#define KEY_RIGHT  0x81
+#define KEY_UP     0x82
+#define KEY_DOWN   0x83
+
 uint8_t keyboard_translate(uint8_t scancode);
 
 // Ring buffer for user-mode keyboard input
