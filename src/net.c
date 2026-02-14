@@ -231,6 +231,10 @@ void net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be) {
   }
 }
 
+void net_get_stats(uint32_t *rx_packets, uint32_t *tx_packets) {
+  rtl8139_get_stats(rx_packets, tx_packets);
+}
+
 // ==== TCP Socket Table ====
 
 #define MAX_SOCKETS    8

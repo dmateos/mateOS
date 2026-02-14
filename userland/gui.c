@@ -608,10 +608,14 @@ void _start(int argc, char **argv) {
     int tick = 0;
     int mx = 0, my = 0;
     unsigned char btns = 0;
+    int last_mx = -1, last_my = -1;
+    unsigned char last_btns = 0xFF;
+    int need_redraw = 1;
 
     while (running) {
         unsigned char key = ugfx_getkey();
         if (key) {
+            need_redraw = 1;
             if (key == 27) {
                 running = 0;
             } else if (key == '\t') {
@@ -631,13 +635,29 @@ void _start(int argc, char **argv) {
         if (mx >= ugfx_width) mx = ugfx_width - 1;
         if (my >= ugfx_height) my = ugfx_height - 1;
 
+        if (mx != last_mx || my != last_my || btns != last_btns) {
+            need_redraw = 1;
+            last_mx = mx;
+            last_my = my;
+            last_btns = btns;
+        }
+
         handle_mouse(mx, my, btns);
 
         tick++;
-        if (tick % 10 == 0) discover_windows();
+        if (tick % 20 == 0) {
+            discover_windows();
+            need_redraw = 1;
+        }
 
-        render_frame(mx, my);
-        yield();
+        if (need_redraw) {
+            render_frame(mx, my);
+            need_redraw = 0;
+            yield();
+        } else {
+            // Idle throttle to reduce busy-loop CPU burn.
+            sleep_ms(10);
+        }
     }
 
     ugfx_exit();

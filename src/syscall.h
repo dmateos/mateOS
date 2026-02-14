@@ -53,6 +53,7 @@
 #define SYS_LSIRQ          47  // lsirq() - print IRQ mask/handler table
 #define SYS_MEMINFO        48  // meminfo() - print PMM/heap stats
 #define SYS_CPUINFO        49  // cpuinfo() - print CPUID summary
+#define SYS_NETSTATS       50  // netstats(out_rx, out_tx) -> 0
 
 // Task info returned by SYS_TASKLIST
 typedef struct {

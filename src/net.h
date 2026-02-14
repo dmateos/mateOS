@@ -8,6 +8,7 @@ void net_poll(void);
 int net_ping(uint32_t ip_be, uint32_t timeout_ms);
 void net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be);
 void net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be);
+void net_get_stats(uint32_t *rx_packets, uint32_t *tx_packets);
 
 // TCP socket API (kernel-side, called from syscall handler)
 int net_sock_listen(uint16_t port);

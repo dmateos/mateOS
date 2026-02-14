@@ -156,6 +156,10 @@ int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be) {
     return __syscall3(SYS_NETGET, (unsigned int)ip_be, (unsigned int)mask_be, (unsigned int)gw_be);
 }
 
+int net_stats(unsigned int *rx_packets, unsigned int *tx_packets) {
+    return __syscall2(SYS_NETSTATS, (unsigned int)rx_packets, (unsigned int)tx_packets);
+}
+
 int sleep_ms(unsigned int ms) {
     return __syscall1(SYS_SLEEPMS, ms);
 }

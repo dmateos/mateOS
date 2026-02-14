@@ -544,6 +544,15 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return 0;
     }
 
+    case SYS_NETSTATS: {
+      if (!ebx || !ecx) return (uint32_t)-1;
+      uint32_t rx = 0, tx = 0;
+      net_get_stats(&rx, &tx);
+      *(uint32_t *)ebx = rx;
+      *(uint32_t *)ecx = tx;
+      return 0;
+    }
+
     case SYS_SLEEPMS:
       return (uint32_t)sys_do_sleepms(ebx);
 

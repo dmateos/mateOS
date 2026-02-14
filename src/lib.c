@@ -225,10 +225,11 @@ void printf(const char *format, ...) {
   va_end(args);
 }
 
-// Kernel log only: writes to kdebug ring, not terminal.
+// Kernel log: writes to terminal (if available) and kdebug ring.
 void kprintf(const char *format, ...) {
   va_list args;
   va_start(args, format);
+  kvprintf(term_putc_adapter, format, args);
   kvprintf(klog_putc, format, args);
   va_end(args);
 }

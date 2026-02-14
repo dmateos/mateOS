@@ -13,6 +13,11 @@ void _start(int argc, char **argv) {
         print("ip   "); format_ip4(ip_be, buf); print(buf); print("\n");
         print("mask "); format_ip4(mask_be, buf); print(buf); print("\n");
         print("gw   "); format_ip4(gw_be, buf); print(buf); print("\n");
+        unsigned int rx = 0, tx = 0;
+        if (net_stats(&rx, &tx) == 0) {
+            print("rxpk "); print_num((int)rx); print("\n");
+            print("txpk "); print_num((int)tx); print("\n");
+        }
         exit(0);
     }
 

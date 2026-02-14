@@ -50,6 +50,7 @@
 #define SYS_LSIRQ          47
 #define SYS_MEMINFO        48
 #define SYS_CPUINFO        49
+#define SYS_NETSTATS       50
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -100,6 +101,7 @@ int win_list(win_info_t *out, int max_count);
 int net_ping(unsigned int ip_be, unsigned int timeout_ms);
 void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be);
 int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be);
+int net_stats(unsigned int *rx_packets, unsigned int *tx_packets);
 int sleep_ms(unsigned int ms);
 
 // TCP socket syscalls
