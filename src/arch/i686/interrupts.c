@@ -1,5 +1,6 @@
 #include "interrupts.h"
 #include "../../lib.h"
+#include "../../task.h"
 #include "io.h"
 #include "util.h"
 
@@ -14,6 +15,7 @@
 
 // Interrupt Service Routine (ISR) handlers
 void (*interruptPointers[256])(uint32_t, uint32_t) = {0};
+static uint8_t unknown_irq_reported[256] = {0};
 
 static void pic_remap(void) {
   // Remap the PIC so we can use interrupts
@@ -155,6 +157,8 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
 void idt_breakpoint(void) { asm volatile("int $0x03"); }
 
 void idt_exception_handler(uint32_t number, uint32_t noerror) {
+  task_t *cur = task_current();
+
   switch (number) {
   case 0x0:
     printf("Divide by zero\n");
@@ -167,7 +171,6 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
     break;
   case 0xD:
     printf("General protection fault (error=0x%x)\n", noerror);
-    // Error code format for GPF: segment selector index
     if (noerror != 0) {
       printf("  Segment index: %d, ", (noerror >> 3) & 0x1FFF);
       if (noerror & 0x1) printf("external ");
@@ -193,6 +196,13 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   default:
     printf("Exception: 0x%x, %d\n", number, noerror);
   }
+
+  // Kill user-mode tasks that trigger fatal exceptions
+  if (cur && cur->id != 0 && number != 0x03) {
+    printf("[kernel] killing task %d '%s' due to exception 0x%x\n",
+           cur->id, cur->name, number);
+    task_exit_with_code(-(int)number);
+  }
 }
 
 void idt_irq_handler(uint32_t number, uint32_t number2) {
@@ -212,24 +222,17 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
     }
   }
 
-  switch (number) {
-  case 0x21:
-    break;
-  case 0x20:
-    break;
-  case 0x2B: // IRQ11 (e.g., RTL8139)
-    break;
-  case 0x2C: // IRQ12 (PS/2 mouse)
-    break;
-  default:
-    printf("Unknown IRQ 0x%x 0x%x\n", number, number2);
+  int has_handler = (number < 256 && interruptPointers[number] != 0);
+  if (!has_handler && number < 256 && !unknown_irq_reported[number]) {
+    unknown_irq_reported[number] = 1;
+    printf("Unknown IRQ 0x%x 0x%x (will only log once)\n", number, number2);
   }
 
   // Convert interrupt vector to IRQ number (0-15)
   uint8_t irq = number - 0x20;
   pic_acknowledge(irq);
 
-  if (interruptPointers[number] != 0) {
+  if (has_handler) {
     interruptPointers[number](number, number2);
   }
 }

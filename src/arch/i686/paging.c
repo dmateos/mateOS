@@ -206,6 +206,20 @@ void paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
     }
     memset((void *)pt_phys, 0, sizeof(page_table_t));
     page_dir->tables[dir_idx] = pt_phys | PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
+  } else if (page_dir != current_page_dir && dir_idx < NUM_PAGE_TABLES) {
+    // Entry points to a shared kernel page table — make a private copy
+    // before modifying, to avoid corrupting the kernel's identity mapping.
+    uint32_t kernel_pt = current_page_dir->tables[dir_idx] & ~0xFFF;
+    uint32_t cur_pt = page_dir->tables[dir_idx] & ~0xFFF;
+    if (cur_pt == kernel_pt) {
+      uint32_t new_pt = pmm_alloc_frame();
+      if (!new_pt) {
+        printf("[paging] failed to allocate COW page table for dir %d\n", dir_idx);
+        return;
+      }
+      memcpy((void *)new_pt, (void *)kernel_pt, sizeof(page_table_t));
+      page_dir->tables[dir_idx] = new_pt | PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
+    }
   }
 
   // Get physical address of page table (mask off flags)
@@ -239,24 +253,27 @@ void paging_switch(page_directory_t *page_dir) {
 void paging_destroy_address_space(page_directory_t *page_dir) {
   if (!page_dir || page_dir == current_page_dir) return;
 
-  // Free per-process page table 1 (the private copy)
-  if (page_dir->tables[1] & PAGE_PRESENT) {
-    uint32_t pt1_phys = page_dir->tables[1] & ~0xFFF;
-    // Only free if it's NOT the kernel's page table 1
-    uint32_t kernel_pt1 = current_page_dir->tables[1] & ~0xFFF;
-    if (pt1_phys != kernel_pt1) {
-      // Free any PMM frames mapped in user code region (entries 768-1023)
-      page_table_t *pt = (page_table_t *)pt1_phys;
-      for (uint32_t i = 768; i < 1024; i++) {
-        if (pt->pages[i] & PAGE_PRESENT) {
-          uint32_t frame = pt->pages[i] & ~0xFFF;
-          if (frame >= PMM_START && frame < PMM_END) {
-            pmm_free_frame(frame);
-          }
+  // Free any private copies of kernel page tables (0..NUM_PAGE_TABLES-1).
+  // Table 1 always gets a private copy; others get COW copies when modified.
+  for (uint32_t i = 0; i < NUM_PAGE_TABLES; i++) {
+    if (!(page_dir->tables[i] & PAGE_PRESENT)) continue;
+    uint32_t pt_phys = page_dir->tables[i] & ~0xFFF;
+    uint32_t kernel_pt = current_page_dir->tables[i] & ~0xFFF;
+    if (pt_phys == kernel_pt) continue;  // Still shared, don't free
+
+    // This is a private copy — free user-allocated frames in it
+    page_table_t *pt = (page_table_t *)pt_phys;
+    for (uint32_t j = 0; j < 1024; j++) {
+      if (pt->pages[j] & PAGE_PRESENT) {
+        uint32_t frame = pt->pages[j] & ~0xFFF;
+        // Only free frames that came from PMM (not identity-mapped kernel pages)
+        uint32_t kernel_frame = (i * 1024 + j) * 0x1000;  // Expected identity-map addr
+        if (frame != kernel_frame && frame >= PMM_START && frame < PMM_END) {
+          pmm_free_frame(frame);
         }
       }
-      pmm_free_frame(pt1_phys);
     }
+    pmm_free_frame(pt_phys);
   }
 
   // Free any additional page tables we allocated (beyond the shared kernel ones)
