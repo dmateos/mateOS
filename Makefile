@@ -45,7 +45,8 @@ SRC_LWIP_CORE = $(LWIP_DIR)/core/init.c $(LWIP_DIR)/core/def.c \
                 $(LWIP_DIR)/core/udp.c $(LWIP_DIR)/core/raw.c
 SRC_LWIP_IPV4 = $(LWIP_DIR)/core/ipv4/etharp.c $(LWIP_DIR)/core/ipv4/icmp.c \
                 $(LWIP_DIR)/core/ipv4/ip4.c $(LWIP_DIR)/core/ipv4/ip4_frag.c \
-                $(LWIP_DIR)/core/ipv4/ip4_addr.c
+                $(LWIP_DIR)/core/ipv4/ip4_addr.c $(LWIP_DIR)/core/ipv4/dhcp.c \
+                $(LWIP_DIR)/core/ipv4/acd.c
 SRC_LWIP_NETIF = $(LWIP_DIR)/netif/ethernet.c
 SRC_LWIP_API = $(LWIP_DIR)/api/err.c
 SRC_LWIP = $(SRC_LWIP_CORE) $(SRC_LWIP_IPV4) $(SRC_LWIP_NETIF) $(SRC_LWIP_API)

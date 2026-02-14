@@ -16,8 +16,14 @@ void _start(int argc, char **argv) {
         exit(0);
     }
 
+    if (argc >= 2 && strcmp(argv[1], "dhcp") == 0) {
+        net_cfg(0, 0, 0);
+        print("ifconfig: dhcp requested\n");
+        exit(0);
+    }
+
     if (argc < 4) {
-        print("usage: ifconfig <ip> <mask> <gateway>\n");
+        print("usage: ifconfig <ip> <mask> <gateway> | ifconfig dhcp\n");
         exit(1);
     }
 

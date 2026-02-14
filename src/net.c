@@ -14,11 +14,13 @@
 #include "lwip/prot/ip.h"
 #include "lwip/prot/icmp.h"
 #include "lwip/tcp.h"
+#include "lwip/dhcp.h"
 #include "netif/ethernet.h"
 
 // ---- lwIP netif ----
 static struct netif rtl_netif;
 static int lwip_ready = 0;
+static uint32_t last_logged_ip_be = 0;
 
 // ---- Feed received frame to lwIP ----
 static void net_rx_to_lwip(uint8_t *data, uint16_t len) {
@@ -85,21 +87,33 @@ void net_init(void) {
   lwip_init();
 
   ip4_addr_t ip, mask, gw;
-  IP4_ADDR(&ip, 10, 0, 2, 15);
-  IP4_ADDR(&mask, 255, 255, 255, 0);
-  IP4_ADDR(&gw, 10, 0, 2, 2);
+  IP4_ADDR(&ip, 0, 0, 0, 0);
+  IP4_ADDR(&mask, 0, 0, 0, 0);
+  IP4_ADDR(&gw, 0, 0, 0, 0);
   netif_add(&rtl_netif, &ip, &mask, &gw, NULL, net_netif_init, ethernet_input);
   netif_set_default(&rtl_netif);
   netif_set_up(&rtl_netif);
 
   lwip_ready = 1;
-  printf("[net] lwIP initialized, ip=10.0.2.15\n");
+  dhcp_start(&rtl_netif);
+  printf("[net] lwIP initialized, DHCP started\n");
 }
 
 void net_poll(void) {
   if (!lwip_ready) return;
   rtl8139_rx_poll();
   sys_check_timeouts();
+
+  const ip4_addr_t *ip = netif_ip4_addr(&rtl_netif);
+  uint32_t a = ip4_addr_get_u32(ip);
+  uint32_t ip_be = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) |
+                   (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
+  if (ip_be != last_logged_ip_be && ip_be != 0) {
+    last_logged_ip_be = ip_be;
+    printf("[net] DHCP lease ip=%d.%d.%d.%d\n",
+           (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+           (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+  }
 }
 
 int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
@@ -170,6 +184,13 @@ int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
 
 void net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be) {
   if (!lwip_ready) return;
+  if (ip_be == 0 && mask_be == 0 && gw_be == 0) {
+    dhcp_start(&rtl_netif);
+    printf("[net] DHCP started\n");
+    return;
+  }
+
+  dhcp_stop(&rtl_netif);
   ip4_addr_t ip, mask, gw;
   IP4_ADDR(&ip, (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
            (ip_be >> 8) & 0xFF, ip_be & 0xFF);
