@@ -15,6 +15,9 @@ void *memmove(void *dest, const void *src, size_t n);
 int strncmp(const char *s1, const char *s2, size_t n);
 char *strncpy(char *dest, const char *src, size_t n);
 void printf(const char *format, ...);
+void kprintf(const char *format, ...);
 void itoa(int num, char *buf, int base);
+uint32_t klog_snapshot_size(void);
+int klog_read_bytes(uint32_t offset, void *buf, uint32_t len);
 
 #endif

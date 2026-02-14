@@ -4,6 +4,15 @@
 static const vfs_fs_ops_t *filesystems[VFS_MAX_FILESYSTEMS];
 static int fs_count = 0;
 
+#define VFS_KDEBUG_FS_ID (-1)
+#define VFS_KDEBUG_NAME "kdebug.ker"
+
+static int vfs_is_kdebug_path(const char *path) {
+    if (!path) return 0;
+    return strcmp(path, VFS_KDEBUG_NAME) == 0 ||
+           strcmp(path, "/" VFS_KDEBUG_NAME) == 0;
+}
+
 void vfs_init(void) {
     fs_count = 0;
     memset(filesystems, 0, sizeof(filesystems));
@@ -27,6 +36,15 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
     }
     if (fd < 0) return -1;  // No free fds
 
+    if (vfs_is_kdebug_path(path)) {
+        int access = flags & 0x3;
+        if (access != O_RDONLY) return -1;
+        fdt->fds[fd].in_use = 1;
+        fdt->fds[fd].fs_id = VFS_KDEBUG_FS_ID;
+        fdt->fds[fd].fs_handle = 0;  // read cursor offset
+        return fd;
+    }
+
     // Try each filesystem until one succeeds
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->open) continue;
@@ -47,6 +65,13 @@ int vfs_read(vfs_fd_table_t *fdt, int fd, void *buf, uint32_t len) {
     if (!fdt->fds[fd].in_use) return -1;
 
     int fs = fdt->fds[fd].fs_id;
+    if (fs == VFS_KDEBUG_FS_ID) {
+        int n = klog_read_bytes((uint32_t)fdt->fds[fd].fs_handle, buf, len);
+        if (n > 0) {
+            fdt->fds[fd].fs_handle += n;
+        }
+        return n;
+    }
     if (!filesystems[fs]->read) return -1;
     return filesystems[fs]->read(fdt->fds[fd].fs_handle, buf, len);
 }
@@ -56,6 +81,7 @@ int vfs_write(vfs_fd_table_t *fdt, int fd, const void *buf, uint32_t len) {
     if (!fdt->fds[fd].in_use) return -1;
 
     int fs = fdt->fds[fd].fs_id;
+    if (fs == VFS_KDEBUG_FS_ID) return -1;
     if (!filesystems[fs]->write) return -1;
     return filesystems[fs]->write(fdt->fds[fd].fs_handle, buf, len);
 }
@@ -66,7 +92,7 @@ int vfs_close(vfs_fd_table_t *fdt, int fd) {
 
     int fs = fdt->fds[fd].fs_id;
     int ret = 0;
-    if (filesystems[fs]->close) {
+    if (fs >= 0 && filesystems[fs]->close) {
         ret = filesystems[fs]->close(fdt->fds[fd].fs_handle);
     }
     fdt->fds[fd].in_use = 0;
@@ -80,12 +106,31 @@ int vfs_seek(vfs_fd_table_t *fdt, int fd, int offset, int whence) {
     if (!fdt->fds[fd].in_use) return -1;
 
     int fs = fdt->fds[fd].fs_id;
+    if (fs == VFS_KDEBUG_FS_ID) {
+        int size = (int)klog_snapshot_size();
+        int pos;
+        switch (whence) {
+            case SEEK_SET: pos = offset; break;
+            case SEEK_CUR: pos = fdt->fds[fd].fs_handle + offset; break;
+            case SEEK_END: pos = size + offset; break;
+            default: return -1;
+        }
+        if (pos < 0) pos = 0;
+        if (pos > size) pos = size;
+        fdt->fds[fd].fs_handle = pos;
+        return pos;
+    }
     if (!filesystems[fs]->seek) return -1;
     return filesystems[fs]->seek(fdt->fds[fd].fs_handle, offset, whence);
 }
 
 int vfs_stat(const char *path, vfs_stat_t *st) {
     if (!path || !st) return -1;
+    if (vfs_is_kdebug_path(path)) {
+        st->size = klog_snapshot_size();
+        st->type = VFS_FILE;
+        return 0;
+    }
 
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->stat) continue;
@@ -95,9 +140,20 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
 }
 
 int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
-    if (!buf || size == 0 || index < 0) return 0;
+    if (!path || !buf || size == 0 || index < 0) return 0;
+
+    if ((strcmp(path, "/") == 0 || strcmp(path, "") == 0) && index == 0) {
+        size_t n = strlen(VFS_KDEBUG_NAME);
+        if (n >= size) n = size - 1;
+        memcpy(buf, VFS_KDEBUG_NAME, n);
+        buf[n] = '\0';
+        return (int)(n + 1);
+    }
 
     int remaining = index;
+    if (strcmp(path, "/") == 0 || strcmp(path, "") == 0) {
+        remaining--;
+    }
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->readdir) continue;
 

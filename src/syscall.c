@@ -35,6 +35,9 @@ typedef struct {
   uint32_t ss;     // Only present for ring transitions
 } __attribute__((packed)) iret_frame_t;
 
+#define USER_STACK_TOP_PAGE_VADDR 0x7F0000
+#define USER_STACK_PAGES 16
+
 // Write to console or window text buffer (if stdout redirected)
 static int sys_do_write(int fd, const char *buf, size_t len) {
   if (buf == NULL || len == 0) {
@@ -149,20 +152,26 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     }
   }
 
-  // Allocate user stack
-  uint32_t stack_phys = pmm_alloc_frame();
-  if (!stack_phys) {
-    printf("[exec] failed to allocate stack frame\n");
-    kfree(data);
-    return 0;
+  // Allocate and map multi-page user stack (grows downward)
+  uint32_t stack_phys_top = 0;
+  uint32_t stack_base = USER_STACK_TOP_PAGE_VADDR - ((USER_STACK_PAGES - 1) * 0x1000);
+  for (int i = 0; i < USER_STACK_PAGES; i++) {
+    uint32_t phys = pmm_alloc_frame();
+    if (!phys) {
+      printf("[exec] failed to allocate stack frame %d/%d\n", i + 1, USER_STACK_PAGES);
+      kfree(data);
+      return 0;
+    }
+    memset((void *)phys, 0, 0x1000);
+    paging_map_page(page_dir, stack_base + (i * 0x1000), phys,
+                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+    if (i == USER_STACK_PAGES - 1) {
+      stack_phys_top = phys;
+    }
   }
-  memset((void *)stack_phys, 0, 0x1000);
-
-  paging_map_page(page_dir, 0x7F0000, stack_phys,
-                  PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
 
   if (stack_phys_out) {
-    *stack_phys_out = stack_phys;
+    *stack_phys_out = stack_phys_top;
   }
 
   uint32_t entry = elf->e_entry;
@@ -189,7 +198,7 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
   frame->eip    = entry;
   frame->cs     = 0x1B;           // User code segment (RPL=3)
   frame->eflags = 0x202;          // IF=1, reserved bit 1
-  frame->esp    = 0x7F0000 + 0x1000;  // Top of stack page
+  frame->esp    = USER_STACK_TOP_PAGE_VADDR + 0x1000;  // Top of user stack
   frame->ss     = 0x23;           // User data segment (RPL=3)
 
   return 0;

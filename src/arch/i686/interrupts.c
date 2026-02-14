@@ -225,7 +225,7 @@ void idt_irq_handler(uint32_t number, uint32_t number2) {
   int has_handler = (number < 256 && interruptPointers[number] != 0);
   if (!has_handler && number < 256 && !unknown_irq_reported[number]) {
     unknown_irq_reported[number] = 1;
-    printf("Unknown IRQ 0x%x 0x%x (will only log once)\n", number, number2);
+    kprintf("Unknown IRQ 0x%x 0x%x (will only log once)\n", number, number2);
   }
 
   // Convert interrupt vector to IRQ number (0-15)
