@@ -284,10 +284,10 @@ void vfs_init(void) {
     memset(virtual_files, 0, sizeof(virtual_files));
 
     vfs_register_virtual_file("kdebug.mos", vfile_kdebug_size, vfile_kdebug_read);
-    vfs_register_virtual_file("meminfo.mos", vfile_meminfo_size, vfile_meminfo_read);
-    vfs_register_virtual_file("cpuinfo.mos", vfile_cpuinfo_size, vfile_cpuinfo_read);
-    vfs_register_virtual_file("lsirq.mos", vfile_lsirq_size, vfile_lsirq_read);
-    vfs_register_virtual_file("pci.mos", vfile_pci_size, vfile_pci_read);
+    vfs_register_virtual_file("kmeminfo.mos", vfile_meminfo_size, vfile_meminfo_read);
+    vfs_register_virtual_file("kcpuinfo.mos", vfile_cpuinfo_size, vfile_cpuinfo_read);
+    vfs_register_virtual_file("kirq.mos", vfile_lsirq_size, vfile_lsirq_read);
+    vfs_register_virtual_file("kpci.mos", vfile_pci_size, vfile_pci_read);
 }
 
 int vfs_register_fs(const vfs_fs_ops_t *ops) {

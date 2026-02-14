@@ -232,10 +232,10 @@ static int serve_os_page(int client) {
                     "<h1>mateOS /os</h1><p>virtual kernel files</p>") < 0) {
         return -1;
     }
-    if (append_section(&out_len, "cpuinfo.mos", "/cpuinfo.mos") < 0) return -1;
-    if (append_section(&out_len, "meminfo.mos", "/meminfo.mos") < 0) return -1;
-    if (append_section(&out_len, "lsirq.mos", "/lsirq.mos") < 0) return -1;
-    if (append_section(&out_len, "pci.mos", "/pci.mos") < 0) return -1;
+    if (append_section(&out_len, "kcpuinfo.mos", "/kcpuinfo.mos") < 0) return -1;
+    if (append_section(&out_len, "kmeminfo.mos", "/kmeminfo.mos") < 0) return -1;
+    if (append_section(&out_len, "kirq.mos", "/kirq.mos") < 0) return -1;
+    if (append_section(&out_len, "kpci.mos", "/kpci.mos") < 0) return -1;
     if (append_section(&out_len, "kdebug.mos", "/kdebug.mos") < 0) return -1;
     if (append_tasks_section(&out_len) < 0) return -1;
     if (append_uptime_section(&out_len) < 0) return -1;

@@ -280,10 +280,10 @@ make run GFX=1 NET=1 HTTP=1
 
 The VFS exposes synthetic read-only `.mos` files that provide runtime system information:
 
-- `/cpuinfo.mos` — CPUID vendor, family, model, stepping, feature flags
-- `/meminfo.mos` — PMM total/used/free frames, heap start/end/current, bytes used/free
-- `/lsirq.mos` — IRQ table (vector, masked status, handler presence)
-- `/pci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
+- `/kcpuinfo.mos` — CPUID vendor, family, model, stepping, feature flags
+- `/kmeminfo.mos` — PMM total/used/free frames, heap start/end/current, bytes used/free
+- `/kirq.mos` — IRQ table (vector, masked status, handler presence)
+- `/kpci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
 - `/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
 
 These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server's `/os` page reads all of them.
