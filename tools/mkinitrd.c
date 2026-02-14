@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
         long size = ftell(in);
         fseek(in, 0, SEEK_SET);
 
-        if (size < 0 || size > 1024*1024) {
+        if (size < 0) {
             fprintf(stderr, "Warning: Invalid size for %s, skipping\n", filename);
             fclose(in);
             continue;

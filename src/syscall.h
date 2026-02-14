@@ -48,6 +48,7 @@
 #define SYS_DETACH         42  // detach() - detach from parent's wait
 #define SYS_UNLINK         43  // unlink(path) -> 0
 #define SYS_KILL           44  // kill(task_id) -> 0
+#define SYS_GETTICKS       45  // getticks() -> timer ticks (100Hz)
 
 // Task info returned by SYS_TASKLIST
 typedef struct {

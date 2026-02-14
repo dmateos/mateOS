@@ -11,6 +11,7 @@ SRCDIR = src
 BUILDDIR = build
 TARGET = dmos.bin
 FAT16_IMG = fat16_test.img
+DOOM_WAD = assets/DOOM1.WAD
 
 # Rust configuration
 RUST_TARGET = rust/i686-unknown-none.json
@@ -94,9 +95,14 @@ $(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c
 userland:
 	@$(MAKE) -C userland
 
+INITRD_EXTRA =
+ifneq ($(wildcard $(DOOM_WAD)),)
+INITRD_EXTRA += $(DOOM_WAD)
+endif
+
 initrd.img:
 	@$(MAKE) -C userland
-	./tools/mkinitrd initrd.img userland/*.elf
+	./tools/mkinitrd initrd.img userland/*.elf $(INITRD_EXTRA)
 
 initrd: initrd.img
 
@@ -158,7 +164,7 @@ endif
 	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET) $(QEMU_DISK)
 
 $(FAT16_IMG):
-	python3 tools/mkfat16_test_disk.py $(FAT16_IMG)
+	python3 tools/mkfat16_test_disk.py $(FAT16_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),)
 
 fat16img: $(FAT16_IMG)
 

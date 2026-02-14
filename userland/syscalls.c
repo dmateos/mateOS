@@ -226,6 +226,10 @@ int kill(int task_id) {
     return __syscall1(SYS_KILL, (unsigned int)task_id);
 }
 
+unsigned int get_ticks(void) {
+    return (unsigned int)__syscall0(SYS_GETTICKS);
+}
+
 int detach(void) {
     return __syscall0(SYS_DETACH);
 }

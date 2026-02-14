@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Build a tiny FAT16 superfloppy image with one root file: TEST.TXT
+Build a tiny FAT16 superfloppy image.
+Always includes TEST.TXT. Optionally includes a DOOM IWAD in root.
 """
 
 import argparse
@@ -15,9 +16,25 @@ def write_le32(buf, off, v):
     buf[off : off + 4] = struct.pack("<I", v)
 
 
+def mk_83_name(name):
+    upper = name.upper()
+    if "." in upper:
+        base, ext = upper.rsplit(".", 1)
+    else:
+        base, ext = upper, ""
+    base = "".join(ch for ch in base if ch.isalnum())[:8].ljust(8, " ")
+    ext = "".join(ch for ch in ext if ch.isalnum())[:3].ljust(3, " ")
+    return (base + ext).encode("ascii")
+
+
+def round_up(v, align):
+    return ((v + align - 1) // align) * align
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out", nargs="?", default="fat16_test.img")
+    ap.add_argument("wad", nargs="?", default=None, help="Optional path to DOOM1.WAD")
     args = ap.parse_args()
 
     # 8 MiB FAT16 image:
@@ -61,34 +78,60 @@ def main():
     bs[510] = 0x55
     bs[511] = 0xAA
 
+    files = [("TEST.TXT", b"Hello from FAT16 on ATA PIO!\n")]
+    if args.wad:
+        with open(args.wad, "rb") as f:
+            files.append(("DOOM1.WAD", f.read()))
+
     # FAT tables
     for fat_i in range(fat_count):
         fat_lba = fat_start + fat_i * sectors_per_fat
         off = fat_lba * bytes_per_sector
-        # cluster 0 + 1 reserved, cluster 2 used by TEST.TXT and marked EOC
+        # cluster 0 + 1 reserved
         img[off + 0 : off + 2] = b"\xF8\xFF"
         img[off + 2 : off + 4] = b"\xFF\xFF"
-        img[off + 4 : off + 6] = b"\xFF\xFF"
-
-    # Root directory entry for TEST.TXT
+    # Root directory entries
     root_off = root_start * bytes_per_sector
-    entry = bytearray(32)
-    entry[0:11] = b"TEST    TXT"
-    entry[11] = 0x20  # archive
-    write_le16(entry, 26, 2)  # first cluster
-    body = b"Hello from FAT16 on ATA PIO!\n"
-    write_le32(entry, 28, len(body))
-    img[root_off : root_off + 32] = entry
-
-    # File data at cluster 2
     data_off = data_start * bytes_per_sector
-    img[data_off : data_off + len(body)] = body
+    next_cluster = 2
+
+    for idx, (name, body) in enumerate(files):
+        entry = bytearray(32)
+        entry[0:11] = mk_83_name(name)
+        entry[11] = 0x20  # archive
+
+        file_size = len(body)
+        clusters = max(1, round_up(file_size, bytes_per_sector) // bytes_per_sector)
+        first_cluster = next_cluster
+
+        write_le16(entry, 26, first_cluster)
+        write_le32(entry, 28, file_size)
+        img[root_off + idx * 32 : root_off + (idx + 1) * 32] = entry
+
+        # Write data payload.
+        file_off = data_off + (first_cluster - 2) * bytes_per_sector
+        img[file_off : file_off + file_size] = body
+
+        # Write FAT chain.
+        for fat_i in range(fat_count):
+            fat_lba = fat_start + fat_i * sectors_per_fat
+            off = fat_lba * bytes_per_sector
+            for c in range(first_cluster, first_cluster + clusters):
+                fat_ent = off + c * 2
+                if c == first_cluster + clusters - 1:
+                    img[fat_ent : fat_ent + 2] = b"\xFF\xFF"  # EOC
+                else:
+                    img[fat_ent : fat_ent + 2] = struct.pack("<H", c + 1)
+
+        next_cluster += clusters
 
     with open(args.out, "wb") as f:
         f.write(img)
 
     print(f"Wrote {args.out} ({size} bytes)")
-    print("Contains root file: TEST.TXT")
+    print("Contains root files:")
+    for name, body in files:
+        print(f"  {name} ({len(body)} bytes)")
 
 
 if __name__ == "__main__":

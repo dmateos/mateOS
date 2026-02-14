@@ -409,6 +409,10 @@ static int sys_do_getpid(void) {
   return current ? (int)current->id : -1;
 }
 
+static uint32_t sys_do_getticks(void) {
+  return get_tick_count();
+}
+
 // Kill a task by task id.
 static int sys_do_kill(uint32_t task_id) {
   return task_kill(task_id, -9);
@@ -611,6 +615,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_KILL:
       return (uint32_t)sys_do_kill(ebx);
+
+    case SYS_GETTICKS:
+      return sys_do_getticks();
 
     default:
       printf("[syscall] Unknown syscall %d\n", eax);

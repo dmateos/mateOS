@@ -45,6 +45,7 @@
 #define SYS_DETACH         42
 #define SYS_UNLINK         43
 #define SYS_KILL           44
+#define SYS_GETTICKS       45
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -144,6 +145,7 @@ int seek(int fd, int offset, int whence);
 int stat(const char *path, stat_t *st);
 int unlink(const char *path);
 int kill(int task_id);
+unsigned int get_ticks(void);
 
 // Process detach (for GUI apps)
 int detach(void);
