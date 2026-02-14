@@ -65,23 +65,23 @@ static void pci_scan_device(uint8_t bus, uint8_t dev, uint8_t fn) {
     d->bar[i] = pci_config_read32(bus, dev, fn, PCI_BAR0 + i * 4);
   }
 
-  printf("  [pci] %d:%d.%d ", bus, dev, fn);
-  printf("vendor=%x device=%x ", d->vendor_id, d->device_id);
-  printf("class=%x.%x", d->class_code, d->subclass);
+  kprintf("  [pci] %d:%d.%d ", bus, dev, fn);
+  kprintf("vendor=%x device=%x ", d->vendor_id, d->device_id);
+  kprintf("class=%x.%x", d->class_code, d->subclass);
   if (d->irq_line && d->irq_line != 0xFF) {
-    printf(" irq=%d", d->irq_line);
+    kprintf(" irq=%d", d->irq_line);
   }
   // Only print I/O BARs (bit 0 set) since printf can't handle large unsigned
   if (d->bar[0] & 0x01) {
-    printf(" iobar=0x%x", d->bar[0] & 0xFFFC);
+    kprintf(" iobar=0x%x", d->bar[0] & 0xFFFC);
   }
-  printf("\n");
+  kprintf("\n");
 
   pci_device_count++;
 }
 
 void pci_init(void) {
-  printf("PCI bus scan...\n");
+  kprintf("PCI bus scan...\n");
   pci_device_count = 0;
 
   for (int dev = 0; dev < 32; dev++) {
@@ -99,7 +99,7 @@ void pci_init(void) {
     }
   }
 
-  printf("PCI: %d devices found\n", pci_device_count);
+  kprintf("PCI: %d devices found\n", pci_device_count);
 }
 
 pci_device_t *pci_find_device(uint16_t vendor_id, uint16_t device_id) {
@@ -119,19 +119,19 @@ void pci_enable_bus_mastering(pci_device_t *dev) {
 }
 
 void pci_list(void) {
-  printf("PCI devices (%d):\n", pci_device_count);
+  kprintf("PCI devices (%d):\n", pci_device_count);
   for (int i = 0; i < pci_device_count; i++) {
     pci_device_t *d = &pci_devices[i];
-    printf("  %d:%d.%d vendor=%x device=%x class=%x.%x",
-           d->bus, d->device, d->function,
-           d->vendor_id, d->device_id, d->class_code, d->subclass);
+    kprintf("  %d:%d.%d vendor=%x device=%x class=%x.%x",
+            d->bus, d->device, d->function,
+            d->vendor_id, d->device_id, d->class_code, d->subclass);
     if (d->irq_line && d->irq_line != 0xFF) {
-      printf(" irq=%d", d->irq_line);
+      kprintf(" irq=%d", d->irq_line);
     }
     if (d->bar[0] & 0x01) {
-      printf(" iobar=0x%x", d->bar[0] & 0xFFFC);
+      kprintf(" iobar=0x%x", d->bar[0] & 0xFFFC);
     }
-    printf("\n");
+    kprintf("\n");
   }
 }
 

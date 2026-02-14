@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 LDFLAGS = -m32 -T user.ld -nostdlib -static -Wl,--build-id=none
 
-PROGRAMS = hello.elf test.elf gui.elf shell.elf winhello.elf winhello_rust.elf winedit.elf winterm.elf winfm.elf wintask.elf ping.elf winsleep.elf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf uptime.elf kill.elf lspci.elf lsirq.elf meminfo.elf cpuinfo.elf
+PROGRAMS = hello.elf test.elf gui.elf shell.elf winhello.elf winhello_rust.elf winedit.elf winterm.elf winfm.elf wintask.elf ping.elf winsleep.elf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf uptime.elf kill.elf
 
 DOOMGENERIC_H = doom/doomgeneric/doomgeneric/doomgeneric.h
 DOOM_DIR = doom/doomgeneric/doomgeneric
@@ -134,22 +134,6 @@ uptime.elf: uptime.o syscalls.o libc.o
 	@echo "Built $@"
 
 kill.elf: kill.o syscalls.o libc.o
-	$(CC) $(LDFLAGS) -o $@ $^
-	@echo "Built $@"
-
-lspci.elf: lspci.o syscalls.o libc.o
-	$(CC) $(LDFLAGS) -o $@ $^
-	@echo "Built $@"
-
-lsirq.elf: lsirq.o syscalls.o libc.o
-	$(CC) $(LDFLAGS) -o $@ $^
-	@echo "Built $@"
-
-meminfo.elf: meminfo.o syscalls.o libc.o
-	$(CC) $(LDFLAGS) -o $@ $^
-	@echo "Built $@"
-
-cpuinfo.elf: cpuinfo.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 

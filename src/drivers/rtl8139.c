@@ -122,12 +122,12 @@ void rtl8139_init(nic_rx_callback_t rx_cb) {
 
   pci_device_t *dev = pci_find_device(RTL_VENDOR_ID, RTL_DEVICE_ID);
   if (!dev) {
-    printf("[rtl8139] not found\n");
+    kprintf("[rtl8139] not found\n");
     return;
   }
 
   if (!(dev->bar[0] & 0x01)) {
-    printf("[rtl8139] BAR0 not IO\n");
+    kprintf("[rtl8139] BAR0 not IO\n");
     return;
   }
 
@@ -158,10 +158,10 @@ void rtl8139_init(nic_rx_callback_t rx_cb) {
     pic_unmask_irq(rtl_irq);
   }
 
-  printf("[rtl8139] io=0x%x irq=%d mac=%x:%x:%x:%x:%x:%x\n",
-         rtl_io, rtl_irq,
-         rtl_mac[0], rtl_mac[1], rtl_mac[2],
-         rtl_mac[3], rtl_mac[4], rtl_mac[5]);
+  kprintf("[rtl8139] io=0x%x irq=%d mac=%x:%x:%x:%x:%x:%x\n",
+          rtl_io, rtl_irq,
+          rtl_mac[0], rtl_mac[1], rtl_mac[2],
+          rtl_mac[3], rtl_mac[4], rtl_mac[5]);
 }
 
 int rtl8139_available(void) {

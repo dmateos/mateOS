@@ -82,14 +82,14 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   }
 
   if (!task) {
-    printf("Error: No free task slots\n");
+    kprintf("Error: No free task slots\n");
     return NULL;
   }
 
   // Allocate stack
   uint32_t *stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
   if (!stack) {
-    printf("Error: Failed to allocate task stack\n");
+    kprintf("Error: Failed to allocate task stack\n");
     return NULL;
   }
 
@@ -190,14 +190,14 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   }
 
   if (!task) {
-    printf("Error: No free task slots\n");
+    kprintf("Error: No free task slots\n");
     return NULL;
   }
 
   // Create per-process address space
   page_directory_t *page_dir = paging_create_address_space();
   if (!page_dir) {
-    printf("Error: Failed to create address space\n");
+    kprintf("Error: Failed to create address space\n");
     return NULL;
   }
 
@@ -267,7 +267,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   // Allocate kernel stack (for interrupts/syscalls when in user mode)
   uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
   if (!kernel_stack) {
-    printf("Error: Failed to allocate kernel stack\n");
+    kprintf("Error: Failed to allocate kernel stack\n");
     paging_destroy_address_space(page_dir);
     return NULL;
   }

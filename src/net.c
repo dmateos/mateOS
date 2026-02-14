@@ -96,7 +96,7 @@ void net_init(void) {
 
   lwip_ready = 1;
   dhcp_start(&rtl_netif);
-  printf("[net] lwIP initialized, DHCP started\n");
+  kprintf("[net] lwIP initialized, DHCP started\n");
 }
 
 void net_poll(void) {
@@ -110,9 +110,9 @@ void net_poll(void) {
                    (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
   if (ip_be != last_logged_ip_be && ip_be != 0) {
     last_logged_ip_be = ip_be;
-    printf("[net] DHCP lease ip=%d.%d.%d.%d\n",
-           (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
-           (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+    kprintf("[net] DHCP lease ip=%d.%d.%d.%d\n",
+            (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+            (ip_be >> 8) & 0xFF, ip_be & 0xFF);
   }
 }
 
@@ -186,7 +186,7 @@ void net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be) {
   if (!lwip_ready) return;
   if (ip_be == 0 && mask_be == 0 && gw_be == 0) {
     dhcp_start(&rtl_netif);
-    printf("[net] DHCP started\n");
+    kprintf("[net] DHCP started\n");
     return;
   }
 
@@ -199,9 +199,9 @@ void net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be) {
   IP4_ADDR(&gw, (gw_be >> 24) & 0xFF, (gw_be >> 16) & 0xFF,
            (gw_be >> 8) & 0xFF, gw_be & 0xFF);
   netif_set_addr(&rtl_netif, &ip, &mask, &gw);
-  printf("[net] cfg ip=%d.%d.%d.%d\n",
-         (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
-         (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+  kprintf("[net] cfg ip=%d.%d.%d.%d\n",
+          (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+          (ip_be >> 8) & 0xFF, ip_be & 0xFF);
 }
 
 void net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be) {

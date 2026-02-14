@@ -662,7 +662,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return 0;
 
     default:
-      printf("[syscall] Unknown syscall %d\n", eax);
+      kprintf("[syscall] Unknown syscall %d\n", eax);
       return (uint32_t)-1;
   }
 }
