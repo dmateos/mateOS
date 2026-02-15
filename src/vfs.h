@@ -58,6 +58,13 @@ typedef struct {
 // Init / register
 void vfs_init(void);
 int vfs_register_fs(const vfs_fs_ops_t *ops);
+int vfs_register_virtual_file(const char *name,
+                              uint32_t (*size_fn)(void),
+                              int (*read_fn)(uint32_t offset, void *buf, uint32_t len));
+int vfs_get_registered_fs_count(void);
+const char *vfs_get_registered_fs_name(int idx);
+int vfs_get_virtual_file_count(void);
+const char *vfs_get_virtual_file_name(int idx);
 
 // File operations (take task's fd table)
 int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags);
