@@ -641,35 +641,6 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_GETTICKS:
       return sys_do_getticks();
 
-    case SYS_LSPCI:
-      pci_list();
-      return 0;
-
-    case SYS_LSIRQ:
-      irq_list();
-      return 0;
-
-    case SYS_MEMINFO: {
-      uint32_t total = 0, used = 0, free_frames = 0;
-      uint32_t hstart = 0, hend = 0, hcur = 0;
-      pmm_get_stats(&total, &used, &free_frames);
-      liballoc_heap_info(&hstart, &hend, &hcur);
-      uint32_t htotal = hend - hstart;
-      uint32_t hused = (hcur > hstart) ? (hcur - hstart) : 0;
-      uint32_t hfree = (htotal > hused) ? (htotal - hused) : 0;
-
-      kprintf("PMM: total=%d used=%d free=%d frames (%dKB each)\n",
-              total, used, free_frames, PMM_FRAME_SIZE / 1024);
-      kprintf("Heap: start=0x%x end=0x%x cur=0x%x\n", hstart, hend, hcur);
-      kprintf("Heap: used=%d bytes free=%d bytes total=%d bytes\n",
-              hused, hfree, htotal);
-      return 0;
-    }
-
-    case SYS_CPUINFO:
-      print_cpu_info();
-      return 0;
-
     default:
       kprintf("[syscall] Unknown syscall %d\n", eax);
       return (uint32_t)-1;

@@ -49,10 +49,6 @@
 #define SYS_UNLINK         43  // unlink(path) -> 0
 #define SYS_KILL           44  // kill(task_id) -> 0
 #define SYS_GETTICKS       45  // getticks() -> timer ticks (100Hz)
-#define SYS_LSPCI          46  // lspci() - print PCI device list
-#define SYS_LSIRQ          47  // lsirq() - print IRQ mask/handler table
-#define SYS_MEMINFO        48  // meminfo() - print PMM/heap stats
-#define SYS_CPUINFO        49  // cpuinfo() - print CPUID summary
 #define SYS_NETSTATS       50  // netstats(out_rx, out_tx) -> 0
 
 // Task info returned by SYS_TASKLIST

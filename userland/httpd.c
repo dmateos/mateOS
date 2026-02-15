@@ -19,8 +19,8 @@ static const char *not_found_response =
     "<html><body><h1>404 Not Found</h1><p>Try /index.htm or /os</p></body></html>\n";
 
 static char file_body[8192];
-static char os_log[8192];
-static char os_page[16384];
+static char os_log[12288];
+static char os_page[32768];
 
 static int send_all(int client, const char *buf, int len) {
     int sent = 0;
@@ -160,68 +160,6 @@ static int append_section(int *out_len, const char *title, const char *path) {
     return 0;
 }
 
-static const char *task_state_name(unsigned int st) {
-    if (st == 0) return "ready";
-    if (st == 1) return "running";
-    if (st == 2) return "blocked";
-    if (st == 3) return "terminated";
-    return "?";
-}
-
-static int append_tasks_section(int *out_len) {
-    taskinfo_entry_t t[32];
-    int n = tasklist(t, 32);
-    if (append_cstr(os_page, sizeof(os_page), out_len, "<h2>tasks</h2><pre>") < 0) return -1;
-    if (n <= 0) {
-        if (append_cstr(os_page, sizeof(os_page), out_len, "(no tasks)\n</pre>") < 0) return -1;
-        return 0;
-    }
-
-    if (append_cstr(os_page, sizeof(os_page), out_len, "PID  PPID  RING  STATE       NAME\n") < 0) return -1;
-    for (int i = 0; i < n; i++) {
-        char num[16];
-        itoa((int)t[i].id, num);
-        if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
-        itoa((int)t[i].parent_id, num);
-        if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
-        itoa((int)t[i].ring, num);
-        if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, task_state_name(t[i].state)) < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, "    ") < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, t[i].name) < 0) return -1;
-        if (append_cstr(os_page, sizeof(os_page), out_len, "\n") < 0) return -1;
-    }
-    if (append_cstr(os_page, sizeof(os_page), out_len, "</pre>") < 0) return -1;
-    return 0;
-}
-
-static int append_uptime_section(int *out_len) {
-    unsigned int ticks = get_ticks();
-    unsigned int total = ticks / 100;  // 100Hz timer
-    unsigned int d = total / 86400;
-    unsigned int h = (total % 86400) / 3600;
-    unsigned int m = (total % 3600) / 60;
-    unsigned int s = total % 60;
-    char num[16];
-
-    if (append_cstr(os_page, sizeof(os_page), out_len, "<h2>uptime</h2><pre>") < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "seconds: ") < 0) return -1;
-    itoa((int)total, num); if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "\npretty: ") < 0) return -1;
-    itoa((int)d, num); if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "d ") < 0) return -1;
-    itoa((int)h, num); if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "h ") < 0) return -1;
-    itoa((int)m, num); if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "m ") < 0) return -1;
-    itoa((int)s, num); if (append_cstr(os_page, sizeof(os_page), out_len, num) < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "s\n</pre>") < 0) return -1;
-    return 0;
-}
-
 static int serve_os_page(int client) {
     int out_len = 0;
     if (append_cstr(os_page, sizeof(os_page), &out_len,
@@ -236,9 +174,13 @@ static int serve_os_page(int client) {
     if (append_section(&out_len, "kmeminfo.mos", "/kmeminfo.mos") < 0) return -1;
     if (append_section(&out_len, "kirq.mos", "/kirq.mos") < 0) return -1;
     if (append_section(&out_len, "kpci.mos", "/kpci.mos") < 0) return -1;
+    if (append_section(&out_len, "kuptime.mos", "/kuptime.mos") < 0) return -1;
+    if (append_section(&out_len, "kwin.mos", "/kwin.mos") < 0) return -1;
+    if (append_section(&out_len, "kvfs.mos", "/kvfs.mos") < 0) return -1;
+    if (append_section(&out_len, "kheap.mos", "/kheap.mos") < 0) return -1;
+    if (append_section(&out_len, "knet.mos", "/knet.mos") < 0) return -1;
+    if (append_section(&out_len, "ktasks.mos", "/ktasks.mos") < 0) return -1;
     if (append_section(&out_len, "kdebug.mos", "/kdebug.mos") < 0) return -1;
-    if (append_tasks_section(&out_len) < 0) return -1;
-    if (append_uptime_section(&out_len) < 0) return -1;
 
     if (append_cstr(os_page, sizeof(os_page), &out_len,
                     "</body></html>\n") < 0) {

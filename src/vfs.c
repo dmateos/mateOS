@@ -5,11 +5,15 @@
 #include "arch/i686/interrupts.h"
 #include "arch/i686/util.h"
 #include "arch/i686/pci.h"
+#include "arch/i686/timer.h"
+#include "window.h"
+#include "task.h"
+#include "net.h"
 
 static const vfs_fs_ops_t *filesystems[VFS_MAX_FILESYSTEMS];
 static int fs_count = 0;
 
-#define VFS_MAX_VIRTUAL_FILES 8
+#define VFS_MAX_VIRTUAL_FILES 16
 #define VFS_VIRT_BASE_ID (-1000)
 
 typedef struct {
@@ -197,6 +201,163 @@ static uint32_t vgen_pci(char *dst, uint32_t cap) {
     return len;
 }
 
+static uint32_t vgen_uptime(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    uint32_t ticks = get_tick_count();
+    uint32_t total = get_uptime_seconds();
+    uint32_t d = total / 86400;
+    uint32_t h = (total % 86400) / 3600;
+    uint32_t m = (total % 3600) / 60;
+    uint32_t s = total % 60;
+
+    append_cstr(dst, cap, &len, "ticks: ");
+    append_dec_u32(dst, cap, &len, ticks);
+    append_cstr(dst, cap, &len, "\nseconds: ");
+    append_dec_u32(dst, cap, &len, total);
+    append_cstr(dst, cap, &len, "\npretty: ");
+    append_dec_u32(dst, cap, &len, d);
+    append_cstr(dst, cap, &len, "d ");
+    append_dec_u32(dst, cap, &len, h);
+    append_cstr(dst, cap, &len, "h ");
+    append_dec_u32(dst, cap, &len, m);
+    append_cstr(dst, cap, &len, "m ");
+    append_dec_u32(dst, cap, &len, s);
+    append_cstr(dst, cap, &len, "s\n");
+    return len;
+}
+
+static uint32_t vgen_windows(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    win_info_t info[MAX_WINDOWS];
+    int count = window_list(info, MAX_WINDOWS);
+
+    append_cstr(dst, cap, &len, "windows: ");
+    append_dec_u32(dst, cap, &len, (uint32_t)count);
+    append_cstr(dst, cap, &len, "\nID   PID   W    H    TITLE\n");
+    for (int i = 0; i < count; i++) {
+        append_dec_u32(dst, cap, &len, (uint32_t)info[i].window_id);
+        append_cstr(dst, cap, &len, "   ");
+        append_dec_u32(dst, cap, &len, info[i].owner_pid);
+        append_cstr(dst, cap, &len, "   ");
+        append_dec_u32(dst, cap, &len, (uint32_t)info[i].w);
+        append_cstr(dst, cap, &len, "   ");
+        append_dec_u32(dst, cap, &len, (uint32_t)info[i].h);
+        append_cstr(dst, cap, &len, "   ");
+        append_cstr(dst, cap, &len, info[i].title);
+        append_cstr(dst, cap, &len, "\n");
+    }
+    return len;
+}
+
+static uint32_t vgen_vfs(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    append_cstr(dst, cap, &len, "filesystems: ");
+    append_dec_u32(dst, cap, &len, (uint32_t)fs_count);
+    append_cstr(dst, cap, &len, "\n");
+    for (int i = 0; i < fs_count; i++) {
+        append_cstr(dst, cap, &len, "  fs");
+        append_dec_u32(dst, cap, &len, (uint32_t)i);
+        append_cstr(dst, cap, &len, ": ");
+        append_cstr(dst, cap, &len, filesystems[i] ? filesystems[i]->name : "(null)");
+        append_cstr(dst, cap, &len, "\n");
+    }
+
+    append_cstr(dst, cap, &len, "virtual files: ");
+    append_dec_u32(dst, cap, &len, (uint32_t)virtual_file_count);
+    append_cstr(dst, cap, &len, "\n");
+    for (int i = 0; i < virtual_file_count; i++) {
+        append_cstr(dst, cap, &len, "  /");
+        append_cstr(dst, cap, &len, virtual_files[i].name);
+        append_cstr(dst, cap, &len, "\n");
+    }
+    return len;
+}
+
+static uint32_t vgen_heap(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    uint32_t hstart = 0, hend = 0, hcur = 0;
+    liballoc_heap_info(&hstart, &hend, &hcur);
+    uint32_t htotal = hend - hstart;
+    uint32_t hused = (hcur > hstart) ? (hcur - hstart) : 0;
+    uint32_t hfree = (htotal > hused) ? (htotal - hused) : 0;
+
+    append_cstr(dst, cap, &len, "heap.start: ");
+    append_hex_u32(dst, cap, &len, hstart);
+    append_cstr(dst, cap, &len, "\nheap.end: ");
+    append_hex_u32(dst, cap, &len, hend);
+    append_cstr(dst, cap, &len, "\nheap.cur: ");
+    append_hex_u32(dst, cap, &len, hcur);
+    append_cstr(dst, cap, &len, "\nheap.used_bytes: ");
+    append_dec_u32(dst, cap, &len, hused);
+    append_cstr(dst, cap, &len, "\nheap.free_bytes: ");
+    append_dec_u32(dst, cap, &len, hfree);
+    append_cstr(dst, cap, &len, "\nheap.total_bytes: ");
+    append_dec_u32(dst, cap, &len, htotal);
+    append_cstr(dst, cap, &len, "\n");
+    return len;
+}
+
+static void append_ip_be(char *dst, uint32_t cap, uint32_t *len, uint32_t ip_be) {
+    append_dec_u32(dst, cap, len, (ip_be >> 24) & 0xFF);
+    append_cstr(dst, cap, len, ".");
+    append_dec_u32(dst, cap, len, (ip_be >> 16) & 0xFF);
+    append_cstr(dst, cap, len, ".");
+    append_dec_u32(dst, cap, len, (ip_be >> 8) & 0xFF);
+    append_cstr(dst, cap, len, ".");
+    append_dec_u32(dst, cap, len, ip_be & 0xFF);
+}
+
+static const char *task_state_name(uint32_t st) {
+    if (st == 0) return "ready";
+    if (st == 1) return "running";
+    if (st == 2) return "blocked";
+    if (st == 3) return "terminated";
+    return "?";
+}
+
+static uint32_t vgen_tasks(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    taskinfo_entry_t t[32];
+    int n = task_list_info(t, 32);
+    if (n < 0) n = 0;
+
+    append_cstr(dst, cap, &len, "PID  PPID  RING  STATE       NAME\n");
+    for (int i = 0; i < n; i++) {
+        append_dec_u32(dst, cap, &len, t[i].id);
+        append_cstr(dst, cap, &len, "    ");
+        append_dec_u32(dst, cap, &len, t[i].parent_id);
+        append_cstr(dst, cap, &len, "    ");
+        append_dec_u32(dst, cap, &len, t[i].ring);
+        append_cstr(dst, cap, &len, "    ");
+        append_cstr(dst, cap, &len, task_state_name(t[i].state));
+        append_cstr(dst, cap, &len, "    ");
+        append_cstr(dst, cap, &len, t[i].name);
+        append_cstr(dst, cap, &len, "\n");
+    }
+    return len;
+}
+
+static uint32_t vgen_net(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    uint32_t ip_be = 0, mask_be = 0, gw_be = 0;
+    uint32_t rx = 0, tx = 0;
+    net_get_config(&ip_be, &mask_be, &gw_be);
+    net_get_stats(&rx, &tx);
+
+    append_cstr(dst, cap, &len, "ip   ");
+    append_ip_be(dst, cap, &len, ip_be);
+    append_cstr(dst, cap, &len, "\nmask ");
+    append_ip_be(dst, cap, &len, mask_be);
+    append_cstr(dst, cap, &len, "\ngw   ");
+    append_ip_be(dst, cap, &len, gw_be);
+    append_cstr(dst, cap, &len, "\nrxpk ");
+    append_dec_u32(dst, cap, &len, rx);
+    append_cstr(dst, cap, &len, "\ntxpk ");
+    append_dec_u32(dst, cap, &len, tx);
+    append_cstr(dst, cap, &len, "\n");
+    return len;
+}
+
 static int vfile_read_from_generated(vgen_fn_t gen, uint32_t offset, void *buf, uint32_t len) {
     if (!buf || len == 0) return 0;
     uint32_t total = gen(vgen_buf, sizeof(vgen_buf));
@@ -251,6 +412,54 @@ static int vfile_pci_read(uint32_t offset, void *buf, uint32_t len) {
     return vfile_read_from_generated(vgen_pci, offset, buf, len);
 }
 
+static uint32_t vfile_uptime_size(void) {
+    return vfile_size_from_generated(vgen_uptime);
+}
+
+static int vfile_uptime_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_uptime, offset, buf, len);
+}
+
+static uint32_t vfile_windows_size(void) {
+    return vfile_size_from_generated(vgen_windows);
+}
+
+static int vfile_windows_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_windows, offset, buf, len);
+}
+
+static uint32_t vfile_vfs_size(void) {
+    return vfile_size_from_generated(vgen_vfs);
+}
+
+static int vfile_vfs_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_vfs, offset, buf, len);
+}
+
+static uint32_t vfile_heap_size(void) {
+    return vfile_size_from_generated(vgen_heap);
+}
+
+static int vfile_heap_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_heap, offset, buf, len);
+}
+
+static uint32_t vfile_tasks_size(void) {
+    return vfile_size_from_generated(vgen_tasks);
+}
+
+static int vfile_tasks_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_tasks, offset, buf, len);
+}
+
+static uint32_t vfile_net_size(void) {
+    return vfile_size_from_generated(vgen_net);
+}
+
+static int vfile_net_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_net, offset, buf, len);
+}
+
 static int vfs_register_virtual_file(const char *name,
                                      uint32_t (*size_fn)(void),
                                      int (*read_fn)(uint32_t, void *, uint32_t)) {
@@ -300,6 +509,12 @@ void vfs_init(void) {
     vfs_register_virtual_file("kcpuinfo.mos", vfile_cpuinfo_size, vfile_cpuinfo_read);
     vfs_register_virtual_file("kirq.mos", vfile_lsirq_size, vfile_lsirq_read);
     vfs_register_virtual_file("kpci.mos", vfile_pci_size, vfile_pci_read);
+    vfs_register_virtual_file("kuptime.mos", vfile_uptime_size, vfile_uptime_read);
+    vfs_register_virtual_file("kwin.mos", vfile_windows_size, vfile_windows_read);
+    vfs_register_virtual_file("kvfs.mos", vfile_vfs_size, vfile_vfs_read);
+    vfs_register_virtual_file("kheap.mos", vfile_heap_size, vfile_heap_read);
+    vfs_register_virtual_file("ktasks.mos", vfile_tasks_size, vfile_tasks_read);
+    vfs_register_virtual_file("knet.mos", vfile_net_size, vfile_net_read);
 }
 
 int vfs_register_fs(const vfs_fs_ops_t *ops) {

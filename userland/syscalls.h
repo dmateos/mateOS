@@ -46,10 +46,6 @@
 #define SYS_UNLINK         43
 #define SYS_KILL           44
 #define SYS_GETTICKS       45
-#define SYS_LSPCI          46
-#define SYS_LSIRQ          47
-#define SYS_MEMINFO        48
-#define SYS_CPUINFO        49
 #define SYS_NETSTATS       50
 
 // Syscall wrappers
@@ -154,10 +150,6 @@ int stat(const char *path, stat_t *st);
 int unlink(const char *path);
 int kill(int task_id);
 unsigned int get_ticks(void);
-int lspci(void);
-int lsirq(void);
-int meminfo(void);
-int cpuinfo(void);
 
 // Process detach (for GUI apps)
 int detach(void);

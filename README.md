@@ -272,8 +272,11 @@ make run GFX=1 NET=1 HTTP=1
   - Memory stats (PMM frames used/free, heap usage)
   - IRQ table (masked/unmasked, handler status)
   - PCI devices (vendor/device ID, class, IRQ)
+  - Window manager snapshot (active windows, owner PID, geometry, title)
+  - VFS snapshot (registered filesystems and virtual files)
+  - Heap snapshot (allocator pointers and usage)
   - Process list (PID, parent, ring, state, name)
-  - Uptime
+  - Uptime/ticks
   - Kernel debug log
 
 ## Virtual OS Files
@@ -284,6 +287,12 @@ The VFS exposes synthetic read-only `.mos` files that provide runtime system inf
 - `/kmeminfo.mos` — PMM total/used/free frames, heap start/end/current, bytes used/free
 - `/kirq.mos` — IRQ table (vector, masked status, handler presence)
 - `/kpci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
+- `/kuptime.mos` — ticks, uptime seconds, and pretty uptime format
+- `/knet.mos` — current network config (ip/mask/gw) and rx/tx packet counters
+- `/kwin.mos` — current window manager table (window id, owner pid, dimensions, title)
+- `/kvfs.mos` — registered FS backends and active virtual files
+- `/kheap.mos` — allocator heap range/current/usage summary
+- `/ktasks.mos` — task table (PID/PPID/ring/state/name)
 - `/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
 
 These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server's `/os` page reads all of them.
@@ -339,10 +348,6 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 | 43 | SYS_UNLINK | unlink(path) | Delete file |
 | 44 | SYS_KILL | kill(pid) | Terminate task by PID |
 | 45 | SYS_GETTICKS | getticks() | Get timer ticks (100Hz) |
-| 46 | SYS_LSPCI | lspci() | Print PCI device list |
-| 47 | SYS_LSIRQ | lsirq() | Print IRQ status table |
-| 48 | SYS_MEMINFO | meminfo() | Print memory statistics |
-| 49 | SYS_CPUINFO | cpuinfo() | Print CPU information |
 | 50 | SYS_NETSTATS | netstats(&rx, &tx) | Get network packet counts |
 
 ## Project Structure
@@ -351,7 +356,7 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 Main kernel source files:
 - `kernel.c` - Kernel entry point and initialization
 - `task.c/h` - Task management, scheduler, per-process CR3 switching
-- `syscall.c/h` - System call dispatcher and handlers (50 syscalls)
+- `syscall.c/h` - System call dispatcher and handlers (IDs 46-49 retired)
 - `pmm.c/h` - Physical memory manager (bitmap frame allocator)
 - `elf.c/h` - ELF32 binary loader
 - `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
@@ -394,7 +399,7 @@ Rust components compiled with `no_std` and custom i686 target
 
 ### `userland/`
 User-space programs:
-- `shell.c` - Interactive shell with background job support and auto `.elf` extension
+- `shell.c` - Interactive shell with background job support and auto `.elf` fallback to `.wlf`
 - `hello.c` - Hello world test program
 - `test.c` - Comprehensive test suite (23 tests)
 - `gui.c` - Window manager (compositing, drag, z-order, close buttons, desktop icons, mouse cursor)
@@ -415,11 +420,10 @@ User-space programs:
 - `ls.c` - List directory
 - `tasks.c` - Show task list
 - `kill.c` - Kill process by PID
-- `uptime.c` - Show system uptime
 - `ifconfig.c` - Network configuration
 - `shutdown.c` - ACPI power off
 - `ugfx.c/h` - Userland graphics library (pixel, rect, text, buffer ops)
-- `syscalls.c/h` - Syscall wrappers (int 0x80, 50 syscalls)
+- `syscalls.c/h` - Syscall wrappers (int 0x80; IDs 46-49 removed)
 - `cmd_shared.c/h` - Shared shell builtins (help, clear, exit)
 - `user.ld` - Linker script (loads at 0x700000)
 
