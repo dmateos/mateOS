@@ -47,6 +47,7 @@ typedef struct {
     int in_use;
     int fs_id;
     int fs_handle;
+    char debug_path[VFS_PATH_MAX];
 } vfs_fd_t;
 
 // Per-task file descriptor table

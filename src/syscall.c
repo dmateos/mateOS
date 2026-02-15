@@ -312,7 +312,10 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
 // argv strings must be in the calling process's address space — they are
 // copied into kernel buffers before the child's address space is created.
 static int sys_do_spawn(const char *filename, const char **argv, int argc) {
-  if (!filename) return -1;
+  if (!filename) {
+    kprintf("[task] spawn fail file=(null) err=%d\n", -1);
+    return -1;
+  }
 
   // Copy argv strings into kernel buffers (they're in parent's address space
   // which will not be accessible after we switch to the child's page dir).
@@ -341,7 +344,10 @@ static int sys_do_spawn(const char *filename, const char **argv, int argc) {
   } else {
     t = task_create_user_elf(filename, NULL, 0);
   }
-  if (!t) return -1;
+  if (!t) {
+    kprintf("[task] spawn fail file=%s err=%d\n", filename, -1);
+    return -1;
+  }
 
   // Inherit parent's stdout redirection
   if (parent && parent->stdout_wid >= 0) {
@@ -642,7 +648,6 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return sys_do_getticks();
 
     default:
-      kprintf("[syscall] Unknown syscall %d\n", eax);
       return (uint32_t)-1;
   }
 }

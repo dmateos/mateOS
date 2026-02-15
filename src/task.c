@@ -155,6 +155,9 @@ task_t *task_create(const char *name, void (*entry)(void)) {
     }
   }
 
+  kprintf("[task] spawn pid=%d ppid=%d ring=0 name=%s\n",
+          task->id, task->parent_id, task->name);
+
   return task;
 }
 
@@ -343,6 +346,9 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
     }
   }
 
+  kprintf("[task] spawn pid=%d ppid=%d ring=3 name=%s\n",
+          task->id, task->parent_id, task->name);
+
   return task;
 }
 
@@ -414,6 +420,10 @@ void task_yield(void) {
 
 static void task_terminate(task_t *task, int code) {
   if (!task || task->id == 0 || task->state == TASK_TERMINATED) return;
+  uint32_t tid = task->id;
+  char tname[TASK_NAME_MAX];
+  memcpy(tname, task->name, TASK_NAME_MAX);
+  tname[TASK_NAME_MAX - 1] = '\0';
 
   task->state = TASK_TERMINATED;
   task->exit_code = code;
@@ -444,6 +454,7 @@ static void task_terminate(task_t *task, int code) {
   }
 
   task->stack = NULL;
+  kprintf("[task] exit pid=%d code=%d name=%s\n", tid, code, tname);
 }
 
 void task_exit_with_code(int code) {
@@ -465,14 +476,23 @@ void task_exit(void) {
 
 int task_kill(uint32_t task_id, int code) {
   task_t *task = task_get_by_id(task_id);
-  if (!task || task->id == 0 || task->is_kernel) return -1;
-  if (task->state == TASK_TERMINATED) return -2;
+  if (!task || task->id == 0 || task->is_kernel) {
+    kprintf("[task] kill fail pid=%d code=%d err=%d\n", task_id, code, -1);
+    return -1;
+  }
+  if (task->state == TASK_TERMINATED) {
+    kprintf("[task] kill fail pid=%d code=%d err=%d\n", task_id, code, -2);
+    return -2;
+  }
 
   if (task == current_task) {
+    kprintf("[task] kill pid=%d code=%d self=1\n", task_id, code);
     task_exit_with_code(code);
     return 0;
   }
 
+  kprintf("[task] kill pid=%d code=%d self=0 name=%s\n",
+          task_id, code, task->name);
   task_terminate(task, code);
   return 0;
 }

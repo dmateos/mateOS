@@ -73,6 +73,12 @@ static int append_hex_u32(char *dst, uint32_t cap, uint32_t *len, uint32_t v) {
     return 0;
 }
 
+static void vfs_copy_path(char *dst, const char *src) {
+    int i = 0;
+    for (; i < VFS_PATH_MAX - 1 && src && src[i]; i++) dst[i] = src[i];
+    dst[i] = '\0';
+}
+
 static uint32_t vgen_meminfo(char *dst, uint32_t cap) {
     uint32_t len = 0;
     uint32_t total = 0, used = 0, free_frames = 0;
@@ -464,10 +470,14 @@ static int vfs_register_virtual_file(const char *name,
                                      uint32_t (*size_fn)(void),
                                      int (*read_fn)(uint32_t, void *, uint32_t)) {
     if (!name || !size_fn || !read_fn) return -1;
-    if (virtual_file_count >= VFS_MAX_VIRTUAL_FILES) return -1;
+    if (virtual_file_count >= VFS_MAX_VIRTUAL_FILES) {
+        kprintf("[vfs] register virtual failed name=%s err=%d\n", name, -1);
+        return -1;
+    }
     virtual_files[virtual_file_count].name = name;
     virtual_files[virtual_file_count].size_fn = size_fn;
     virtual_files[virtual_file_count].read_fn = read_fn;
+    kprintf("[vfs] register virtual name=%s\n", name);
     virtual_file_count++;
     return 0;
 }
@@ -518,29 +528,43 @@ void vfs_init(void) {
 }
 
 int vfs_register_fs(const vfs_fs_ops_t *ops) {
-    if (!ops || fs_count >= VFS_MAX_FILESYSTEMS) return -1;
+    if (!ops || fs_count >= VFS_MAX_FILESYSTEMS) {
+        kprintf("[vfs] register fs failed name=%s err=%d\n",
+                (ops && ops->name) ? ops->name : "(null)", -1);
+        return -1;
+    }
     int id = fs_count;
     filesystems[fs_count++] = ops;
-    printf("[vfs] registered '%s' as fs %d\n", ops->name, id);
+    kprintf("[vfs] registered '%s' as fs %d\n", ops->name, id);
     return id;
 }
 
 int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
-    if (!fdt || !path) return -1;
+    if (!fdt || !path) {
+        kprintf("[vfs] open fail path=%s err=%d\n", path ? path : "(null)", -1);
+        return -1;
+    }
 
     int fd = -1;
     for (int i = 0; i < VFS_MAX_FDS_PER_TASK; i++) {
         if (!fdt->fds[i].in_use) { fd = i; break; }
     }
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        kprintf("[vfs] open fail path=%s err=%d\n", path, -2);
+        return -2;
+    }
 
     int vfi = vfs_find_virtual_file(path);
     if (vfi >= 0) {
         int access = flags & 0x3;
-        if (access != O_RDONLY) return -1;
+        if (access != O_RDONLY) {
+            kprintf("[vfs] open fail path=%s err=%d\n", path, -3);
+            return -3;
+        }
         fdt->fds[fd].in_use = 1;
         fdt->fds[fd].fs_id = vfs_virtual_fs_id_from_index(vfi);
         fdt->fds[fd].fs_handle = 0;
+        vfs_copy_path(fdt->fds[fd].debug_path, path);
         return fd;
     }
 
@@ -551,10 +575,12 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
             fdt->fds[fd].in_use = 1;
             fdt->fds[fd].fs_id = fs;
             fdt->fds[fd].fs_handle = handle;
+            vfs_copy_path(fdt->fds[fd].debug_path, path);
             return fd;
         }
     }
 
+    kprintf("[vfs] open fail path=%s err=%d\n", path, -4);
     return -1;
 }
 
@@ -570,8 +596,15 @@ int vfs_read(vfs_fd_table_t *fdt, int fd, void *buf, uint32_t len) {
         return n;
     }
 
-    if (!filesystems[fs]->read) return -1;
-    return filesystems[fs]->read(fdt->fds[fd].fs_handle, buf, len);
+    if (!filesystems[fs]->read) {
+        kprintf("[vfs] read fail path=%s err=%d\n", fdt->fds[fd].debug_path, -1);
+        return -1;
+    }
+    int rc = filesystems[fs]->read(fdt->fds[fd].fs_handle, buf, len);
+    if (rc < 0) {
+        kprintf("[vfs] read fail path=%s err=%d\n", fdt->fds[fd].debug_path, rc);
+    }
+    return rc;
 }
 
 int vfs_write(vfs_fd_table_t *fdt, int fd, const void *buf, uint32_t len) {
@@ -580,10 +613,20 @@ int vfs_write(vfs_fd_table_t *fdt, int fd, const void *buf, uint32_t len) {
 
     int fs = fdt->fds[fd].fs_id;
     int vfi = vfs_virtual_index_from_fs_id(fs);
-    if (vfi >= 0) return -1;
+    if (vfi >= 0) {
+        kprintf("[vfs] write fail path=%s err=%d\n", fdt->fds[fd].debug_path, -1);
+        return -1;
+    }
 
-    if (!filesystems[fs]->write) return -1;
-    return filesystems[fs]->write(fdt->fds[fd].fs_handle, buf, len);
+    if (!filesystems[fs]->write) {
+        kprintf("[vfs] write fail path=%s err=%d\n", fdt->fds[fd].debug_path, -2);
+        return -2;
+    }
+    int rc = filesystems[fs]->write(fdt->fds[fd].fs_handle, buf, len);
+    if (rc < 0) {
+        kprintf("[vfs] write fail path=%s err=%d\n", fdt->fds[fd].debug_path, rc);
+    }
+    return rc;
 }
 
 int vfs_close(vfs_fd_table_t *fdt, int fd) {
@@ -601,6 +644,7 @@ int vfs_close(vfs_fd_table_t *fdt, int fd) {
     fdt->fds[fd].in_use = 0;
     fdt->fds[fd].fs_id = 0;
     fdt->fds[fd].fs_handle = 0;
+    fdt->fds[fd].debug_path[0] = '\0';
     return ret;
 }
 
@@ -643,6 +687,7 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
         if (!filesystems[fs]->stat) continue;
         if (filesystems[fs]->stat(path, st) == 0) return 0;
     }
+    kprintf("[vfs] stat fail path=%s err=%d\n", path, -1);
     return -1;
 }
 

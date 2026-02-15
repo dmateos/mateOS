@@ -88,6 +88,7 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
 
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
+  kprintf("[boot] paging init ok\n");
 
   // Parse multiboot info (if provided by bootloader)
   printf("\n");
@@ -112,15 +113,19 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize physical memory manager
   pmm_init();
+  kprintf("[boot] pmm init ok\n");
 
   // Scan PCI bus
   pci_init();
+  kprintf("[boot] pci scan ok\n");
 
   // Initialize network (RTL8139 + minimal ARP/ICMP)
   net_init();
+  kprintf("[boot] net init ok\n");
 
   // Initialize VFS and register ramfs
   vfs_init();
+  kprintf("[boot] vfs init ok\n");
   vfs_register_fs(ramfs_get_ops());
   if (fat16_init() == 0) {
     vfs_register_fs(fat16_get_ops());
@@ -128,12 +133,15 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize task system
   task_init();
+  kprintf("[boot] task init ok\n");
 
   // Initialize syscall handler
   syscall_init();
+  kprintf("[boot] syscall init ok\n");
 
   // Initialize window manager subsystem
   window_init();
+  kprintf("[boot] window init ok\n");
 
   // Initialize PS/2 mouse
   mouse_init();

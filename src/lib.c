@@ -228,9 +228,12 @@ void printf(const char *format, ...) {
 // Kernel log: writes to terminal (if available) and kdebug ring.
 void kprintf(const char *format, ...) {
   va_list args;
+  va_list args_copy;
   va_start(args, format);
+  va_copy(args_copy, args);
   kvprintf(term_putc_adapter, format, args);
-  kvprintf(klog_putc, format, args);
+  kvprintf(klog_putc, format, args_copy);
+  va_end(args_copy);
   va_end(args);
 }
 

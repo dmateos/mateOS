@@ -174,6 +174,7 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
     break;
   case 0xD:
     printf("General protection fault (error=0x%x)\n", noerror);
+    kprintf("[fault] gpf err=0x%x\n", noerror);
     if (noerror != 0) {
       printf("  Segment index: %d, ", (noerror >> 3) & 0x1FFF);
       if (noerror & 0x1) printf("external ");
@@ -187,6 +188,7 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
     extern uint32_t get_cr2(void);
     uint32_t fault_addr = get_cr2();
     printf("Page fault at 0x%x err=0x%x (", fault_addr, noerror);
+    kprintf("[fault] page fault addr=0x%x err=0x%x\n", fault_addr, noerror);
     if (noerror & 0x1) printf("present "); else printf("not-present ");
     if (noerror & 0x2) printf("write "); else printf("read ");
     if (noerror & 0x4) printf("user"); else printf("supervisor");
@@ -204,6 +206,8 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   if (cur && cur->id != 0 && number != 0x03) {
     printf("[kernel] killing task %d '%s' due to exception 0x%x\n",
            cur->id, cur->name, number);
+    kprintf("[fault] killing task pid=%d name=%s ex=0x%x\n",
+            cur->id, cur->name, number);
     task_exit_with_code(-(int)number);
   }
 }

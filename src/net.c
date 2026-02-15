@@ -21,6 +21,8 @@
 static struct netif rtl_netif;
 static int lwip_ready = 0;
 static uint32_t last_logged_ip_be = 0;
+static int last_link_up = -1;
+static uint32_t last_lease_log_tick = 0;
 
 // ---- Feed received frame to lwIP ----
 static void net_rx_to_lwip(uint8_t *data, uint16_t len) {
@@ -104,16 +106,45 @@ void net_poll(void) {
   rtl8139_rx_poll();
   sys_check_timeouts();
 
+  int up = netif_is_link_up(&rtl_netif) ? 1 : 0;
+  if (up != last_link_up) {
+    last_link_up = up;
+    kprintf("[net] link %s\n", up ? "up" : "down");
+  }
+
   const ip4_addr_t *ip = netif_ip4_addr(&rtl_netif);
   uint32_t a = ip4_addr_get_u32(ip);
   uint32_t ip_be = ((a & 0xFF) << 24) | (((a >> 8) & 0xFF) << 16) |
                    (((a >> 16) & 0xFF) << 8) | ((a >> 24) & 0xFF);
-  if (ip_be != last_logged_ip_be && ip_be != 0) {
-    last_logged_ip_be = ip_be;
-    kprintf("[net] DHCP lease ip=%d.%d.%d.%d\n",
+  uint32_t now = get_tick_count();
+
+  if (ip_be == 0) {
+    if (last_logged_ip_be != 0) {
+      kprintf("[net] DHCP lease lost\n");
+    }
+    last_logged_ip_be = 0;
+    last_lease_log_tick = 0;
+    return;
+  }
+
+  if (last_logged_ip_be == 0) {
+    kprintf("[net] DHCP lease acquired ip=%d.%d.%d.%d\n",
             (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
             (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+    last_lease_log_tick = now;
+  } else if (last_logged_ip_be != ip_be) {
+    kprintf("[net] DHCP lease changed ip=%d.%d.%d.%d\n",
+            (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+            (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+    last_lease_log_tick = now;
+  } else if (last_lease_log_tick == 0 || (now - last_lease_log_tick) > 30000) {
+    // Periodic heartbeat while lease remains stable (~5 minutes @100Hz).
+    kprintf("[net] DHCP lease renewed ip=%d.%d.%d.%d\n",
+            (ip_be >> 24) & 0xFF, (ip_be >> 16) & 0xFF,
+            (ip_be >> 8) & 0xFF, ip_be & 0xFF);
+    last_lease_log_tick = now;
   }
+  last_logged_ip_be = ip_be;
 }
 
 int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
