@@ -28,10 +28,6 @@ extern void rust_hello(void);
 extern int rust_add(int a, int b);
 
 
-typedef struct {
-  void (*register_interrupt_handler)(uint8_t, void (*h)(uint32_t, uint32_t));
-} kernel_interrupt_t;
-
 // Track PS/2 extended scancode prefix (0xE0)
 static int kb_extended = 0;
 
@@ -107,10 +103,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   }
   printf("\n");
 
-  kernel_interrupt_t test = {.register_interrupt_handler =
-                                 register_interrupt_handler};
-
-  test.register_interrupt_handler(0x21, test_interrupt_handler);
+  register_interrupt_handler(0x21, test_interrupt_handler);
 
   // Test Rust integration on boot
   printf("\n");
@@ -144,7 +137,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize PS/2 mouse
   mouse_init();
-  test.register_interrupt_handler(0x2C, mouse_irq_handler);
+  register_interrupt_handler(0x2C, mouse_irq_handler);
   pic_unmask_irq(12);
 
   // Boot message

@@ -135,7 +135,7 @@ static uint32_t vgen_lsirq(char *dst, uint32_t cap) {
     irq_info_t irq[16];
     int count = irq_get_snapshot(irq, 16);
 
-    append_cstr(dst, cap, &len, "IRQ  Vec  Masked  Handler\n");
+    append_cstr(dst, cap, &len, "IRQ  Vec  Masked  Handler  Addr        Name\n");
     for (int i = 0; i < count; i++) {
         append_dec_u32(dst, cap, &len, irq[i].irq);
         append_cstr(dst, cap, &len, "    ");
@@ -144,6 +144,18 @@ static uint32_t vgen_lsirq(char *dst, uint32_t cap) {
         append_cstr(dst, cap, &len, irq[i].masked ? "yes" : "no");
         append_cstr(dst, cap, &len, "      ");
         append_cstr(dst, cap, &len, irq[i].has_handler ? "yes" : "no");
+        append_cstr(dst, cap, &len, "      ");
+        if (irq[i].handler_addr) {
+            append_hex_u32(dst, cap, &len, irq[i].handler_addr);
+        } else {
+            append_cstr(dst, cap, &len, "-");
+        }
+        append_cstr(dst, cap, &len, "    ");
+        if (irq[i].handler_name && irq[i].handler_name[0]) {
+            append_cstr(dst, cap, &len, irq[i].handler_name);
+        } else {
+            append_cstr(dst, cap, &len, "-");
+        }
         append_cstr(dst, cap, &len, "\n");
     }
 

@@ -16,7 +16,10 @@ typedef struct idt_ptr {
   uint32_t base;
 } __attribute__((packed)) idt_ptr_t;
 
-void register_interrupt_handler(uint8_t, void (*h)(uint32_t, uint32_t));
+void register_interrupt_handler_impl(uint8_t, void (*h)(uint32_t, uint32_t),
+                                     const char *name);
+#define register_interrupt_handler(n, h) \
+  register_interrupt_handler_impl((n), (h), #h)
 void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries);
 void idt_breakpoint(void);
 void idt_exception_handler(uint32_t, uint32_t);
@@ -28,6 +31,8 @@ typedef struct {
   uint8_t vec;
   uint8_t masked;
   uint8_t has_handler;
+  uint32_t handler_addr;
+  const char *handler_name;
 } irq_info_t;
 int irq_get_snapshot(irq_info_t *out, int max);
 

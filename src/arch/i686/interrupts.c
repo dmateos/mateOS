@@ -15,6 +15,7 @@
 
 // Interrupt Service Routine (ISR) handlers
 void (*interruptPointers[256])(uint32_t, uint32_t) = {0};
+static const char *interruptNames[256] = {0};
 static uint8_t unknown_irq_reported[256] = {0};
 
 static void pic_remap(void) {
@@ -132,8 +133,10 @@ static void init_idt_table(idt_entry_t *ide) {
   write_idt_entry(ide, 129, (uint32_t)yield_task, SEGMENT_OFFSET, PRIVILEGE_USER);
 }
 
-void register_interrupt_handler(uint8_t n, void (*h)(uint32_t, uint32_t)) {
+void register_interrupt_handler_impl(uint8_t n, void (*h)(uint32_t, uint32_t),
+                                     const char *name) {
   interruptPointers[n] = h;
+  interruptNames[n] = name;
 }
 
 void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
@@ -266,6 +269,8 @@ int irq_get_snapshot(irq_info_t *out, int max) {
     out[i].vec = vec;
     out[i].masked = (uint8_t)(masked ? 1 : 0);
     out[i].has_handler = (uint8_t)(interruptPointers[vec] ? 1 : 0);
+    out[i].handler_addr = (uint32_t)interruptPointers[vec];
+    out[i].handler_name = interruptNames[vec];
   }
   return count;
 }
