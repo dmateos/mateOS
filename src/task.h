@@ -76,6 +76,7 @@ typedef struct task {
   // Process management
   int exit_code;                  // Exit code set by sys_exit
   uint32_t waiting_for;           // Task ID this task is blocked waiting for (0 = not waiting)
+  uint32_t runtime_ticks;         // CPU runtime accumulated on timer IRQ ticks
 
   // Detach flag: process has detached from parent's wait
   int detached;
@@ -112,7 +113,7 @@ void task_yield(void);
 
 // Called from timer interrupt for preemptive scheduling
 // Returns new stack pointer to switch to
-uint32_t *schedule(uint32_t *current_esp);
+uint32_t *schedule(uint32_t *current_esp, uint32_t is_hw_tick);
 
 // Terminate current task
 void task_exit(void);

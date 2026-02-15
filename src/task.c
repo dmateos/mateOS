@@ -54,6 +54,7 @@ void task_init(void) {
   idle->kernel_stack = NULL;
   idle->kernel_stack_top = 0;
   idle->page_dir = NULL;
+  idle->runtime_ticks = 0;
 
   current_task = idle;
   task_list_head = idle;
@@ -143,6 +144,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->page_dir = NULL;
   task->stdout_wid = -1;
   task->detached = 0;
+  task->runtime_ticks = 0;
 
   // Add to circular task list (skip if reusing — already linked)
   if (!reusing) {
@@ -328,6 +330,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   task->stack_top = sp;
   task->stdout_wid = -1;
   task->detached = 0;
+  task->runtime_ticks = 0;
 
   // Allocate per-task file descriptor table
   task->fd_table = (vfs_fd_table_t *)kmalloc(sizeof(vfs_fd_table_t));
@@ -363,9 +366,14 @@ int task_is_enabled(void) {
 // Round-robin scheduler - called from timer interrupt
 // current_esp is the stack pointer of the interrupted task
 // Returns the stack pointer to switch to
-uint32_t *schedule(uint32_t *current_esp) {
+uint32_t *schedule(uint32_t *current_esp, uint32_t is_hw_tick) {
   if (!multitasking_enabled || !current_task) {
     return current_esp;
+  }
+
+  // Attribute this timer tick to the task that was interrupted.
+  if (is_hw_tick && current_task->state == TASK_RUNNING) {
+    current_task->runtime_ticks++;
   }
 
   // Save current task's stack pointer
@@ -522,7 +530,7 @@ int task_list_info(taskinfo_entry_t *buf, int max) {
     buf[count].parent_id = tasks[i].parent_id;
     buf[count].ring = tasks[i].is_kernel ? 0u : 3u;
     buf[count].state = (uint32_t)tasks[i].state;
-
+    buf[count].runtime_ticks = tasks[i].runtime_ticks;
     // Copy name
     int j;
     for (j = 0; j < TASK_NAME_MAX - 1 && tasks[i].name[j]; j++) {

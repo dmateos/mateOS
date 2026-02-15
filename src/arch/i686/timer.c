@@ -32,7 +32,7 @@ uint32_t *timer_handler_switch(uint32_t *esp, uint32_t is_hw) {
 
   // Call scheduler if multitasking is enabled
   if (task_is_enabled()) {
-    return schedule(esp);
+    return schedule(esp, is_hw);
   }
 
   return esp;

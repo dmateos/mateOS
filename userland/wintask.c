@@ -22,8 +22,8 @@
 
 typedef struct {
     int pid;
-    unsigned int hits;
-    unsigned int total;
+    unsigned int runtime_prev;
+    int cpu_pct;
 } cpu_sample_t;
 
 static unsigned char buf[W * H];
@@ -34,6 +34,7 @@ static int selected = 0;
 static int view_top = 0;
 static int wid = -1;
 static int self_pid = -1;
+static unsigned int prev_total_ticks = 0;
 static char status[96] = "Up/Down Select  K Kill  R Refresh  Q Quit";
 
 static void copy_status(const char *s) {
@@ -66,37 +67,58 @@ static int sample_alloc(int pid) {
     for (int i = 0; i < MAX_TASKS_VIEW; i++) {
         if (samples[i].pid == 0) {
             samples[i].pid = pid;
-            samples[i].hits = 0;
-            samples[i].total = 0;
+            samples[i].runtime_prev = 0;
+            samples[i].cpu_pct = 0;
             return i;
         }
     }
     return -1;
 }
 
-static void sample_update(const taskinfo_entry_t *t) {
+static void sample_update(const taskinfo_entry_t *t, unsigned int delta_total) {
     int si = sample_find((int)t->id);
     if (si < 0) si = sample_alloc((int)t->id);
     if (si < 0) return;
 
-    samples[si].total++;
-    if (state_running(t->state)) samples[si].hits++;
+    if (delta_total == 0) {
+        samples[si].runtime_prev = t->runtime_ticks;
+        samples[si].cpu_pct = 0;
+        return;
+    }
+
+    unsigned int prev = samples[si].runtime_prev;
+    unsigned int cur = t->runtime_ticks;
+    unsigned int delta_task = (cur >= prev) ? (cur - prev) : 0;
+    int pct = (int)((delta_task * 100u) / delta_total);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+
+    samples[si].runtime_prev = cur;
+    samples[si].cpu_pct = pct;
 }
 
 static int sample_cpu_percent(int pid) {
     int si = sample_find(pid);
-    if (si < 0 || samples[si].total == 0) return 0;
-    return (int)((samples[si].hits * 100u) / samples[si].total);
+    if (si < 0) return 0;
+    return samples[si].cpu_pct;
 }
 
 static void refresh_tasks(void) {
+    unsigned int now_ticks = get_ticks();
+    unsigned int delta_total = 0;
+    if (prev_total_ticks != 0 && now_ticks >= prev_total_ticks) {
+        delta_total = now_ticks - prev_total_ticks;
+    }
+
     task_count = tasklist(tasks, MAX_TASKS_VIEW);
     if (task_count < 0) task_count = 0;
     if (selected >= task_count) selected = (task_count > 0) ? (task_count - 1) : 0;
 
     for (int i = 0; i < task_count; i++) {
-        sample_update(&tasks[i]);
+        sample_update(&tasks[i], delta_total);
     }
+
+    prev_total_ticks = now_ticks;
 }
 
 static int visible_rows(void) {

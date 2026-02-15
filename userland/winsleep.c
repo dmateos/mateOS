@@ -33,9 +33,23 @@ void _start(int argc, char **argv) {
 
     int sec = 0;
     while (1) {
+        int k = win_getkey(wid);
+        if (k == 27 || k == 'q' || k == 'Q') break;
+
         draw_frame(sec);
         win_write(wid, buf, sizeof(buf));
-        sleep_ms(1000);
+
+        for (int ms = 0; ms < 1000; ms += 50) {
+            k = win_getkey(wid);
+            if (k == 27 || k == 'q' || k == 'Q') {
+                win_destroy(wid);
+                exit(0);
+            }
+            sleep_ms(50);
+        }
         sec++;
     }
+
+    win_destroy(wid);
+    exit(0);
 }
