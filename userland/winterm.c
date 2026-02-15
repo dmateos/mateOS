@@ -15,54 +15,87 @@
 #define CHAR_H 10  // 8px + 2px line spacing
 #define TERM_COLS ((W - MARGIN_X * 2) / CHAR_W)   // 61
 #define TERM_ROWS ((H - MARGIN_Y * 2) / CHAR_H)   // 34
+#define HIST_LINES 1024
 
 static unsigned char pixbuf[W * H];
-static char screen[TERM_ROWS][TERM_COLS + 1];  // +1 for safety
-static int cur_row = 0, cur_col = 0;
+static char hist[HIST_LINES][TERM_COLS + 1];
+static int cur_line = 0, cur_col = 0;
+static int hist_count = 1;
+static int view_top = 0;
+static int follow_tail = 1;
 static int wid = -1;
 
 // ---- Terminal rendering ----
 
-static void term_scroll(void) {
-    for (int r = 0; r < TERM_ROWS - 1; r++) {
-        for (int c = 0; c < TERM_COLS; c++) {
-            screen[r][c] = screen[r + 1][c];
+static void line_clear(int line) {
+    if (line < 0 || line >= HIST_LINES) return;
+    for (int c = 0; c < TERM_COLS; c++) hist[line][c] = ' ';
+    hist[line][TERM_COLS] = '\0';
+}
+
+static int max_view_top(void) {
+    if (hist_count <= TERM_ROWS) return 0;
+    return hist_count - TERM_ROWS;
+}
+
+static void snap_view_to_tail(void) {
+    view_top = max_view_top();
+}
+
+static void hist_shift_up(void) {
+    for (int r = 1; r < HIST_LINES; r++) {
+        for (int c = 0; c <= TERM_COLS; c++) {
+            hist[r - 1][c] = hist[r][c];
         }
     }
-    for (int c = 0; c < TERM_COLS; c++) {
-        screen[TERM_ROWS - 1][c] = ' ';
+    line_clear(HIST_LINES - 1);
+    if (cur_line > 0) cur_line--;
+    if (hist_count > 0) hist_count--;
+    if (view_top > 0) view_top--;
+}
+
+static void term_newline(void) {
+    cur_col = 0;
+    cur_line++;
+    if (cur_line >= HIST_LINES) {
+        cur_line = HIST_LINES - 1;
+        hist_shift_up();
     }
-    cur_row = TERM_ROWS - 1;
+    if (cur_line + 1 > hist_count) hist_count = cur_line + 1;
+    line_clear(cur_line);
+    if (follow_tail) snap_view_to_tail();
+}
+
+static void term_scroll_view(int delta) {
+    int top = view_top + delta;
+    int max_top = max_view_top();
+    if (top < 0) top = 0;
+    if (top > max_top) top = max_top;
+    view_top = top;
+    follow_tail = (view_top == max_top);
 }
 
 static void term_putchar(char ch) {
     if (ch == '\n') {
-        cur_col = 0;
-        cur_row++;
-        if (cur_row >= TERM_ROWS) {
-            term_scroll();
-        }
+        term_newline();
         return;
     }
     if (ch == '\b') {
         if (cur_col > 0) {
             cur_col--;
-            screen[cur_row][cur_col] = ' ';
+            hist[cur_line][cur_col] = ' ';
         }
         return;
     }
     if (ch < 32 || ch > 126) return;
 
     if (cur_col >= TERM_COLS) {
-        cur_col = 0;
-        cur_row++;
-        if (cur_row >= TERM_ROWS) {
-            term_scroll();
-        }
+        term_newline();
     }
 
-    screen[cur_row][cur_col] = ch;
+    hist[cur_line][cur_col] = ch;
     cur_col++;
+    if (follow_tail) snap_view_to_tail();
 }
 
 static void term_print(const char *s) {
@@ -97,8 +130,10 @@ static void term_redraw(void) {
 
     // Render text
     for (int r = 0; r < TERM_ROWS; r++) {
+        int lr = view_top + r;
+        if (lr >= hist_count) break;
         for (int c = 0; c < TERM_COLS; c++) {
-            char ch = screen[r][c];
+            char ch = hist[lr][c];
             if (ch > 32 && ch < 127) {
                 int px = MARGIN_X + c * CHAR_W;
                 int py = MARGIN_Y + r * CHAR_H;
@@ -108,9 +143,9 @@ static void term_redraw(void) {
     }
 
     // Draw cursor (block)
-    if (cur_row < TERM_ROWS) {
+    if (cur_line >= view_top && cur_line < view_top + TERM_ROWS) {
         int cx = MARGIN_X + cur_col * CHAR_W;
-        int cy = MARGIN_Y + cur_row * CHAR_H;
+        int cy = MARGIN_Y + (cur_line - view_top) * CHAR_H;
         ugfx_buf_rect(pixbuf, W, H, cx, cy, CHAR_W - 1, CHAR_H - 1, 10);
     }
 
@@ -136,7 +171,19 @@ static int readline(char *buf, int max) {
             buf[0] = '\0';
             return -1;
         }
+        if (key == KEY_UP) {
+            term_scroll_view(-1);
+            term_redraw();
+            continue;
+        }
+        if (key == KEY_DOWN) {
+            term_scroll_view(1);
+            term_redraw();
+            continue;
+        }
         if (key == '\n') {
+            follow_tail = 1;
+            snap_view_to_tail();
             term_putchar('\n');
             term_redraw();
             break;
@@ -160,13 +207,12 @@ static int readline(char *buf, int max) {
 }
 
 static void cmd_clear(void) {
-    for (int r = 0; r < TERM_ROWS; r++) {
-        for (int c = 0; c < TERM_COLS; c++) {
-            screen[r][c] = ' ';
-        }
-    }
-    cur_row = 0;
+    for (int r = 0; r < HIST_LINES; r++) line_clear(r);
+    cur_line = 0;
     cur_col = 0;
+    hist_count = 1;
+    view_top = 0;
+    follow_tail = 1;
 }
 
 // ---- Main ----
@@ -188,11 +234,7 @@ static int parse_argv(char *line, const char **argv, int max_args) {
 void _start(int argc_unused, char **argv_unused) {
     (void)argc_unused; (void)argv_unused;
     // Initialize screen buffer
-    for (int r = 0; r < TERM_ROWS; r++) {
-        for (int c = 0; c < TERM_COLS; c++) {
-            screen[r][c] = ' ';
-        }
-    }
+    for (int r = 0; r < HIST_LINES; r++) line_clear(r);
 
     // Create window
     wid = win_create(W, H, "Term");

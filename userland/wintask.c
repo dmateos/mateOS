@@ -31,9 +31,10 @@ static taskinfo_entry_t tasks[MAX_TASKS_VIEW];
 static cpu_sample_t samples[MAX_TASKS_VIEW];
 static int task_count = 0;
 static int selected = 0;
+static int view_top = 0;
 static int wid = -1;
 static int self_pid = -1;
-static char status[80] = "Up/Down Select  K Kill  R Refresh  Q Quit";
+static char status[96] = "Up/Down Select  K Kill  R Refresh  Q Quit";
 
 static void copy_status(const char *s) {
     int i = 0;
@@ -98,6 +99,27 @@ static void refresh_tasks(void) {
     }
 }
 
+static int visible_rows(void) {
+    int rows = (H - TITLE_H - STATUS_H - ROW_H - 8) / ROW_H;
+    if (rows < 1) rows = 1;
+    return rows;
+}
+
+static void keep_selection_visible(void) {
+    int rows = visible_rows();
+    if (selected < view_top) view_top = selected;
+    if (selected >= view_top + rows) view_top = selected - rows + 1;
+    if (view_top < 0) view_top = 0;
+    if (task_count > rows && view_top > task_count - rows) view_top = task_count - rows;
+    if (task_count <= rows) view_top = 0;
+}
+
+static const char *ring_name(unsigned int ring) {
+    if (ring == 0) return "K";
+    if (ring == 3) return "U";
+    return "?";
+}
+
 static void draw_str(int x, int y, const char *s, unsigned char c) {
     ugfx_buf_string(buf, W, H, x, y, s, c);
 }
@@ -116,30 +138,35 @@ static void redraw(void) {
 
     ugfx_buf_rect(buf, W, H, 0, TITLE_H, W, ROW_H + 2, COL_HDR_BG);
     draw_str(6, TITLE_H + 2, "PID", COL_HDR_TXT);
-    draw_str(58, TITLE_H + 2, "STATE", COL_HDR_TXT);
-    draw_str(120, TITLE_H + 2, "CPU%", COL_HDR_TXT);
-    draw_str(178, TITLE_H + 2, "NAME", COL_HDR_TXT);
+    draw_str(44, TITLE_H + 2, "PPID", COL_HDR_TXT);
+    draw_str(88, TITLE_H + 2, "R", COL_HDR_TXT);
+    draw_str(108, TITLE_H + 2, "STATE", COL_HDR_TXT);
+    draw_str(166, TITLE_H + 2, "CPU%", COL_HDR_TXT);
+    draw_str(214, TITLE_H + 2, "NAME", COL_HDR_TXT);
 
     int y0 = TITLE_H + ROW_H + 4;
-    int rows = (H - TITLE_H - STATUS_H - ROW_H - 8) / ROW_H;
-    if (rows < 1) rows = 1;
+    int rows = visible_rows();
 
-    for (int i = 0; i < task_count && i < rows; i++) {
+    for (int i = 0; i < rows; i++) {
+        int ti = view_top + i;
+        if (ti >= task_count) break;
         int y = y0 + i * ROW_H;
-        int sel = (i == selected);
+        int sel = (ti == selected);
         unsigned char tc = COL_ROW_TXT;
         if (sel) {
             ugfx_buf_rect(buf, W, H, 0, y - 1, W, ROW_H, COL_SEL_BG);
             tc = COL_SEL_TXT;
-        } else if (state_running(tasks[i].state)) {
+        } else if (state_running(tasks[ti].state)) {
             tc = COL_RUN_TXT;
         }
 
-        draw_num(6, y, (int)tasks[i].id, tc);
-        draw_str(58, y, state_name(tasks[i].state), tc);
-        draw_num(120, y, sample_cpu_percent((int)tasks[i].id), tc);
-        draw_str(146, y, "%", tc);
-        draw_str(178, y, tasks[i].name, tc);
+        draw_num(6, y, (int)tasks[ti].id, tc);
+        draw_num(44, y, (int)tasks[ti].parent_id, tc);
+        draw_str(88, y, ring_name(tasks[ti].ring), tc);
+        draw_str(108, y, state_name(tasks[ti].state), tc);
+        draw_num(166, y, sample_cpu_percent((int)tasks[ti].id), tc);
+        draw_str(192, y, "%", tc);
+        draw_str(214, y, tasks[ti].name, tc);
     }
 
     ugfx_buf_rect(buf, W, H, 0, H - STATUS_H, W, STATUS_H, COL_STATUS);
@@ -186,12 +213,14 @@ void _start(int argc, char **argv) {
             if (k == 'k' || k == 'K') kill_selected();
             if (k == 'r' || k == 'R') copy_status("Refreshed");
             refresh_tasks();
+            keep_selection_visible();
             redraw();
         }
 
         tick++;
         if (tick % 20 == 0) {
             refresh_tasks();
+            keep_selection_visible();
             redraw();
         }
         yield();

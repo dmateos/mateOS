@@ -28,6 +28,21 @@ static void swap_names(char a[32], char b[32]) {
     memcpy(b, t, sizeof(t));
 }
 
+static int max_name_len(char names[][32], int count) {
+    int max = 0;
+    for (int i = 0; i < count; i++) {
+        int n = strlen(names[i]);
+        if (n > max) max = n;
+    }
+    return max;
+}
+
+static void print_padded(const char *s, int width) {
+    int n = strlen(s);
+    print(s);
+    for (int i = n; i < width; i++) print(" ");
+}
+
 void _start(int argc, char **argv) {
     int by_ext = 0;
     for (int i = 1; i < argc; i++) {
@@ -52,10 +67,26 @@ void _start(int argc, char **argv) {
         }
     }
 
-    for (int i = 0; i < count; i++) {
-        print("  ");
-        print(names[i]);
-        print("\n");
+    if (count > 0) {
+        int name_w = max_name_len(names, count) + 2;
+        if (name_w < 12) name_w = 12;
+        if (name_w > 30) name_w = 30;
+
+        int cols = 3;
+        while (cols > 1 && cols * name_w > 78) cols--;
+        if (cols < 1) cols = 1;
+        int rows = (count + cols - 1) / cols;
+
+        for (int r = 0; r < rows; r++) {
+            print("  ");
+            for (int c = 0; c < cols; c++) {
+                int idx = c * rows + r;  // Fill columns vertically.
+                if (idx >= count) continue;
+                if (c == cols - 1) print(names[idx]);
+                else print_padded(names[idx], name_w);
+            }
+            print("\n");
+        }
     }
     if (count == 0) print("  (no files)\n");
     exit(0);
