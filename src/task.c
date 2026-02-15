@@ -8,6 +8,7 @@
 #include "arch/i686/cpu.h"
 #include "pmm.h"
 #include "window.h"
+#include "net.h"
 
 // Task array and management
 static task_t tasks[MAX_TASKS];
@@ -446,6 +447,9 @@ static void task_terminate(task_t *task, int code) {
 
   // Clean up any windows owned by this process.
   window_cleanup_pid(task->id);
+
+  // Clean up any TCP sockets owned by this process.
+  net_sock_close_all_for_pid(task->id);
 
   // Close all open file descriptors.
   if (task->fd_table) {

@@ -12,6 +12,11 @@ BUILDDIR = build
 TARGET = dmos.bin
 FAT16_IMG = fat16_test.img
 DOOM_WAD = assets/DOOM1.WAD
+KERNEL_VERSION_FILE = $(SRCDIR)/version.h
+VERSION_MAJOR ?= 0
+VERSION_MINOR ?= 1
+VERSION_PATCH ?= 0
+VERSION_ABI ?= 1
 
 # Rust configuration
 RUST_TARGET = rust/i686-unknown-none.json
@@ -53,7 +58,7 @@ SRC_LWIP = $(SRC_LWIP_CORE) $(SRC_LWIP_IPV4) $(SRC_LWIP_NETIF) $(SRC_LWIP_API)
 OBJ_LWIP = $(patsubst $(LWIP_DIR)/%.c,$(BUILDDIR)/lwip/%.o,$(SRC_LWIP))
 
 # Default target
-all: userland initrd $(TARGET)
+all: userland initrd $(KERNEL_VERSION_FILE) $(TARGET)
 
 # Build Rust library
 rust:
@@ -65,11 +70,14 @@ $(RUST_LIB): rust
 $(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(RUST_LIB)
 	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
 
-$(BUILDDIR)/%.o: $(SRCDIR)/%.c
+$(KERNEL_VERSION_FILE): tools/gen_version_header.sh
+	./tools/gen_version_header.sh $(KERNEL_VERSION_FILE) $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH) $(VERSION_ABI)
+
+$(BUILDDIR)/%.o: $(SRCDIR)/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.c
+$(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -81,15 +89,15 @@ $(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.S
 	@mkdir -p $(BUILDDIR)
 	$(AS) -c $< -o $@
 
-$(BUILDDIR)/%.o: $(SRCDIR)/liballoc/%.c
+$(BUILDDIR)/%.o: $(SRCDIR)/liballoc/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILDDIR)/drivers/%.o: $(SRCDIR)/drivers/%.c
+$(BUILDDIR)/drivers/%.o: $(SRCDIR)/drivers/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c
+$(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(LWIP_CFLAGS) -c $< -o $@
 
@@ -109,7 +117,7 @@ initrd: initrd.img
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
-	rm -rf out.iso initrd.img
+	rm -rf out.iso initrd.img $(KERNEL_VERSION_FILE)
 	@$(MAKE) -C userland clean
 	@cd rust && cargo clean 2>/dev/null || true
 

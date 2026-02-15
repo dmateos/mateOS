@@ -3,6 +3,7 @@
 #include "drivers/rtl8139.h"
 #include "arch/i686/timer.h"
 #include "arch/i686/cpu.h"
+#include "task.h"
 
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -279,6 +280,7 @@ typedef struct {
   int in_use;
   int type;              // SOCK_LISTEN or SOCK_STREAM
   struct tcp_pcb *pcb;
+  uint32_t owner_pid;    // Creator/owner task ID
   int accepted_fd;       // For listeners: fd of newly accepted connection (-1 if none)
   uint8_t rx_buf[SOCK_RX_BUF];
   int rx_head;           // Write position
@@ -288,6 +290,11 @@ typedef struct {
 } ksocket_t;
 
 static ksocket_t sockets[MAX_SOCKETS];
+
+static uint32_t socket_current_pid(void) {
+  task_t *t = task_current();
+  return t ? t->id : 0;
+}
 
 static int alloc_socket(void) {
   for (int i = 0; i < MAX_SOCKETS; i++) {
@@ -363,6 +370,7 @@ static err_t sock_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err) {
 
   sockets[fd].type = SOCK_STREAM;
   sockets[fd].pcb = newpcb;
+  sockets[fd].owner_pid = ls->owner_pid;
   tcp_arg(newpcb, &sockets[fd]);
   tcp_recv(newpcb, sock_recv_cb);
   tcp_err(newpcb, sock_err_cb);
@@ -385,6 +393,7 @@ int net_sock_listen(uint16_t port) {
     return -1;
   }
 
+  ip_set_option(pcb, SOF_REUSEADDR);
   err_t e = tcp_bind(pcb, IP_ADDR_ANY, port);
   if (e != ERR_OK) {
     tcp_close(pcb);
@@ -401,6 +410,7 @@ int net_sock_listen(uint16_t port) {
 
   sockets[fd].type = SOCK_LISTEN;
   sockets[fd].pcb = lpcb;
+  sockets[fd].owner_pid = socket_current_pid();
   tcp_arg(lpcb, &sockets[fd]);
   tcp_accept(lpcb, sock_accept_cb);
 
@@ -411,6 +421,7 @@ int net_sock_accept(int fd) {
   if (fd < 0 || fd >= MAX_SOCKETS) return -1;
   ksocket_t *s = &sockets[fd];
   if (!s->in_use || s->type != SOCK_LISTEN) return -1;
+  if (s->owner_pid != socket_current_pid()) return -1;
 
   if (s->accepted_fd >= 0) {
     int newfd = s->accepted_fd;
@@ -425,6 +436,7 @@ int net_sock_send(int fd, const void *buf, uint32_t len) {
   if (fd < 0 || fd >= MAX_SOCKETS) return -1;
   ksocket_t *s = &sockets[fd];
   if (!s->in_use || s->type != SOCK_STREAM || !s->pcb) return -1;
+  if (s->owner_pid != socket_current_pid()) return -1;
 
   uint16_t sndbuf = tcp_sndbuf(s->pcb);
   if (sndbuf == 0) return 0;
@@ -441,6 +453,7 @@ int net_sock_recv(int fd, void *buf, uint32_t len) {
   if (fd < 0 || fd >= MAX_SOCKETS) return -1;
   ksocket_t *s = &sockets[fd];
   if (!s->in_use || s->type != SOCK_STREAM) return -1;
+  if (s->owner_pid != socket_current_pid()) return -1;
 
   int avail = rx_buf_used(s);
   if (avail == 0) {
@@ -459,21 +472,53 @@ int net_sock_recv(int fd, void *buf, uint32_t len) {
   return avail;
 }
 
-int net_sock_close(int fd) {
+static int net_sock_close_internal(int fd, uint32_t caller_pid, int force_owner) {
   if (fd < 0 || fd >= MAX_SOCKETS) return -1;
   ksocket_t *s = &sockets[fd];
   if (!s->in_use) return -1;
+  if (!force_owner && s->owner_pid != caller_pid) return -1;
+
+  if (s->type == SOCK_LISTEN && s->accepted_fd >= 0) {
+    int child_fd = s->accepted_fd;
+    s->accepted_fd = -1;
+    net_sock_close_internal(child_fd, caller_pid, force_owner);
+  }
 
   if (s->pcb) {
     if (s->type == SOCK_STREAM) {
       tcp_arg(s->pcb, NULL);
       tcp_recv(s->pcb, NULL);
       tcp_err(s->pcb, NULL);
+    } else if (s->type == SOCK_LISTEN) {
+      tcp_arg(s->pcb, NULL);
+      tcp_accept(s->pcb, NULL);
     }
-    tcp_close(s->pcb);
+    err_t e = tcp_close(s->pcb);
+    if (e != ERR_OK) {
+      tcp_abort(s->pcb);
+    }
     s->pcb = NULL;
   }
 
   s->in_use = 0;
+  s->type = SOCK_UNUSED;
+  s->owner_pid = 0;
+  s->accepted_fd = -1;
+  s->rx_head = 0;
+  s->rx_tail = 0;
+  s->rx_closed = 0;
+  s->err = 0;
   return 0;
+}
+
+int net_sock_close(int fd) {
+  return net_sock_close_internal(fd, socket_current_pid(), 0);
+}
+
+void net_sock_close_all_for_pid(uint32_t pid) {
+  for (int i = 0; i < MAX_SOCKETS; i++) {
+    if (sockets[i].in_use && sockets[i].owner_pid == pid) {
+      net_sock_close_internal(i, pid, 1);
+    }
+  }
 }

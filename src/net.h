@@ -16,5 +16,6 @@ int net_sock_accept(int fd);
 int net_sock_send(int fd, const void *buf, uint32_t len);
 int net_sock_recv(int fd, void *buf, uint32_t len);
 int net_sock_close(int fd);
+void net_sock_close_all_for_pid(uint32_t pid);
 
 #endif

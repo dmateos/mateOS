@@ -22,6 +22,7 @@
 #include "arch/i686/legacytty.h"
 #include "net.h"
 #include "arch/i686/mouse.h"
+#include "version.h"
 
 // External Rust functions
 extern void rust_hello(void);
@@ -88,6 +89,8 @@ void test_interrupt_handler(uint32_t number __attribute__((unused)),
 
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
+  kprintf("[boot] mateOS %s (abi=%d, built=%s)\n",
+          KERNEL_VERSION_FULL, KERNEL_VERSION_ABI, KERNEL_BUILD_DATE_UTC);
   kprintf("[boot] paging init ok\n");
 
   // Parse multiboot info (if provided by bootloader)

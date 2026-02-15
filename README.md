@@ -108,6 +108,17 @@ make                         # Build kernel (dmos.bin)
 make run                     # Run in QEMU (text mode)
 ```
 
+### Kernel Versioning
+
+- Kernel build generates `src/version.h` automatically from `tools/gen_version_header.sh`.
+- Runtime version is exposed as `/kversion.mos` (e.g. `cat kversion.mos`).
+- Boot log prints version, ABI, and build timestamp.
+- Version fields can be overridden at build time:
+
+```bash
+make VERSION_MAJOR=0 VERSION_MINOR=2 VERSION_PATCH=0 VERSION_ABI=2
+```
+
 ```bash
 make clean                   # Clean everything (kernel + userland + initrd)
 ```

@@ -9,6 +9,7 @@
 #include "window.h"
 #include "task.h"
 #include "net.h"
+#include "version.h"
 
 static const vfs_fs_ops_t *filesystems[VFS_MAX_FILESYSTEMS];
 static int fs_count = 0;
@@ -364,6 +365,22 @@ static uint32_t vgen_net(char *dst, uint32_t cap) {
     return len;
 }
 
+static uint32_t vgen_version(char *dst, uint32_t cap) {
+    uint32_t len = 0;
+    append_cstr(dst, cap, &len, "version: ");
+    append_cstr(dst, cap, &len, KERNEL_VERSION_STR);
+    append_cstr(dst, cap, &len, "\ngit: ");
+    append_cstr(dst, cap, &len, KERNEL_VERSION_GIT);
+    append_cstr(dst, cap, &len, "\nabi: ");
+    append_dec_u32(dst, cap, &len, KERNEL_VERSION_ABI);
+    append_cstr(dst, cap, &len, "\nbuilt_utc: ");
+    append_cstr(dst, cap, &len, KERNEL_BUILD_DATE_UTC);
+    append_cstr(dst, cap, &len, "\nfull: ");
+    append_cstr(dst, cap, &len, KERNEL_VERSION_FULL);
+    append_cstr(dst, cap, &len, "\n");
+    return len;
+}
+
 static int vfile_read_from_generated(vgen_fn_t gen, uint32_t offset, void *buf, uint32_t len) {
     if (!buf || len == 0) return 0;
     uint32_t total = gen(vgen_buf, sizeof(vgen_buf));
@@ -466,6 +483,14 @@ static int vfile_net_read(uint32_t offset, void *buf, uint32_t len) {
     return vfile_read_from_generated(vgen_net, offset, buf, len);
 }
 
+static uint32_t vfile_version_size(void) {
+    return vfile_size_from_generated(vgen_version);
+}
+
+static int vfile_version_read(uint32_t offset, void *buf, uint32_t len) {
+    return vfile_read_from_generated(vgen_version, offset, buf, len);
+}
+
 static int vfs_register_virtual_file(const char *name,
                                      uint32_t (*size_fn)(void),
                                      int (*read_fn)(uint32_t, void *, uint32_t)) {
@@ -525,6 +550,7 @@ void vfs_init(void) {
     vfs_register_virtual_file("kheap.mos", vfile_heap_size, vfile_heap_read);
     vfs_register_virtual_file("ktasks.mos", vfile_tasks_size, vfile_tasks_read);
     vfs_register_virtual_file("knet.mos", vfile_net_size, vfile_net_read);
+    vfs_register_virtual_file("kversion.mos", vfile_version_size, vfile_version_read);
 }
 
 int vfs_register_fs(const vfs_fs_ops_t *ops) {
