@@ -3,7 +3,6 @@
 
 #include "arch/i686/686init.h"
 #include "arch/i686/interrupts.h"
-#include "arch/i686/io.h"
 #include "arch/i686/timer.h"
 #include "arch/i686/util.h"
 #include "arch/i686/paging.h"
@@ -29,64 +28,6 @@ extern void rust_hello(void);
 extern int rust_add(int a, int b);
 
 
-// Track PS/2 extended scancode prefix (0xE0)
-static int kb_extended = 0;
-
-void test_interrupt_handler(uint32_t number __attribute__((unused)),
-                            uint32_t error_code __attribute__((unused))) {
-  uint8_t scancode = inb(IO_KB_DATA);
-
-  // Handle extended scancode prefix
-  if (scancode == 0xE0) {
-    kb_extended = 1;
-    return;
-  }
-
-  if (kb_extended) {
-    kb_extended = 0;
-    // Only handle key press, not release (0x80 bit)
-    if (!(scancode & 0x80)) {
-      if (scancode == 0x49) {       // Page Up
-        terminal_scroll_up();
-        return;
-      } else if (scancode == 0x51) { // Page Down
-        terminal_scroll_down();
-        return;
-      } else if (keyboard_buffer_is_enabled()) {
-        uint8_t key = 0;
-        // Arrow keys (set 1, E0-prefixed)
-        if (scancode == 0x4B) key = KEY_LEFT;
-        else if (scancode == 0x4D) key = KEY_RIGHT;
-        else if (scancode == 0x48) key = KEY_UP;
-        else if (scancode == 0x50) key = KEY_DOWN;
-        if (key) {
-          keyboard_buffer_push(key);
-          return;
-        }
-      }
-    }
-    // Other extended keys: ignore
-    return;
-  }
-
-  // Pass all scancodes (including releases) to translate for shift tracking
-  // If keyboard buffer is active, push to it (shell reads via SYS_GETKEY)
-  if (keyboard_buffer_is_enabled()) {
-    char c = keyboard_translate(scancode);
-    if (c) {
-      keyboard_buffer_push((uint8_t)c);
-    }
-    return;
-  }
-
-  // Fallback: send to console (only during early boot)
-  char c = keyboard_translate(scancode);
-  if (c) {
-    console_handle_key(c);
-  }
-}
-
-
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
   kprintf("[boot] mateOS %s (abi=%d, built=%s)\n",
@@ -107,7 +48,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   }
   printf("\n");
 
-  register_interrupt_handler(0x21, test_interrupt_handler);
+  keyboard_init_interrupts();
 
   // Test Rust integration on boot
   printf("\n");

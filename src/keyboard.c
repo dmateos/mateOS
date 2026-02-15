@@ -1,4 +1,10 @@
 #include "keyboard.h"
+#include "arch/i686/interrupts.h"
+#include "arch/i686/io.h"
+#include "arch/i686/legacytty.h"
+#include "console.h"
+
+static int kb_extended = 0;
 
 static const uint8_t kb_map[] = {
     0,   0,   '1',  '2',  '3',  '4', '5', '6',  '7', '8', '9', '0',
@@ -84,4 +90,51 @@ uint8_t keyboard_buffer_pop(void) {
 
 int keyboard_buffer_empty(void) {
   return kb_head == kb_tail;
+}
+
+static void keyboard_irq_handler(uint32_t number __attribute__((unused)),
+                                 uint32_t error_code __attribute__((unused))) {
+  uint8_t scancode = inb(IO_KB_DATA);
+
+  if (scancode == 0xE0) {
+    kb_extended = 1;
+    return;
+  }
+
+  if (kb_extended) {
+    kb_extended = 0;
+    if (!(scancode & 0x80)) {
+      if (scancode == 0x49) {
+        terminal_scroll_up();
+        return;
+      } else if (scancode == 0x51) {
+        terminal_scroll_down();
+        return;
+      } else if (keyboard_buffer_is_enabled()) {
+        uint8_t key = 0;
+        if (scancode == 0x4B) key = KEY_LEFT;
+        else if (scancode == 0x4D) key = KEY_RIGHT;
+        else if (scancode == 0x48) key = KEY_UP;
+        else if (scancode == 0x50) key = KEY_DOWN;
+        if (key) {
+          keyboard_buffer_push(key);
+          return;
+        }
+      }
+    }
+    return;
+  }
+
+  if (keyboard_buffer_is_enabled()) {
+    char c = keyboard_translate(scancode);
+    if (c) keyboard_buffer_push((uint8_t)c);
+    return;
+  }
+
+  char c = keyboard_translate(scancode);
+  if (c) console_handle_key(c);
+}
+
+void keyboard_init_interrupts(void) {
+  register_interrupt_handler(0x21, keyboard_irq_handler);
 }

@@ -12,6 +12,7 @@
 #define KEY_DOWN   0x83
 
 uint8_t keyboard_translate(uint8_t scancode);
+void keyboard_init_interrupts(void);
 
 // Ring buffer for user-mode keyboard input
 void keyboard_buffer_init(void);

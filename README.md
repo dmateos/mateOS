@@ -42,7 +42,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **lwIP TCP/IP Stack** - Full IPv4 networking (ARP, ICMP, TCP, UDP)
 - **ICMP Ping** - `ping` command and `net_ping()` syscall
 - **TCP Sockets** - Kernel socket table with listen/accept/send/recv/close syscalls
-- **HTTP Server** - Userland `httpd` serves HTML on port 80
+- **HTTP Server** - Userland `httpd` serves HTML on port 80 (socket ownership tracking + task-exit cleanup + `SO_REUSEADDR` for restart reliability)
 - **Network Configuration** - `ifconfig` command to set/view IP, netmask, gateway
 - **DHCP via QEMU** - Automatic IP configuration with QEMU user-mode networking
 
@@ -64,7 +64,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Virtual File System (VFS)** - Abstraction layer supporting multiple filesystem backends
 - **Ramfs** - In-memory filesystem loaded from multiboot initrd module
 - **FAT16** - Read/write FAT16 on IDE disk with MBR partition detection, cluster allocation, file create/delete
-- **Virtual OS Files** - Synthetic `.mos` files exposing runtime system info (cpuinfo, meminfo, lsirq, pci, kdebug)
+- **Virtual OS Files** - Synthetic `.mos` files exposing runtime system info (cpuinfo, meminfo, lsirq, pci, kdebug, version)
 - **Per-Process File Descriptors** - Each task has its own FD table (16 max)
 - **File I/O Syscalls** - open, read, write, close, seek, stat, unlink
 - **Initrd Tool** - `tools/mkinitrd` packs `.elf` and `.wlf` binaries into a bootable initrd image
@@ -171,7 +171,7 @@ The shell runs as a Ring 3 user process (`shell.elf`). Programs can be run by na
 
 **File extensions:**
 - `.elf` — CLI programs (shell, ls, cat, ping, etc.)
-- `.wlf` — Window/GUI programs (winterm, winfm, wintask, winhello, etc.)
+- `.wlf` — Window/GUI programs (winterm, winfm, wintask, winhello, wintempleos, etc.)
 - `.mos` — Virtual OS interface files (cpuinfo, meminfo, lsirq, pci, kdebug)
 
 ### Built-in Commands
@@ -205,7 +205,9 @@ These are separate ELF binaries invoked by name:
 - `winedit` - GUI text editor `.wlf`
 - `winfm` - GUI file manager with icon grid and extension filter `.wlf`
 - `wintask` - GUI task manager with CPU% and kill `.wlf`
+- `wintempleos` - TempleOS-style visual easter egg app `.wlf`
 - `httpd` - HTTP server (port 80, serves `/os` system status page)
+- `burn` - CPU burn test (busy loop, 100% CPU) `.elf`
 - `doom` - DOOM (requires WM + DOOM1.WAD in filesystem)
 
 Run any program by name: `hello`, `test`, `gui`
@@ -305,6 +307,7 @@ The VFS exposes synthetic read-only `.mos` files that provide runtime system inf
 - `/kheap.mos` — allocator heap range/current/usage summary
 - `/ktasks.mos` — task table (PID/PPID/ring/state/name)
 - `/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
+- `/kversion.mos` — kernel version/build metadata (semver, git hash, ABI, build UTC)
 
 These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server's `/os` page reads all of them.
 
@@ -372,7 +375,8 @@ Main kernel source files:
 - `elf.c/h` - ELF32 binary loader
 - `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
 - `fat16.c/h` - FAT16 filesystem driver (read/write, MBR partition, cluster alloc, unlink)
-- `vfs.c/h` - Virtual file system abstraction layer + synthetic `.mos` files
+- `vfs.c/h` - Virtual file system abstraction layer + virtual-file plumbing
+- `vfs_proc.c/h` - Proc-style synthetic `.mos` generators and registration (`k*.mos`)
 - `multiboot.c/h` - Multiboot info parsing, initrd detection
 - `console.c/h` - Early boot console
 - `keyboard.c/h` - PS/2 keyboard driver with extended scancodes, shift support, ring buffer
@@ -420,7 +424,9 @@ User-space programs:
 - `winfm.c` - GUI file manager (icon grid, color-coded types, extension filter, scrollbar) → `.wlf`
 - `wintask.c` - GUI task manager (CPU%, kill, auto-refresh) → `.wlf`
 - `winsleep.c` - Window sleep demo → `.wlf`
+- `wintempleos.c` - TempleOS-style visual easter egg app → `.wlf`
 - `httpd.c` - HTTP server (port 80, static files + dynamic `/os` system status page)
+- `burn.c` - CPU burn test (busy loop) → `.elf`
 - `ping.c` - ICMP ping utility
 - `cat.c` - Display file contents
 - `cp.c` - Copy files
@@ -450,6 +456,7 @@ Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` 
 ### `tools/`
 - `mkinitrd` - Initrd image builder
 - `mkfat16_test_disk.py` - FAT16 test disk image creator (8MB, optional DOOM1.WAD)
+- `gen_version_header.sh` - Build-time generator for `src/version.h` (version/git/ABI/build date)
 
 ## Architecture Notes
 
