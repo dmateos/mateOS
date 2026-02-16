@@ -17,14 +17,14 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Interrupts** - IDT with 256 entries, exception and IRQ handling via PIC
 - **Paging** - Identity-mapped 32MB with per-process page directories
 - **Physical Memory Manager** - Bitmap-based allocator for 4KB frames (8-32MB range, 6144 frames)
-- **Heap Allocator** - Dynamic kernel allocation via liballoc (0x400000-0x600000)
+- **Heap Allocator** - Dynamic kernel allocation via liballoc (`KERNEL_HEAP_START..KERNEL_HEAP_END` in `src/memlayout.h`)
 
 ### Multitasking
 - **Preemptive Scheduling** - Round-robin scheduler with 100Hz PIT timer
 - **Kernel Threads** - Ring 0 tasks with full kernel privileges
 - **User Processes** - Ring 3 tasks with hardware memory protection
 - **Context Switching** - Full CPU state save/restore including segment registers, CR3 swap
-- **Per-Process Address Spaces** - Each user process gets its own page directory, isolating virtual memory at 0x700000
+- **Per-Process Address Spaces** - Each user process gets its own page directory, isolating virtual memory in `USER_REGION_START..USER_REGION_END` (`src/memlayout.h`)
 - **Background Jobs** - Shell supports `&` suffix to run tasks in background with `jobs` tracking
 
 ### Process Management
@@ -382,6 +382,13 @@ Main kernel source files:
 - `keyboard.c/h` - PS/2 keyboard driver with extended scancodes, shift support, ring buffer
 - `net.c/h` - Networking layer (lwIP integration, DHCP, TCP socket table, ICMP ping)
 - `window.c/h` - Window manager subsystem (create, destroy, composite, focus)
+- `memlayout.h` - Shared virtual memory layout constants (heap/user region/stack)
+
+### `src/utils/`
+Shared kernel utilities:
+- `kring.c/h` - Generic byte ring buffer helper
+- `strbuf.c/h` - Safe bounded text formatting/append helper
+- `slot_table.c/h` - Fixed-slot table helper for `in_use`-style alloc/free
 
 ### `src/drivers/`
 Hardware drivers:
@@ -478,7 +485,7 @@ Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` 
 | 0x200000 - 0x26FFFF | Kernel BSS, GDT, IDT, page tables, TSS |
 | 0x400000 - 0x5FFFFF | Kernel heap (liballoc) |
 | 0x700000 - 0x7FFFFF | User code region (per-process, virtual) |
-| 0x7F0000 - 0x7F0FFF | User stack (per-process, virtual) |
+| 0x7E1000 - 0x7FFFFF | User stack (16 pages, per-process, virtual) |
 | 0x800000 - 0x1FFFFFF | PMM-managed physical frames (24MB) |
 | 0xA0000 - 0xAFFFF | VGA framebuffer (Mode 13h) |
 | 0xFD000000+ | BGA linear framebuffer (PCI BAR0, mapped at runtime) |
@@ -487,6 +494,7 @@ Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` 
 - 8 page tables identity-map 0-32MB for kernel access
 - Per-process page directories share kernel page tables (0-7)
 - Page table 1 (0x400000-0x7FFFFF) is copied per-process: heap entries shared, user code entries (0x700000+) are private
+- User stack is pre-mapped at `USER_STACK_BASE_VADDR..USER_STACK_TOP_PAGE_VADDR+0xFFF` (currently 16 pages)
 - Copy-on-write: when a process maps pages into shared kernel page tables (e.g. large BSS), the table is privately copied first
 - ELF segments loaded into PMM frames, mapped at virtual addresses in process page directory
 - BGA framebuffer pages identity-mapped into graphics-owning process
