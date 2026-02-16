@@ -1,6 +1,8 @@
 #include "window.h"
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/cpu.h"
+#include "utils/slot_table.h"
+#include <stddef.h>
 
 static kernel_window_t windows[MAX_WINDOWS];
 
@@ -24,11 +26,9 @@ int window_create(uint32_t pid, int w, int h, const char *title) {
 
     unsigned int flags = cpu_irq_save();
 
-    // Find free slot
-    int slot = -1;
-    for (int i = 0; i < MAX_WINDOWS; i++) {
-        if (!windows[i].active) { slot = i; break; }
-    }
+    int slot = slot_table_find_free_by_flag(
+        windows, MAX_WINDOWS, sizeof(kernel_window_t),
+        (uint32_t)offsetof(kernel_window_t, active));
     if (slot < 0) { cpu_irq_restore(flags); return -1; }
 
     uint32_t buf_size = (uint32_t)(w * h);

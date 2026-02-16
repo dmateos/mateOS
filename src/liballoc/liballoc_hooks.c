@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "../arch/i686/cpu.h"
+#include "../memlayout.h"
 #include "liballoc_hooks.h"
 
 // Bump allocator for liballoc hooks
@@ -8,8 +9,8 @@
 
 // Heap region: starts at 4MB (after identity-mapped region)
 // and extends for 2MB
-static uintptr_t heap_current = 0x400000;  // 4MB mark
-static uintptr_t heap_end = 0x600000;      // 6MB mark (2MB heap)
+static uintptr_t heap_current = KERNEL_HEAP_START;
+static uintptr_t heap_end = KERNEL_HEAP_END;
 
 #define PAGE_SIZE 4096
 
@@ -77,7 +78,7 @@ int liballoc_free(void* ptr, size_t num_pages) {
 }
 
 void liballoc_heap_info(uint32_t *start, uint32_t *end, uint32_t *current) {
-    if (start) *start = (uint32_t)0x400000;
-    if (end) *end = (uint32_t)0x600000;
+    if (start) *start = (uint32_t)KERNEL_HEAP_START;
+    if (end) *end = (uint32_t)KERNEL_HEAP_END;
     if (current) *current = (uint32_t)heap_current;
 }

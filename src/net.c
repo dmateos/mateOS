@@ -5,6 +5,8 @@
 #include "arch/i686/cpu.h"
 #include "task.h"
 #include "utils/kring.h"
+#include "utils/slot_table.h"
+#include <stddef.h>
 
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -297,16 +299,18 @@ static uint32_t socket_current_pid(void) {
 }
 
 static int alloc_socket(void) {
-  for (int i = 0; i < MAX_SOCKETS; i++) {
-    if (!sockets[i].in_use) {
-      memset(&sockets[i], 0, sizeof(ksocket_t));
-      sockets[i].in_use = 1;
-      sockets[i].accepted_fd = -1;
-      kring_u8_init(&sockets[i].rx_ring, sockets[i].rx_buf, SOCK_RX_BUF);
-      return i;
-    }
-  }
-  return -1;
+  int fd = slot_table_find_free_by_flag(
+      sockets, MAX_SOCKETS, sizeof(ksocket_t),
+      (uint32_t)offsetof(ksocket_t, in_use));
+  if (fd < 0) return -1;
+
+  memset(&sockets[fd], 0, sizeof(ksocket_t));
+  slot_table_set_flag_by_index(
+      sockets, sizeof(ksocket_t), (uint32_t)offsetof(ksocket_t, in_use),
+      (uint32_t)fd, 1);
+  sockets[fd].accepted_fd = -1;
+  kring_u8_init(&sockets[fd].rx_ring, sockets[fd].rx_buf, SOCK_RX_BUF);
+  return fd;
 }
 
 // Ring buffer helpers
@@ -385,7 +389,9 @@ int net_sock_listen(uint16_t port) {
 
   struct tcp_pcb *pcb = tcp_new();
   if (!pcb) {
-    sockets[fd].in_use = 0;
+    slot_table_set_flag_by_index(
+        sockets, sizeof(ksocket_t), (uint32_t)offsetof(ksocket_t, in_use),
+        (uint32_t)fd, 0);
     return -1;
   }
 
@@ -393,14 +399,18 @@ int net_sock_listen(uint16_t port) {
   err_t e = tcp_bind(pcb, IP_ADDR_ANY, port);
   if (e != ERR_OK) {
     tcp_close(pcb);
-    sockets[fd].in_use = 0;
+    slot_table_set_flag_by_index(
+        sockets, sizeof(ksocket_t), (uint32_t)offsetof(ksocket_t, in_use),
+        (uint32_t)fd, 0);
     return -1;
   }
 
   struct tcp_pcb *lpcb = tcp_listen(pcb);
   if (!lpcb) {
     tcp_close(pcb);
-    sockets[fd].in_use = 0;
+    slot_table_set_flag_by_index(
+        sockets, sizeof(ksocket_t), (uint32_t)offsetof(ksocket_t, in_use),
+        (uint32_t)fd, 0);
     return -1;
   }
 
@@ -495,7 +505,9 @@ static int net_sock_close_internal(int fd, uint32_t caller_pid, int force_owner)
     s->pcb = NULL;
   }
 
-  s->in_use = 0;
+  slot_table_set_flag_by_index(
+      sockets, sizeof(ksocket_t), (uint32_t)offsetof(ksocket_t, in_use),
+      (uint32_t)fd, 0);
   s->type = SOCK_UNUSED;
   s->owner_pid = 0;
   s->accepted_fd = -1;

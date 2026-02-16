@@ -18,6 +18,7 @@
 #include "window.h"
 #include "net.h"
 #include "arch/i686/mouse.h"
+#include "memlayout.h"
 
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
@@ -38,9 +39,6 @@ typedef struct {
   uint32_t esp;    // Only present for ring transitions (user->kernel)
   uint32_t ss;     // Only present for ring transitions
 } __attribute__((packed)) iret_frame_t;
-
-#define USER_STACK_TOP_PAGE_VADDR 0x7F0000
-#define USER_STACK_PAGES 16
 
 // Write to console or window text buffer (if stdout redirected)
 static int sys_do_write(int fd, const char *buf, size_t len) {
@@ -158,16 +156,16 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
 
   // Allocate and map multi-page user stack (grows downward)
   uint32_t stack_phys_top = 0;
-  uint32_t stack_base = USER_STACK_TOP_PAGE_VADDR - ((USER_STACK_PAGES - 1) * 0x1000);
-  for (int i = 0; i < USER_STACK_PAGES; i++) {
+  uint32_t stack_base = USER_STACK_BASE_VADDR;
+  for (uint32_t i = 0; i < USER_STACK_PAGES; i++) {
     uint32_t phys = pmm_alloc_frame();
     if (!phys) {
-      printf("[exec] failed to allocate stack frame %d/%d\n", i + 1, USER_STACK_PAGES);
+      printf("[exec] failed to allocate stack frame %d/%d\n", (int)(i + 1), (int)USER_STACK_PAGES);
       kfree(data);
       return 0;
     }
     memset((void *)phys, 0, 0x1000);
-    paging_map_page(page_dir, stack_base + (i * 0x1000), phys,
+    paging_map_page(page_dir, stack_base + (i * 0x1000u), phys,
                     PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
     if (i == USER_STACK_PAGES - 1) {
       stack_phys_top = phys;
