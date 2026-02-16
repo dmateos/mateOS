@@ -4,6 +4,7 @@
 #include "arch/i686/timer.h"
 #include "arch/i686/cpu.h"
 #include "task.h"
+#include "utils/kring.h"
 
 #include "lwip/init.h"
 #include "lwip/netif.h"
@@ -283,8 +284,7 @@ typedef struct {
   uint32_t owner_pid;    // Creator/owner task ID
   int accepted_fd;       // For listeners: fd of newly accepted connection (-1 if none)
   uint8_t rx_buf[SOCK_RX_BUF];
-  int rx_head;           // Write position
-  int rx_tail;           // Read position
+  kring_u8_t rx_ring;
   int rx_closed;         // Remote sent FIN
   int err;               // Error flag
 } ksocket_t;
@@ -302,6 +302,7 @@ static int alloc_socket(void) {
       memset(&sockets[i], 0, sizeof(ksocket_t));
       sockets[i].in_use = 1;
       sockets[i].accepted_fd = -1;
+      kring_u8_init(&sockets[i].rx_ring, sockets[i].rx_buf, SOCK_RX_BUF);
       return i;
     }
   }
@@ -310,9 +311,7 @@ static int alloc_socket(void) {
 
 // Ring buffer helpers
 static int rx_buf_used(ksocket_t *s) {
-  int used = s->rx_head - s->rx_tail;
-  if (used < 0) used += SOCK_RX_BUF;
-  return used;
+  return (int)kring_u8_used(&s->rx_ring);
 }
 
 // lwIP callback: data received on a connected socket
@@ -332,10 +331,7 @@ static err_t sock_recv_cb(void *arg, struct tcp_pcb *tpcb,
     uint16_t copy_len = q->len;
     uint8_t *src = (uint8_t *)q->payload;
     for (uint16_t i = 0; i < copy_len; i++) {
-      int next_head = (s->rx_head + 1) % SOCK_RX_BUF;
-      if (next_head == s->rx_tail) break;
-      s->rx_buf[s->rx_head] = src[i];
-      s->rx_head = next_head;
+      if (kring_u8_push(&s->rx_ring, src[i]) < 0) break;
     }
   }
 
@@ -465,8 +461,7 @@ int net_sock_recv(int fd, void *buf, uint32_t len) {
 
   uint8_t *dst = (uint8_t *)buf;
   for (int i = 0; i < avail; i++) {
-    dst[i] = s->rx_buf[s->rx_tail];
-    s->rx_tail = (s->rx_tail + 1) % SOCK_RX_BUF;
+    if (kring_u8_pop(&s->rx_ring, &dst[i]) < 0) return i;
   }
 
   return avail;
@@ -504,8 +499,7 @@ static int net_sock_close_internal(int fd, uint32_t caller_pid, int force_owner)
   s->type = SOCK_UNUSED;
   s->owner_pid = 0;
   s->accepted_fd = -1;
-  s->rx_head = 0;
-  s->rx_tail = 0;
+  kring_u8_reset(&s->rx_ring);
   s->rx_closed = 0;
   s->err = 0;
   return 0;

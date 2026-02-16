@@ -3,6 +3,7 @@
 #include "arch/i686/io.h"
 #include "arch/i686/legacytty.h"
 #include "console.h"
+#include "utils/kring.h"
 
 static int kb_extended = 0;
 
@@ -50,21 +51,18 @@ uint8_t keyboard_translate(uint8_t scancode) {
 }
 
 // Ring buffer for user-mode keyboard input
-static uint8_t key_buffer[KEY_BUFFER_SIZE];
-static volatile int kb_head = 0;
-static volatile int kb_tail = 0;
+static uint8_t key_buffer_storage[KEY_BUFFER_SIZE];
+static kring_u8_t key_buffer;
 static volatile int kb_enabled = 0;
 
 void keyboard_buffer_init(void) {
-  kb_head = 0;
-  kb_tail = 0;
+  kring_u8_init(&key_buffer, key_buffer_storage, KEY_BUFFER_SIZE);
 }
 
 void keyboard_buffer_enable(int enable) {
   kb_enabled = enable;
   if (enable) {
-    kb_head = 0;
-    kb_tail = 0;
+    kring_u8_reset(&key_buffer);
   }
 }
 
@@ -74,22 +72,17 @@ int keyboard_buffer_is_enabled(void) {
 
 int keyboard_buffer_push(uint8_t key) {
   if (!kb_enabled) return -1;
-  int next = (kb_head + 1) % KEY_BUFFER_SIZE;
-  if (next == kb_tail) return -1;  // Full
-  key_buffer[kb_head] = key;
-  kb_head = next;
-  return 0;
+  return kring_u8_push(&key_buffer, key);
 }
 
 uint8_t keyboard_buffer_pop(void) {
-  if (kb_head == kb_tail) return 0;  // Empty
-  uint8_t key = key_buffer[kb_tail];
-  kb_tail = (kb_tail + 1) % KEY_BUFFER_SIZE;
+  uint8_t key = 0;
+  if (kring_u8_pop(&key_buffer, &key) < 0) return 0;
   return key;
 }
 
 int keyboard_buffer_empty(void) {
-  return kb_head == kb_tail;
+  return kring_u8_empty(&key_buffer);
 }
 
 static void keyboard_irq_handler(uint32_t number __attribute__((unused)),

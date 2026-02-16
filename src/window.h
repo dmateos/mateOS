@@ -2,6 +2,7 @@
 #define _WINDOW_H
 
 #include "lib.h"
+#include "utils/kring.h"
 
 #define MAX_WINDOWS 8
 #define WIN_TITLE_MAX 32
@@ -24,10 +25,10 @@ typedef struct {
     uint8_t *buffer;              // kmalloc'd pixel buffer (w*h bytes)
     uint32_t buf_size;
     uint8_t key_buf[WIN_KEY_BUF_SIZE];
-    int key_head, key_tail;
+    kring_u8_t key_ring;
     // Text output ring buffer (for stdout redirection)
     char text_buf[WIN_TEXT_BUF_SIZE];
-    int text_head, text_tail;
+    kring_u8_t text_ring;
 } kernel_window_t;
 
 // Returned to userland by win_list

@@ -24,6 +24,7 @@ RUST_TARGET_DIR = i686-unknown-none
 RUST_LIB = rust/target/$(RUST_TARGET_DIR)/debug/libmateos_rust.a
 
 SRC_C = $(wildcard $(SRCDIR)/*.c)
+SRC_C_UTILS = $(wildcard $(SRCDIR)/utils/*.c)
 SRC_C_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.c)
 SRC_C_LIBALLOC = $(wildcard $(SRCDIR)/liballoc/*.c)
 SRC_C_DRIVERS = $(wildcard $(SRCDIR)/drivers/*.c)
@@ -31,6 +32,7 @@ SRC_S = $(wildcard $(SRCDIR)/*.S)
 SRC_S_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.S)
 
 OBJ_C = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC_C))
+OBJ_C_UTILS = $(patsubst $(SRCDIR)/utils/%.c,$(BUILDDIR)/utils/%.o,$(SRC_C_UTILS))
 OBJ_C_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.c,$(BUILDDIR)/%.o,$(SRC_C_ARCH))
 OBJ_C_LIBALLOC = $(patsubst $(SRCDIR)/liballoc/%.c,$(BUILDDIR)/%.o,$(SRC_C_LIBALLOC))
 OBJ_C_DRIVERS = $(patsubst $(SRCDIR)/drivers/%.c,$(BUILDDIR)/drivers/%.o,$(SRC_C_DRIVERS))
@@ -67,14 +69,18 @@ rust:
 
 $(RUST_LIB): rust
 
-$(TARGET): $(OBJ_C) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(RUST_LIB)
-	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
+$(TARGET): $(OBJ_C) $(OBJ_C_UTILS) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(RUST_LIB)
+	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_UTILS) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
 
 $(KERNEL_VERSION_FILE): tools/gen_version_header.sh
 	./tools/gen_version_header.sh $(KERNEL_VERSION_FILE) $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH) $(VERSION_ABI)
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(BUILDDIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILDDIR)/utils/%.o: $(SRCDIR)/utils/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.c $(KERNEL_VERSION_FILE)

@@ -45,10 +45,8 @@ int window_create(uint32_t pid, int w, int h, const char *title) {
     win->h = h;
     win->buffer = buf;
     win->buf_size = buf_size;
-    win->key_head = 0;
-    win->key_tail = 0;
-    win->text_head = 0;
-    win->text_tail = 0;
+    kring_u8_init(&win->key_ring, win->key_buf, WIN_KEY_BUF_SIZE);
+    kring_u8_init(&win->text_ring, (uint8_t *)win->text_buf, WIN_TEXT_BUF_SIZE);
 
     if (title) {
         int i;
@@ -105,9 +103,8 @@ int window_getkey(int wid, uint32_t pid) {
     kernel_window_t *win = win_get(wid);
     if (!win || win->owner_pid != pid) { cpu_irq_restore(flags); return -1; }
 
-    if (win->key_head == win->key_tail) { cpu_irq_restore(flags); return 0; }
-    uint8_t key = win->key_buf[win->key_tail];
-    win->key_tail = (win->key_tail + 1) % WIN_KEY_BUF_SIZE;
+    uint8_t key = 0;
+    if (kring_u8_pop(&win->key_ring, &key) < 0) { cpu_irq_restore(flags); return 0; }
     cpu_irq_restore(flags);
     return (int)key;
 }
@@ -117,10 +114,7 @@ int window_sendkey(int wid, uint8_t key) {
     kernel_window_t *win = win_get(wid);
     if (!win) { cpu_irq_restore(flags); return -1; }
 
-    int next = (win->key_head + 1) % WIN_KEY_BUF_SIZE;
-    if (next == win->key_tail) { cpu_irq_restore(flags); return -1; }
-    win->key_buf[win->key_head] = key;
-    win->key_head = next;
+    if (kring_u8_push(&win->key_ring, key) < 0) { cpu_irq_restore(flags); return -1; }
     cpu_irq_restore(flags);
     return 0;
 }
@@ -166,10 +160,7 @@ int window_append_text(int wid, const char *data, int len) {
 
     int written = 0;
     for (int i = 0; i < len; i++) {
-        int next = (win->text_head + 1) % WIN_TEXT_BUF_SIZE;
-        if (next == win->text_tail) break;  // Full, drop excess
-        win->text_buf[win->text_head] = data[i];
-        win->text_head = next;
+        if (kring_u8_push(&win->text_ring, (uint8_t)data[i]) < 0) break;  // Full, drop excess
         written++;
     }
     cpu_irq_restore(flags);
@@ -183,9 +174,9 @@ int window_read_text(int wid, uint32_t pid, char *dest, int max_len) {
     if (!win || win->owner_pid != pid) { cpu_irq_restore(flags); return -1; }
 
     int count = 0;
-    while (count < max_len && win->text_tail != win->text_head) {
-        dest[count++] = win->text_buf[win->text_tail];
-        win->text_tail = (win->text_tail + 1) % WIN_TEXT_BUF_SIZE;
+    uint8_t ch = 0;
+    while (count < max_len && kring_u8_pop(&win->text_ring, &ch) == 0) {
+        dest[count++] = (char)ch;
     }
     cpu_irq_restore(flags);
     return count;

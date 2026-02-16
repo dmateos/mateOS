@@ -7,6 +7,8 @@ extern void enable_paging(uint32_t page_directory_physical);
 
 // Number of page tables we use (each covers 4MB)
 #define NUM_PAGE_TABLES 8
+#define USER_STACK_TOP_PAGE_VADDR 0x7F0000
+#define USER_STACK_PAGES 16
 
 // Store pointers for later modification
 static page_directory_t *current_page_dir = NULL;
@@ -62,6 +64,13 @@ void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
   }
 
   printf("Identity mapped first %d MB\n", NUM_PAGE_TABLES * 4);
+  printf("[paging-map] kernel shared (identity): 0x00000000-0x%08x (%d MiB)\n",
+         (NUM_PAGE_TABLES * 0x400000) - 1, NUM_PAGE_TABLES * 4);
+  printf("[paging-map] table1 split: heap(shared)=0x00400000-0x005FFFFF, "
+         "user(per-proc)=0x00700000-0x007FFFFF\n");
+  printf("[paging-map] user stack default: 0x%08x-0x%08x (%d pages, down-growth)\n",
+         USER_STACK_TOP_PAGE_VADDR - ((USER_STACK_PAGES - 1) * 0x1000),
+         USER_STACK_TOP_PAGE_VADDR + 0x0FFF, USER_STACK_PAGES);
   printf("Page directory at 0x%x\n", page_dir);
   printf("Enabling paging...\n");
 
