@@ -11,54 +11,16 @@
 #include "task.h"
 #include "net.h"
 #include "version.h"
+#include "utils/strbuf.h"
 
 static char vgen_buf[4096];
 
 typedef uint32_t (*vgen_fn_t)(char *dst, uint32_t cap);
 
-static int append_char(char *dst, uint32_t cap, uint32_t *len, char c) {
-    if (*len >= cap) return -1;
-    dst[*len] = c;
-    (*len)++;
-    return 0;
-}
-
-static int append_cstr(char *dst, uint32_t cap, uint32_t *len, const char *s) {
-    while (*s) {
-        if (append_char(dst, cap, len, *s++) < 0) return -1;
-    }
-    return 0;
-}
-
-static int append_dec_u32(char *dst, uint32_t cap, uint32_t *len, uint32_t v) {
-    if (v == 0) return append_char(dst, cap, len, '0');
-    char tmp[16];
-    int t = 0;
-    while (v > 0 && t < (int)sizeof(tmp)) {
-        tmp[t++] = (char)('0' + (v % 10));
-        v /= 10;
-    }
-    for (int i = t - 1; i >= 0; i--) {
-        if (append_char(dst, cap, len, tmp[i]) < 0) return -1;
-    }
-    return 0;
-}
-
-static int append_hex_u32(char *dst, uint32_t cap, uint32_t *len, uint32_t v) {
-    if (append_cstr(dst, cap, len, "0x") < 0) return -1;
-    int started = 0;
-    for (int shift = 28; shift >= 0; shift -= 4) {
-        uint32_t nib = (v >> (uint32_t)shift) & 0xF;
-        if (!started && nib == 0 && shift > 0) continue;
-        started = 1;
-        char c = (char)(nib < 10 ? ('0' + nib) : ('a' + (nib - 10)));
-        if (append_char(dst, cap, len, c) < 0) return -1;
-    }
-    if (!started) {
-        if (append_char(dst, cap, len, '0') < 0) return -1;
-    }
-    return 0;
-}
+#define append_char strbuf_append_char
+#define append_cstr strbuf_append_cstr
+#define append_dec_u32 strbuf_append_dec_u32
+#define append_hex_u32 strbuf_append_hex_u32
 
 static uint32_t vgen_meminfo(char *dst, uint32_t cap) {
     uint32_t len = 0;
