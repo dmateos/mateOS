@@ -181,6 +181,7 @@ static int serve_os_page(int client) {
     if (append_section(&out_len, "knet.mos", "/knet.mos") < 0) return -1;
     if (append_section(&out_len, "ktasks.mos", "/ktasks.mos") < 0) return -1;
     if (append_section(&out_len, "kdebug.mos", "/kdebug.mos") < 0) return -1;
+    if (append_section(&out_len, "kversion.mos", "/kversion.mos") < 0) return -1;
 
     if (append_cstr(os_page, sizeof(os_page), &out_len,
                     "</body></html>\n") < 0) {

@@ -25,17 +25,27 @@ static const uint8_t kb_map_shift[] = {
 
 #define LSHIFT_SCAN 0x2A
 #define RSHIFT_SCAN 0x36
+#define LCTRL_SCAN  0x1D
 
 static volatile int shift_held = 0;
+static volatile int ctrl_held = 0;
 
 uint8_t keyboard_translate(uint8_t scancode) {
-  // Track shift key press/release
+  // Track modifier key press/release
   if (scancode == LSHIFT_SCAN || scancode == RSHIFT_SCAN) {
     shift_held = 1;
     return 0;
   }
   if (scancode == (LSHIFT_SCAN | 0x80) || scancode == (RSHIFT_SCAN | 0x80)) {
     shift_held = 0;
+    return 0;
+  }
+  if (scancode == LCTRL_SCAN) {
+    ctrl_held = 1;
+    return 0;
+  }
+  if (scancode == (LCTRL_SCAN | 0x80)) {
+    ctrl_held = 0;
     return 0;
   }
 
@@ -47,7 +57,14 @@ uint8_t keyboard_translate(uint8_t scancode) {
 
   const uint8_t *map = shift_held ? kb_map_shift : kb_map;
   char c = map[scancode] & 0x7F;
-  return c ? c : 0;
+  if (!c) return 0;
+
+  // Ctrl+letter produces ASCII 1-26 (Ctrl+A=1, Ctrl+S=19, etc.)
+  if (ctrl_held && c >= 'a' && c <= 'z') {
+    return (uint8_t)(c - 'a' + 1);
+  }
+
+  return c;
 }
 
 // Ring buffer for user-mode keyboard input
