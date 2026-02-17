@@ -71,13 +71,14 @@ Inspired by experimenting with a simple OS on the 6502.
 
 ### User Mode Support
 - **TSS (Task State Segment)** - Kernel stack switching on ring transitions
-- **50 Syscalls** via int 0x80:
+- **51 Syscalls** via int 0x80:
   - **Process:** write, exit, yield, exec, spawn, wait, wait_nb, getpid, tasklist, shutdown, sleep_ms, detach, kill, getticks
   - **Graphics:** gfx_init, gfx_exit, gfx_info, getmouse
   - **Keyboard:** getkey
   - **Filesystem:** readdir, open, fread, fwrite, close, seek, stat, unlink
   - **Window Manager:** win_create, win_destroy, win_write, win_read, win_getkey, win_sendkey, win_list, win_read_text, win_set_stdout
   - **Networking:** net_ping, net_cfg, net_get, sock_listen, sock_accept, sock_send, sock_recv, sock_close, netstats
+  - **Memory:** sbrk
   - **System Info:** lspci, lsirq, meminfo, cpuinfo
 - **Memory Isolation** - User pages marked non-supervisor, kernel pages protected
 - **Separate Stacks** - Each user process has independent kernel and user stacks
@@ -363,6 +364,7 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 | 44 | SYS_KILL | kill(pid) | Terminate task by PID |
 | 45 | SYS_GETTICKS | getticks() | Get timer ticks (100Hz) |
 | 50 | SYS_NETSTATS | netstats(&rx, &tx) | Get network packet counts |
+| 51 | SYS_SBRK | sbrk(increment) | Move program break (user heap) |
 
 ## Project Structure
 
@@ -445,11 +447,23 @@ User-space programs:
 - `tasks.c` - Show task list
 - `kill.c` - Kill process by PID
 - `ifconfig.c` - Network configuration
+- `smallerc_entry.c` - SmallerC launcher (`_start` -> upstream `main`)
+- `as86.c` - In-OS x86 assembler (phase-1, flat binary subset)
+- `ld86.c` - In-OS linker phase-1 (flat binary -> ELF32 single segment)
+- `cc.c` - In-OS C build driver (`smallerc` -> `as86` -> `ld86`)
 - `shutdown.c` - ACPI power off
 - `ugfx.c/h` - Userland graphics library (pixel, rect, text, buffer ops)
 - `syscalls.c/h` - Syscall wrappers (int 0x80; IDs 46-49 removed)
 - `cmd_shared.c/h` - Shared shell builtins (help, clear, exit)
 - `user.ld` - Linker script (loads at 0x700000)
+
+### `userland/smallerc/`
+SmallerC port workspace:
+- `vendor/smlrc.c` - Upstream SmallerC compiler core
+- `vendor/fp.c`, `vendor/cgx86.c`, `vendor/cgmips.c` - codegen/helpers included by `smlrc.c`
+- `compat_runtime.c` - mateOS runtime compatibility layer used by SmallerC
+- `include/` - local minimal libc headers for no-host-header build
+- `README.md` - Bring-up status and next steps
 
 ### `userland/doom/`
 doomgeneric DOOM port:

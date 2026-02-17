@@ -98,7 +98,7 @@ static int sys_do_sleepms(uint32_t ms) {
 // Load ELF segments into a page directory. Returns entry point, or 0 on error.
 // If stack_phys_out is non-NULL, stores the physical address of the user stack page.
 uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
-                       uint32_t *stack_phys_out) {
+                       uint32_t *stack_phys_out, uint32_t *user_end_out) {
   void *data = NULL;
   uint32_t size = 0;
   if (vfs_read_file(filename, &data, &size) < 0) {
@@ -115,6 +115,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
 
   // Load program segments into per-process physical frames
   elf32_phdr_t *phdr = (elf32_phdr_t *)((uint8_t *)elf + elf->e_phoff);
+  uint32_t user_end = USER_REGION_START;
 
   for (int i = 0; i < elf->e_phnum; i++) {
     if (phdr[i].p_type != PT_LOAD) continue;
@@ -128,6 +129,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
 
     uint32_t seg_start = vaddr & ~0xFFF;
     uint32_t seg_end = (vaddr + memsz + 0xFFF) & ~0xFFF;
+    if (seg_end > user_end) user_end = seg_end;
 
     for (uint32_t page_vaddr = seg_start; page_vaddr < seg_end; page_vaddr += 0x1000) {
       uint32_t phys = pmm_alloc_frame();
@@ -175,6 +177,9 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
   if (stack_phys_out) {
     *stack_phys_out = stack_phys_top;
   }
+  if (user_end_out) {
+    *user_end_out = user_end;
+  }
 
   uint32_t entry = elf->e_entry;
   kfree(data);
@@ -190,8 +195,11 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     return -1;
   }
 
-  uint32_t entry = load_elf_into(current->page_dir, filename, NULL);
+  uint32_t user_end = USER_REGION_START;
+  uint32_t entry = load_elf_into(current->page_dir, filename, NULL, &user_end);
   if (!entry) return -1;
+  current->user_brk_min = user_end;
+  current->user_brk = user_end;
 
   // Flush TLB
   paging_switch(current->page_dir);
@@ -426,6 +434,41 @@ static int sys_do_getpid(void) {
   return current ? (int)current->id : -1;
 }
 
+// sbrk: move user program break and map pages on demand.
+// Returns previous break on success, (void*)-1 on failure.
+static uint32_t sys_do_sbrk(int32_t increment) {
+  task_t *current = task_current();
+  if (!current || current->is_kernel || !current->page_dir) return (uint32_t)-1;
+
+  uint32_t old_brk = current->user_brk;
+  if (old_brk < current->user_brk_min) old_brk = current->user_brk_min;
+  uint32_t new_brk = old_brk;
+
+  if (increment > 0) {
+    new_brk = old_brk + (uint32_t)increment;
+    if (new_brk < old_brk) return (uint32_t)-1;  // overflow
+  } else if (increment < 0) {
+    // Keep it simple for now: no shrinking.
+    return (uint32_t)-1;
+  }
+
+  if (new_brk < current->user_brk_min) return (uint32_t)-1;
+  if (new_brk >= USER_STACK_BASE_VADDR) return (uint32_t)-1;
+
+  uint32_t map_start = (old_brk + 0xFFFu) & ~0xFFFu;
+  uint32_t map_end = (new_brk + 0xFFFu) & ~0xFFFu;
+  for (uint32_t va = map_start; va < map_end; va += 0x1000u) {
+    uint32_t phys = pmm_alloc_frame();
+    if (!phys) return (uint32_t)-1;
+    memset((void *)phys, 0, 0x1000u);
+    paging_map_page(current->page_dir, va, phys,
+                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+  }
+
+  current->user_brk = new_brk;
+  return old_brk;
+}
+
 static uint32_t sys_do_getticks(void) {
   return get_tick_count();
 }
@@ -644,6 +687,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_GETTICKS:
       return sys_do_getticks();
+
+    case SYS_SBRK:
+      return sys_do_sbrk((int32_t)ebx);
 
     default:
       return (uint32_t)-1;

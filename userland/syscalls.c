@@ -237,3 +237,7 @@ unsigned int get_ticks(void) {
 int detach(void) {
     return __syscall0(SYS_DETACH);
 }
+
+void *sbrk(int increment) {
+    return (void *)(unsigned int)__syscall1(SYS_SBRK, (unsigned int)increment);
+}

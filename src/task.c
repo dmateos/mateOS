@@ -9,6 +9,7 @@
 #include "pmm.h"
 #include "window.h"
 #include "net.h"
+#include "memlayout.h"
 
 // Task array and management
 static task_t tasks[MAX_TASKS];
@@ -55,6 +56,8 @@ void task_init(void) {
   idle->kernel_stack = NULL;
   idle->kernel_stack_top = 0;
   idle->page_dir = NULL;
+  idle->user_brk_min = 0;
+  idle->user_brk = 0;
   idle->runtime_ticks = 0;
 
   current_task = idle;
@@ -143,6 +146,8 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->kernel_stack = NULL;
   task->kernel_stack_top = 0;
   task->page_dir = NULL;
+  task->user_brk_min = 0;
+  task->user_brk = 0;
   task->stdout_wid = -1;
   task->detached = 0;
   task->runtime_ticks = 0;
@@ -212,7 +217,8 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
 
   // Load ELF into the new address space (allocates code + stack pages)
   uint32_t stack_phys = 0;
-  uint32_t elf_entry = load_elf_into(page_dir, filename, &stack_phys);
+  uint32_t user_end = USER_REGION_START;
+  uint32_t elf_entry = load_elf_into(page_dir, filename, &stack_phys, &user_end);
   if (!elf_entry) {
     paging_destroy_address_space(page_dir);
     return NULL;
@@ -220,7 +226,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
 
   // --- Place argc/argv on user stack ---
   // The stack page physical address is identity-mapped in kernel space,
-  // so we can write directly to stack_phys. Virtual address = 0x7F0000.
+  // so we can write directly to stack_phys. Virtual address near USER_STACK_TOP_PAGE_VADDR.
   // Layout (top-down):
   //   strings packed at top of page
   //   argv[argc] = NULL
@@ -241,7 +247,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
     if (str_off < slen + 64) break;     // safety: keep room for pointers
     str_off -= slen;
     memcpy(page + str_off, argv[i], slen);
-    str_vaddrs[i] = 0x7F0000 + str_off;
+    str_vaddrs[i] = USER_STACK_TOP_PAGE_VADDR + str_off;
   }
 
   // Step 2: Align down to 4-byte boundary
@@ -257,7 +263,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
     str_off -= 4;
     *(uint32_t *)(page + str_off) = str_vaddrs[i];
   }
-  uint32_t argv_vaddr = 0x7F0000 + str_off;  // virtual addr of argv[0]
+  uint32_t argv_vaddr = USER_STACK_TOP_PAGE_VADDR + str_off;  // virtual addr of argv[0]
   (void)argv_end;
 
   // Step 4: Write argc, argv pointer, and fake return address below the array.
@@ -271,7 +277,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   str_off -= 4;
   *(uint32_t *)(page + str_off) = 0;  // fake return address  (esp)
 
-  uint32_t user_esp = 0x7F0000 + str_off;
+  uint32_t user_esp = USER_STACK_TOP_PAGE_VADDR + str_off;
 
   // Allocate kernel stack (for interrupts/syscalls when in user mode)
   uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
@@ -295,6 +301,8 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   task->stack = NULL;
   task->entry = NULL;
   task->page_dir = page_dir;
+  task->user_brk_min = user_end;
+  task->user_brk = user_end;
 
   // User mode task
   task->is_kernel = 0;

@@ -7,6 +7,10 @@ int strcmp(const char *a, const char *b);
 int strncmp(const char *a, const char *b, int n);
 void *memset(void *s, int c, unsigned int n);
 void *memcpy(void *dst, const void *src, unsigned int n);
+void *malloc(unsigned int n);
+void *calloc(unsigned int n, unsigned int sz);
+void *realloc(void *p, unsigned int n);
+void free(void *p);
 
 // I/O (stdout)
 void print(const char *s);

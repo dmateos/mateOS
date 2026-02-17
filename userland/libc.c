@@ -1,6 +1,10 @@
 #include "libc.h"
 #include "syscalls.h"
 
+typedef struct {
+    unsigned int size;
+} alloc_hdr_t;
+
 // ---- String functions ----
 
 int strlen(const char *s) {
@@ -35,6 +39,44 @@ void *memcpy(void *dst, const void *src, unsigned int n) {
     for (unsigned int i = 0; i < n; i++)
         d[i] = s[i];
     return dst;
+}
+
+// ---- Heap allocation (simple sbrk-backed allocator) ----
+
+static unsigned int align8(unsigned int n) {
+    return (n + 7u) & ~7u;
+}
+
+void *malloc(unsigned int n) {
+    if (n == 0) return 0;
+    unsigned int need = align8(n + (unsigned int)sizeof(alloc_hdr_t));
+    alloc_hdr_t *h = (alloc_hdr_t *)sbrk((int)need);
+    if ((unsigned int)h == 0xFFFFFFFFu) return 0;
+    h->size = n;
+    return (void *)(h + 1);
+}
+
+void *calloc(unsigned int n, unsigned int sz) {
+    unsigned int total = n * sz;
+    void *p = malloc(total);
+    if (p) memset(p, 0, total);
+    return p;
+}
+
+void free(void *p) {
+    (void)p;
+    // No-op for now. This is sufficient for early compiler bring-up.
+}
+
+void *realloc(void *p, unsigned int n) {
+    if (!p) return malloc(n);
+    if (n == 0) return 0;
+    alloc_hdr_t *h = ((alloc_hdr_t *)p) - 1;
+    void *np = malloc(n);
+    if (!np) return 0;
+    unsigned int copy = h->size < n ? h->size : n;
+    memcpy(np, p, copy);
+    return np;
 }
 
 // ---- I/O functions ----

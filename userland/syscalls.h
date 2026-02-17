@@ -47,6 +47,7 @@
 #define SYS_KILL           44
 #define SYS_GETTICKS       45
 #define SYS_NETSTATS       50
+#define SYS_SBRK           51
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -151,6 +152,7 @@ int stat(const char *path, stat_t *st);
 int unlink(const char *path);
 int kill(int task_id);
 unsigned int get_ticks(void);
+void *sbrk(int increment);
 
 // Process detach (for GUI apps)
 int detach(void);

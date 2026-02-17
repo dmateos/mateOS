@@ -83,6 +83,8 @@ typedef struct task {
 
   // Per-process address space
   page_directory_t *page_dir;     // Per-process page directory (NULL for kernel tasks)
+  uint32_t user_brk_min;          // Lowest allowed user brk (typically end of loaded image)
+  uint32_t user_brk;              // Current user brk (program break)
 
   // stdout redirection: window ID for write(1,...) output (-1 = kernel console)
   int stdout_wid;

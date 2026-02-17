@@ -50,6 +50,7 @@
 #define SYS_KILL           44  // kill(task_id) -> 0
 #define SYS_GETTICKS       45  // getticks() -> timer ticks (100Hz)
 #define SYS_NETSTATS       50  // netstats(out_rx, out_tx) -> 0
+#define SYS_SBRK           51  // sbrk(increment) -> old brk, -1 on error
 
 // Task info returned by SYS_TASKLIST
 typedef struct {
@@ -66,9 +67,10 @@ void syscall_init(void);
 
 // Load ELF from ramfs into a page directory. Returns entry point, or 0 on error.
 // If stack_phys_out is non-NULL, stores the physical address of the user stack page.
+// If user_end_out is non-NULL, stores the first unmapped byte above loaded PT_LOAD segments.
 struct page_directory;
 uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
-                       uint32_t *stack_phys_out);
+                       uint32_t *stack_phys_out, uint32_t *user_end_out);
 
 // Syscall handler called from assembly
 // Arguments passed in registers: eax=syscall#, ebx=arg1, ecx=arg2, edx=arg3
