@@ -21,7 +21,7 @@ This folder tracks the in-OS SmallerC bring-up work.
 ## What Works Right Now
 - `smallerc.elf` is built from upstream SmallerC core (`smlrc.c`).
 - `smallerc_entry.c` forwards mateOS `_start` to SmallerC `main()`.
-- `cc.elf` can build simple C programs in-OS using `smallerc.elf`.
+- `cc.elf` can build simple C programs in-OS using `smallerc.elf` through `as86 -f obj` + `ld86`.
 
 ## Current Temporary Integration
 1. `cc.c` injects runtime asm (`$_start`, `$print`) into compiler output.

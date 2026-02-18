@@ -36,7 +36,7 @@ static int ends_with_ci(const char *s, const char *sfx) {
 }
 
 static int is_cc_temp_name(const char *name) {
-    // Match cc_<digits>.asm / cc_<digits>.bin (case-insensitive suffix).
+    // Match cc_<digits>.asm / cc_<digits>.obj / cc_<digits>.bin.
     if (!(name[0] == 'c' || name[0] == 'C')) return 0;
     if (!(name[1] == 'c' || name[1] == 'C')) return 0;
     if (name[2] != '_') return 0;
@@ -47,7 +47,7 @@ static int is_cc_temp_name(const char *name) {
         have_digit = 1;
     }
     if (!have_digit) return 0;
-    if (!(ends_with_ci(name, ".asm") || ends_with_ci(name, ".bin"))) return 0;
+    if (!(ends_with_ci(name, ".asm") || ends_with_ci(name, ".obj") || ends_with_ci(name, ".bin"))) return 0;
     return 1;
 }
 
@@ -222,7 +222,7 @@ void _start(int argc, char **argv) {
     char out_buf[160];
     char pid_buf[16];
     char asm_tmp[64];
-    char bin_tmp[64];
+    char obj_tmp[64];
 
     if (argc < 2) {
         usage();
@@ -279,13 +279,13 @@ void _start(int argc, char **argv) {
 
     itoa(getpid(), pid_buf);
     memset(asm_tmp, 0, sizeof(asm_tmp));
-    memset(bin_tmp, 0, sizeof(bin_tmp));
+    memset(obj_tmp, 0, sizeof(obj_tmp));
     append_str(asm_tmp, sizeof(asm_tmp), "cc_");
     append_str(asm_tmp, sizeof(asm_tmp), pid_buf);
     append_str(asm_tmp, sizeof(asm_tmp), ".asm");
-    append_str(bin_tmp, sizeof(bin_tmp), "cc_");
-    append_str(bin_tmp, sizeof(bin_tmp), pid_buf);
-    append_str(bin_tmp, sizeof(bin_tmp), ".bin");
+    append_str(obj_tmp, sizeof(obj_tmp), "cc_");
+    append_str(obj_tmp, sizeof(obj_tmp), pid_buf);
+    append_str(obj_tmp, sizeof(obj_tmp), ".obj");
 
     cleanup_stale_cc_temps();
 
@@ -299,43 +299,43 @@ void _start(int argc, char **argv) {
             0
         };
         if (run_stage("smallerc.elf", a1, 5) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
             exit(1);
         }
         if (require_nonempty_file(asm_tmp, "smallerc") != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
             exit(1);
         }
         if (inject_runtime_asm(asm_tmp) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
             exit(1);
         }
     }
     {
-        const char *a2[] = { "as86.elf", "-f", "bin", "--org", "0x700000", "-o", bin_tmp, asm_tmp, 0 };
+        const char *a2[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", obj_tmp, asm_tmp, 0 };
         if (run_stage("as86.elf", a2, 8) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
             exit(1);
         }
-        if (require_nonempty_file(bin_tmp, "as86") != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+        if (require_nonempty_file(obj_tmp, "as86") != 0) {
+            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
             exit(1);
         }
     }
     {
-        const char *a3[] = { "ld86.elf", "-o", output, bin_tmp, 0 };
+        const char *a3[] = { "ld86.elf", "-o", output, obj_tmp, 0 };
         if (run_stage("ld86.elf", a3, 4) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
             exit(1);
         }
     }
 
-    if (!keep_temps) cleanup_tmp_pair(asm_tmp, bin_tmp);
+    if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
     else {
         print("cc: temp files: ");
         print(asm_tmp);
         print(" ");
-        print(bin_tmp);
+        print(obj_tmp);
         print("\n");
     }
 

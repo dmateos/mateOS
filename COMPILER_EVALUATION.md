@@ -9,7 +9,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - `as86.elf` assembles the current SmallerC output subset to flat binary.
 - `ld86.elf` wraps flat binary into ELF32 (single `PT_LOAD`).
 - `cc.elf` drives the full in-OS pipeline:
-  - `smallerc -> as86 -> ld86`
+  - `smallerc -> as86 -f obj -> ld86`
 - Basic programs now build and run in-OS:
   - `return 0;`
   - `print("..."); return 0;`
@@ -72,4 +72,4 @@ Inside mateOS:
 - `app.elf`
 
 `cc` now removes temp files by default.
-- Use `--keep-temps` to keep `cc_<pid>.asm` and `cc_<pid>.bin` for debugging.
+- Use `--keep-temps` to keep `cc_<pid>.asm` and `cc_<pid>.obj` for debugging.
