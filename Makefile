@@ -179,7 +179,9 @@ endif
 	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET) $(QEMU_DISK)
 
 $(FAT16_IMG):
-	python3 tools/mkfat16_test_disk.py $(FAT16_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),)
+	python3 tools/mkfat16_test_disk.py $(FAT16_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),) \
+		$(if $(wildcard test.c),--add test.c,) \
+		$(if $(wildcard test2.c),--add test2.c,)
 
 fat16img: $(FAT16_IMG)
 

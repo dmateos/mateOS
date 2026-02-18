@@ -18,6 +18,12 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - End-to-end in-OS C compilation is now functional for simple programs.
 - This is **phase-1 functional**, not yet a clean toolchain architecture.
 
+### Recently Completed
+- Implemented real section-aware flat layout in `as86` for `.text/.rodata/.data/.bss`.
+- Removed `cc` section-reorder hack.
+- Added `cc` temp-file cleanup by default (`--keep-temps` opt-in).
+- Verified in-OS smoke tests: return-only and print cases.
+
 ## Current Hacks / Technical Debt
 
 1. `cc.c` rewrites generated asm by hand.
@@ -38,7 +44,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 
 ## Next Steps (Priority Order)
 
-1. Replace asm text surgery in `cc`.
+1. Replace remaining asm text surgery in `cc`.
 - Remove remaining runtime injection hacks.
 
 2. Add relocatable object support.
@@ -63,8 +69,5 @@ Inside mateOS:
 - `cc test.c -o app.elf` (print sample)
 - `app.elf`
 
-`cc` currently leaves temp files:
-- `cc_<pid>.asm`
-- `cc_<pid>.bin`
-
-This is intentional for bring-up/debug.
+`cc` now removes temp files by default.
+- Use `--keep-temps` to keep `cc_<pid>.asm` and `cc_<pid>.bin` for debugging.
