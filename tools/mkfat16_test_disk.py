@@ -5,6 +5,7 @@ Always includes TEST.TXT. Optionally includes a DOOM IWAD in root.
 """
 
 import argparse
+import os
 import struct
 
 
@@ -35,6 +36,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out", nargs="?", default="fat16_test.img")
     ap.add_argument("wad", nargs="?", default=None, help="Optional path to DOOM1.WAD")
+    ap.add_argument(
+        "--add",
+        action="append",
+        default=[],
+        help="Additional host file to include in FAT16 root (can repeat)",
+    )
     args = ap.parse_args()
 
     # 8 MiB FAT16 image:
@@ -82,6 +89,9 @@ def main():
     if args.wad:
         with open(args.wad, "rb") as f:
             files.append(("DOOM1.WAD", f.read()))
+    for p in args.add:
+        with open(p, "rb") as f:
+            files.append((os.path.basename(p), f.read()))
 
     # FAT tables
     for fat_i in range(fat_count):

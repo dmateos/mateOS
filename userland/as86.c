@@ -9,7 +9,8 @@
 
 typedef struct {
     char name[MAX_NAME];
-    unsigned int addr;
+    unsigned int offset;
+    int section;
     int defined;
 } label_t;
 
@@ -35,14 +36,27 @@ typedef struct {
     } mem;
 } operand_t;
 
+enum {
+    SEC_TEXT = 0,
+    SEC_RODATA = 1,
+    SEC_DATA = 2,
+    SEC_BSS = 3,
+    SEC_COUNT = 4
+};
+
 typedef struct {
     const char *src;
     int src_len;
     int pass;
-    unsigned int pc;
     unsigned int org;
+    int cur_sec;
+    unsigned int sec_pc[SEC_COUNT];
+    unsigned int sec_size[SEC_COUNT];
+    unsigned int sec_base[SEC_COUNT];
+    unsigned char *sec_out[SEC_COUNT];
+    int sec_cap[SEC_COUNT];
+    int sec_len[SEC_COUNT];
     unsigned char *out;
-    int out_cap;
     int out_len;
     label_t labels[MAX_LABELS];
     int label_count;
@@ -51,6 +65,10 @@ typedef struct {
     int line_no;
     char cur_line[MAX_LINE];
 } asm_ctx_t;
+
+static unsigned int cur_pc(asm_ctx_t *ctx) {
+    return ctx->org + ctx->sec_base[ctx->cur_sec] + ctx->sec_pc[ctx->cur_sec];
+}
 
 static char to_lower(char c) {
     if (c >= 'A' && c <= 'Z') return (char)(c - 'A' + 'a');
@@ -210,7 +228,7 @@ static int get_label_index(asm_ctx_t *ctx, const char *name, int create) {
     return idx;
 }
 
-static int define_label(asm_ctx_t *ctx, const char *name, unsigned int addr) {
+static int define_label(asm_ctx_t *ctx, const char *name, unsigned int offset, int section) {
     int idx = get_label_index(ctx, name, 1);
     if (idx < 0) return 0;
     if (ctx->labels[idx].defined && ctx->pass == 1) {
@@ -218,7 +236,8 @@ static int define_label(asm_ctx_t *ctx, const char *name, unsigned int addr) {
         ctx->had_error = 1;
         return 0;
     }
-    ctx->labels[idx].addr = addr;
+    ctx->labels[idx].offset = offset;
+    ctx->labels[idx].section = section;
     ctx->labels[idx].defined = 1;
     return 1;
 }
@@ -233,31 +252,32 @@ static int resolve_label(asm_ctx_t *ctx, const char *name, int *out) {
         *out = 0;
         return 0;
     }
-    *out = (int)ctx->labels[idx].addr;
+    *out = (int)(ctx->org + ctx->sec_base[ctx->labels[idx].section] + ctx->labels[idx].offset);
     return 1;
 }
 
 static int emit8(asm_ctx_t *ctx, unsigned int v) {
     if (ctx->pass == 2) {
-        if (!ctx->out || ctx->out_len >= ctx->out_cap) {
-            int new_cap = ctx->out_cap > 0 ? (ctx->out_cap * 2) : 1024;
-            if (new_cap < ctx->out_len + 1) new_cap = ctx->out_len + 1;
-            unsigned char *nb = (unsigned char *)realloc(ctx->out, (unsigned int)new_cap);
+        int s = ctx->cur_sec;
+        if (!ctx->sec_out[s] || ctx->sec_len[s] >= ctx->sec_cap[s]) {
+            int new_cap = ctx->sec_cap[s] > 0 ? (ctx->sec_cap[s] * 2) : 1024;
+            if (new_cap < ctx->sec_len[s] + 1) new_cap = ctx->sec_len[s] + 1;
+            unsigned char *nb = (unsigned char *)realloc(ctx->sec_out[s], (unsigned int)new_cap);
             if (!nb) {
                 print_err("output too large");
                 ctx->had_error = 1;
                 return 0;
             }
             // Zero-fill the newly added region for deterministic output.
-            if (new_cap > ctx->out_cap) {
-                memset(nb + ctx->out_cap, 0, (unsigned int)(new_cap - ctx->out_cap));
+            if (new_cap > ctx->sec_cap[s]) {
+                memset(nb + ctx->sec_cap[s], 0, (unsigned int)(new_cap - ctx->sec_cap[s]));
             }
-            ctx->out = nb;
-            ctx->out_cap = new_cap;
+            ctx->sec_out[s] = nb;
+            ctx->sec_cap[s] = new_cap;
         }
-        ctx->out[ctx->out_len++] = (unsigned char)(v & 0xFFu);
+        ctx->sec_out[s][ctx->sec_len[s]++] = (unsigned char)(v & 0xFFu);
     }
-    ctx->pc++;
+    ctx->sec_pc[ctx->cur_sec]++;
     return 1;
 }
 
@@ -378,8 +398,6 @@ static int resolve_imm(asm_ctx_t *ctx, operand_t *op, int *out) {
         return 1;
     }
     if (op->kind == OP_LABEL) {
-        if (resolve_label(ctx, op->label, out)) return 1;
-        // Pass 1 must allow forward references; pass 2 resolves strictly.
         if (ctx->pass == 1) {
             // Use a non-small placeholder to force wide immediate encodings.
             // If we used 0, pass 1 might choose imm8 forms (e.g. push 0x00),
@@ -387,7 +405,7 @@ static int resolve_imm(asm_ctx_t *ctx, operand_t *op, int *out) {
             *out = 0x1000;
             return 1;
         }
-        return 0;
+        return resolve_label(ctx, op->label, out);
     }
     return 0;
 }
@@ -547,7 +565,7 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
     if (streqi(mn, "call") && opn == 1) {
         if (ops[0].kind == OP_LABEL || ops[0].kind == OP_IMM) {
             if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
-            int rel = imm - ((int)ctx->pc + 5);
+            int rel = imm - ((int)cur_pc(ctx) + 5);
             return emit8(ctx, 0xE8) && emit32(ctx, (unsigned int)rel);
         }
         return emit8(ctx, 0xFF) && emit_rm_operand(ctx, 2, &ops[0]);
@@ -556,7 +574,7 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
     if (streqi(mn, "jmp") && opn == 1) {
         if (ops[0].kind == OP_LABEL || ops[0].kind == OP_IMM) {
             if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
-            int rel = imm - ((int)ctx->pc + 5);
+            int rel = imm - ((int)cur_pc(ctx) + 5);
             return emit8(ctx, 0xE9) && emit32(ctx, (unsigned int)rel);
         }
         return emit8(ctx, 0xFF) && emit_rm_operand(ctx, 4, &ops[0]);
@@ -564,7 +582,7 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
 
     if (is_jcc(mn, &cc) && opn == 1) {
         if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
-        int rel = imm - ((int)ctx->pc + 6);
+        int rel = imm - ((int)cur_pc(ctx) + 6);
         return emit8(ctx, 0x0F) && emit8(ctx, (unsigned int)(0x80 + cc)) && emit32(ctx, (unsigned int)rel);
     }
 
@@ -787,7 +805,7 @@ static int process_line(asm_ctx_t *ctx, char *line) {
         if (len <= 0 || len >= MAX_NAME) return 1;
         memcpy(name, s, (unsigned int)len);
         name[len] = 0;
-        define_label(ctx, name, ctx->pc);
+        define_label(ctx, name, ctx->sec_pc[ctx->cur_sec], ctx->cur_sec);
         s = ltrim(colon + 1);
         if (!s[0]) return 1;
     }
@@ -801,7 +819,30 @@ static int process_line(asm_ctx_t *ctx, char *line) {
     mnem[mi] = 0;
     char *rest = ltrim(s + mi);
 
-    if (streqi(mnem, "bits") || streqi(mnem, "section") || streqi(mnem, "global") || streqi(mnem, "extern")) {
+    if (streqi(mnem, "bits") || streqi(mnem, "global") || streqi(mnem, "extern")) {
+        return 1;
+    }
+
+    if (streqi(mnem, "section")) {
+        char sec[MAX_TOK];
+        copy_lim(sec, rest, MAX_TOK);
+        char *p = ltrim(sec);
+        rtrim(p);
+        if (!p[0]) {
+            print_err("missing section name");
+            ctx->had_error = 1;
+            return 0;
+        }
+        if (p[0] == '.') p++;
+        if (streqi(p, "text")) ctx->cur_sec = SEC_TEXT;
+        else if (streqi(p, "rodata")) ctx->cur_sec = SEC_RODATA;
+        else if (streqi(p, "data")) ctx->cur_sec = SEC_DATA;
+        else if (streqi(p, "bss")) ctx->cur_sec = SEC_BSS;
+        else {
+            print_err2("unknown section: ", p);
+            ctx->had_error = 1;
+            return 0;
+        }
         return 1;
     }
 
@@ -812,9 +853,11 @@ static int process_line(asm_ctx_t *ctx, char *line) {
             ctx->had_error = 1;
             return 0;
         }
-        if (ctx->pc == ctx->org) {
+        if (ctx->sec_pc[SEC_TEXT] == 0 &&
+            ctx->sec_pc[SEC_RODATA] == 0 &&
+            ctx->sec_pc[SEC_DATA] == 0 &&
+            ctx->sec_pc[SEC_BSS] == 0) {
             ctx->org = (unsigned int)v;
-            ctx->pc = (unsigned int)v;
             return 1;
         }
         print_err("org only supported before output");
@@ -829,7 +872,7 @@ static int process_line(asm_ctx_t *ctx, char *line) {
             ctx->had_error = 1;
             return 0;
         }
-        while ((ctx->pc % (unsigned int)v) != 0) {
+        while ((ctx->sec_pc[ctx->cur_sec] % (unsigned int)v) != 0) {
             if (!emit8(ctx, 0)) return 0;
         }
         return 1;
@@ -929,8 +972,9 @@ static int process_line(asm_ctx_t *ctx, char *line) {
 static int run_pass(asm_ctx_t *ctx, int pass) {
     char line[MAX_LINE];
     ctx->pass = pass;
-    ctx->pc = ctx->org;
-    if (pass == 2) ctx->out_len = 0;
+    ctx->cur_sec = SEC_TEXT;
+    memset(ctx->sec_pc, 0, sizeof(ctx->sec_pc));
+    if (pass == 2) memset(ctx->sec_len, 0, sizeof(ctx->sec_len));
 
     int p = 0;
     ctx->line_no = 0;
@@ -964,25 +1008,35 @@ static int assemble(asm_ctx_t *ctx) {
         return 0;
     }
 
-    int need = (int)(ctx->pc - ctx->org);
-    if (need < 0) {
-        print_err("internal size error");
-        ctx->had_error = 1;
-        return 0;
-    }
+    ctx->sec_size[SEC_TEXT] = ctx->sec_pc[SEC_TEXT];
+    ctx->sec_size[SEC_RODATA] = ctx->sec_pc[SEC_RODATA];
+    ctx->sec_size[SEC_DATA] = ctx->sec_pc[SEC_DATA];
+    ctx->sec_size[SEC_BSS] = ctx->sec_pc[SEC_BSS];
+
+    ctx->sec_base[SEC_TEXT] = 0;
+    ctx->sec_base[SEC_RODATA] = ctx->sec_base[SEC_TEXT] + ctx->sec_size[SEC_TEXT];
+    ctx->sec_base[SEC_DATA] = ctx->sec_base[SEC_RODATA] + ctx->sec_size[SEC_RODATA];
+    ctx->sec_base[SEC_BSS] = ctx->sec_base[SEC_DATA] + ctx->sec_size[SEC_DATA];
+
+    int need = (int)(ctx->sec_size[SEC_TEXT] + ctx->sec_size[SEC_RODATA] +
+                     ctx->sec_size[SEC_DATA] + ctx->sec_size[SEC_BSS]);
     if (need == 0 && ctx->meaningful_lines > 0) {
         print_err("no encodable output (0 bytes); likely unsupported asm forms");
         ctx->had_error = 1;
         return 0;
     }
-    ctx->out_cap = need > 0 ? need : 1;
-    ctx->out = (unsigned char *)malloc((unsigned int)ctx->out_cap);
-    if (!ctx->out) {
-        print_err("out of memory (output buffer)");
-        ctx->had_error = 1;
-        return 0;
+    for (int s = 0; s < SEC_COUNT; s++) {
+        int cap = (int)ctx->sec_size[s];
+        if (cap <= 0) cap = 1;
+        ctx->sec_cap[s] = cap;
+        ctx->sec_out[s] = (unsigned char *)malloc((unsigned int)cap);
+        if (!ctx->sec_out[s]) {
+            print_err("out of memory (section buffer)");
+            ctx->had_error = 1;
+            return 0;
+        }
+        memset(ctx->sec_out[s], 0, (unsigned int)cap);
     }
-    memset(ctx->out, 0, (unsigned int)ctx->out_cap);
 
     if (!run_pass(ctx, 2)) {
         if (ctx->line_no > 0) {
@@ -993,6 +1047,19 @@ static int assemble(asm_ctx_t *ctx) {
             print("\n");
         }
         return 0;
+    }
+    ctx->out = (unsigned char *)malloc((unsigned int)(need > 0 ? need : 1));
+    if (!ctx->out) {
+        print_err("out of memory (final output)");
+        ctx->had_error = 1;
+        return 0;
+    }
+    ctx->out_len = 0;
+    for (int s = 0; s < SEC_COUNT; s++) {
+        if (ctx->sec_len[s] > 0) {
+            memcpy(ctx->out + ctx->out_len, ctx->sec_out[s], (unsigned int)ctx->sec_len[s]);
+            ctx->out_len += ctx->sec_len[s];
+        }
     }
     return !ctx->had_error;
 }
