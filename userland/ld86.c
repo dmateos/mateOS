@@ -4,6 +4,17 @@
 #define MAX_IN (2 * 1024 * 1024)
 
 typedef struct __attribute__((packed)) {
+    unsigned char magic[4];   // "MOBJ"
+    unsigned int version;     // 1
+    unsigned int org;
+    unsigned int entry_off;   // offset from start of image
+    unsigned int text_size;
+    unsigned int rodata_size;
+    unsigned int data_size;
+    unsigned int bss_size;
+} mobj_header_t;
+
+typedef struct __attribute__((packed)) {
     unsigned char e_ident[16];
     unsigned short e_type;
     unsigned short e_machine;
@@ -64,8 +75,8 @@ static unsigned int align_up(unsigned int v, unsigned int a) {
 }
 
 static void usage(void) {
-    print("usage: ld86 [-base addr] [-entry addr] [-o out.elf] <input.bin> [output.elf]\n");
-    print("phase-1: flat-binary to ELF32 packer (single PT_LOAD)\n");
+    print("usage: ld86 [-base addr] [-entry addr] [-o out.elf] <input.bin|input.obj> [output.elf]\n");
+    print("phase-1: flat-binary/object to ELF32 packer (single PT_LOAD)\n");
 }
 
 void _start(int argc, char **argv) {
@@ -146,9 +157,35 @@ void _start(int argc, char **argv) {
     }
 
     const unsigned int page = 0x1000;
+    unsigned int file_sz = st.size;
+    unsigned int mem_sz = st.size;
+    unsigned char *payload = ibuf;
+    int payload_sz = st.size;
+
+    if (st.size >= (int)sizeof(mobj_header_t)) {
+        mobj_header_t *mh = (mobj_header_t *)ibuf;
+        if (mh->magic[0] == 'M' && mh->magic[1] == 'O' && mh->magic[2] == 'B' && mh->magic[3] == 'J') {
+            if (mh->version != 1) {
+                print("ld86: unsupported object version\n");
+                exit(1);
+            }
+            unsigned int seg_filesz = mh->text_size + mh->rodata_size + mh->data_size;
+            unsigned int need = (unsigned int)sizeof(mobj_header_t) + seg_filesz;
+            if (need > st.size) {
+                print("ld86: bad object size\n");
+                exit(1);
+            }
+            payload = ibuf + sizeof(mobj_header_t);
+            payload_sz = (int)seg_filesz;
+            file_sz = seg_filesz;
+            mem_sz = seg_filesz + mh->bss_size;
+            if (!entry_set) entry = base + mh->entry_off;
+        }
+    }
+
     const unsigned int phoff = sizeof(elf32_ehdr_t);
     const unsigned int code_off = align_up(sizeof(elf32_ehdr_t) + sizeof(elf32_phdr_t), page);
-    const unsigned int out_sz = code_off + st.size;
+    const unsigned int out_sz = code_off + file_sz;
 
     unsigned char *obuf = (unsigned char *)malloc(out_sz);
     if (!obuf) {
@@ -185,12 +222,12 @@ void _start(int argc, char **argv) {
     ph->p_offset = code_off;
     ph->p_vaddr = base;
     ph->p_paddr = base;
-    ph->p_filesz = st.size;
-    ph->p_memsz = st.size;
+    ph->p_filesz = file_sz;
+    ph->p_memsz = mem_sz;
     ph->p_flags = 7;     // RWX
     ph->p_align = page;
 
-    memcpy(obuf + code_off, ibuf, st.size);
+    memcpy(obuf + code_off, payload, payload_sz);
 
     int ofd = open(out, O_WRONLY | O_CREAT | O_TRUNC);
     if (ofd < 0) {

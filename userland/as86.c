@@ -7,6 +7,17 @@
 #define MAX_LABELS   2048
 #define MAX_NAME     64
 
+typedef struct __attribute__((packed)) {
+    unsigned char magic[4];   // "MOBJ"
+    unsigned int version;     // 1
+    unsigned int org;
+    unsigned int entry_off;   // offset from start of flattened image
+    unsigned int text_size;
+    unsigned int rodata_size;
+    unsigned int data_size;
+    unsigned int bss_size;
+} mobj_header_t;
+
 typedef struct {
     char name[MAX_NAME];
     unsigned int offset;
@@ -66,6 +77,8 @@ typedef struct {
     char cur_line[MAX_LINE];
 } asm_ctx_t;
 
+static int get_label_index(asm_ctx_t *ctx, const char *name, int create);
+
 static unsigned int cur_pc(asm_ctx_t *ctx) {
     return ctx->org + ctx->sec_base[ctx->cur_sec] + ctx->sec_pc[ctx->cur_sec];
 }
@@ -86,6 +99,13 @@ static int streqi(const char *a, const char *b) {
         i++;
     }
     return a[i] == 0 && b[i] == 0;
+}
+
+static int find_label_addr(asm_ctx_t *ctx, const char *name, unsigned int *addr_out) {
+    int idx = get_label_index(ctx, name, 0);
+    if (idx < 0 || !ctx->labels[idx].defined) return 0;
+    *addr_out = ctx->org + ctx->sec_base[ctx->labels[idx].section] + ctx->labels[idx].offset;
+    return 1;
 }
 
 static void copy_lim(char *dst, const char *src, int cap) {
@@ -1065,13 +1085,14 @@ static int assemble(asm_ctx_t *ctx) {
 }
 
 static void usage(void) {
-    print("usage: as86 [-f bin] [--org addr] [-o out.bin] <input.asm> [output.bin]\n");
+    print("usage: as86 [-f bin|obj] [--org addr] [-o out] <input.asm> [output]\n");
     print("phase-1: 32-bit flat binary assembler (subset)\n");
 }
 
 void _start(int argc, char **argv) {
     const char *in = 0;
     const char *out = 0;
+    int fmt_obj = 0;
     unsigned int org_cli = 0;
     int have_org_cli = 0;
 
@@ -1085,8 +1106,12 @@ void _start(int argc, char **argv) {
         if (streq(a, "-f")) {
             if (i + 1 >= argc) { usage(); exit(1); }
             const char *fmt = argv[++i];
-            if (!streqi(fmt, "bin")) {
-                print_err("only -f bin is supported");
+            if (streqi(fmt, "bin")) {
+                fmt_obj = 0;
+            } else if (streqi(fmt, "obj")) {
+                fmt_obj = 1;
+            } else {
+                print_err("only -f bin or -f obj is supported");
                 exit(1);
             }
             continue;
@@ -1156,15 +1181,61 @@ void _start(int argc, char **argv) {
         print_err2("cannot open output: ", out);
         exit(1);
     }
-    if (fwrite(ofd, ctx->out, (unsigned int)ctx->out_len) != ctx->out_len) {
-        close(ofd);
-        print_err("write failed");
-        exit(1);
+    if (!fmt_obj) {
+        if (fwrite(ofd, ctx->out, (unsigned int)ctx->out_len) != ctx->out_len) {
+            close(ofd);
+            print_err("write failed");
+            exit(1);
+        }
+    } else {
+        mobj_header_t h;
+        memset(&h, 0, sizeof(h));
+        h.magic[0] = 'M'; h.magic[1] = 'O'; h.magic[2] = 'B'; h.magic[3] = 'J';
+        h.version = 1;
+        h.org = ctx->org;
+        h.text_size = ctx->sec_len[SEC_TEXT];
+        h.rodata_size = ctx->sec_len[SEC_RODATA];
+        h.data_size = ctx->sec_len[SEC_DATA];
+        h.bss_size = ctx->sec_len[SEC_BSS];
+        h.entry_off = 0;
+        unsigned int ent = 0;
+        if (find_label_addr(ctx, "$_start", &ent) || find_label_addr(ctx, "_start", &ent)) {
+            h.entry_off = ent - ctx->org;
+        }
+
+        if (fwrite(ofd, &h, sizeof(h)) != (int)sizeof(h)) {
+            close(ofd);
+            print_err("write failed");
+            exit(1);
+        }
+        if (ctx->sec_len[SEC_TEXT] &&
+            fwrite(ofd, ctx->sec_out[SEC_TEXT], (unsigned int)ctx->sec_len[SEC_TEXT]) != ctx->sec_len[SEC_TEXT]) {
+            close(ofd);
+            print_err("write failed");
+            exit(1);
+        }
+        if (ctx->sec_len[SEC_RODATA] &&
+            fwrite(ofd, ctx->sec_out[SEC_RODATA], (unsigned int)ctx->sec_len[SEC_RODATA]) != ctx->sec_len[SEC_RODATA]) {
+            close(ofd);
+            print_err("write failed");
+            exit(1);
+        }
+        if (ctx->sec_len[SEC_DATA] &&
+            fwrite(ofd, ctx->sec_out[SEC_DATA], (unsigned int)ctx->sec_len[SEC_DATA]) != ctx->sec_len[SEC_DATA]) {
+            close(ofd);
+            print_err("write failed");
+            exit(1);
+        }
     }
     close(ofd);
 
     print("as86: wrote ");
-    print_num(ctx->out_len);
+    if (!fmt_obj) {
+        print_num(ctx->out_len);
+    } else {
+        int total = (int)sizeof(mobj_header_t) + ctx->sec_len[SEC_TEXT] + ctx->sec_len[SEC_RODATA] + ctx->sec_len[SEC_DATA];
+        print_num(total);
+    }
     print(" bytes to ");
     print(out);
     print("\n");
