@@ -6,23 +6,51 @@
 #define MAX_TOK      256
 #define MAX_LABELS   2048
 #define MAX_NAME     64
+#define MAX_RELOCS   8192
+
+#define MOBJ_SYM_GLOBAL 0x1u
+#define MOBJ_SYM_EXTERN 0x2u
+
+#define MOBJ_RELOC_ABS32 1u
+#define MOBJ_RELOC_REL32 2u
+
+#define SEC_UNDEF 0xFFFFFFFFu
 
 typedef struct __attribute__((packed)) {
     unsigned char magic[4];   // "MOBJ"
-    unsigned int version;     // 1
+    unsigned int version;     // 2
     unsigned int org;
     unsigned int entry_off;   // offset from start of flattened image
     unsigned int text_size;
     unsigned int rodata_size;
     unsigned int data_size;
     unsigned int bss_size;
+    unsigned int sym_count;
+    unsigned int reloc_count;
 } mobj_header_t;
+
+typedef struct __attribute__((packed)) {
+    char name[MAX_NAME];
+    unsigned int value_off;
+    unsigned int section; // SEC_*, or SEC_UNDEF
+    unsigned int flags;   // MOBJ_SYM_*
+} mobj_sym_t;
+
+typedef struct __attribute__((packed)) {
+    unsigned int section; // SEC_*
+    unsigned int offset;  // byte offset in section
+    unsigned int type;    // MOBJ_RELOC_*
+    unsigned int sym_index;
+    int addend;
+} mobj_reloc_t;
 
 typedef struct {
     char name[MAX_NAME];
     unsigned int offset;
     int section;
     int defined;
+    int is_global;
+    int is_extern;
 } label_t;
 
 typedef enum {
@@ -75,6 +103,9 @@ typedef struct {
     int meaningful_lines;
     int line_no;
     char cur_line[MAX_LINE];
+    int fmt_obj;
+    mobj_reloc_t relocs[MAX_RELOCS];
+    int reloc_count;
 } asm_ctx_t;
 
 static int get_label_index(asm_ctx_t *ctx, const char *name, int create);
@@ -248,6 +279,39 @@ static int get_label_index(asm_ctx_t *ctx, const char *name, int create) {
     return idx;
 }
 
+static void mark_label_global(asm_ctx_t *ctx, const char *name) {
+    int idx = get_label_index(ctx, name, 1);
+    if (idx >= 0) ctx->labels[idx].is_global = 1;
+}
+
+static void mark_label_extern(asm_ctx_t *ctx, const char *name) {
+    int idx = get_label_index(ctx, name, 1);
+    if (idx >= 0) ctx->labels[idx].is_extern = 1;
+}
+
+static int add_reloc(asm_ctx_t *ctx, unsigned int section, unsigned int offset,
+                     unsigned int type, const char *sym_name, int addend) {
+    if (!ctx->fmt_obj || ctx->pass != 2) return 1;
+    if (ctx->reloc_count >= MAX_RELOCS) {
+        print_err("too many relocations");
+        ctx->had_error = 1;
+        return 0;
+    }
+    int sym_idx = get_label_index(ctx, sym_name, 1);
+    if (sym_idx < 0) {
+        print_err("symbol table overflow");
+        ctx->had_error = 1;
+        return 0;
+    }
+    mobj_reloc_t *r = &ctx->relocs[ctx->reloc_count++];
+    r->section = section;
+    r->offset = offset;
+    r->type = type;
+    r->sym_index = (unsigned int)sym_idx;
+    r->addend = addend;
+    return 1;
+}
+
 static int define_label(asm_ctx_t *ctx, const char *name, unsigned int offset, int section) {
     int idx = get_label_index(ctx, name, 1);
     if (idx < 0) return 0;
@@ -265,6 +329,10 @@ static int define_label(asm_ctx_t *ctx, const char *name, unsigned int offset, i
 static int resolve_label(asm_ctx_t *ctx, const char *name, int *out) {
     int idx = get_label_index(ctx, name, 0);
     if (idx < 0 || !ctx->labels[idx].defined) {
+        if (ctx->fmt_obj && ctx->pass == 2 && idx >= 0 && ctx->labels[idx].is_extern) {
+            *out = 0;
+            return 1;
+        }
         if (ctx->pass == 2) {
             print_err2("undefined label: ", name);
             ctx->had_error = 1;
@@ -441,8 +509,16 @@ static int emit_rm_operand(asm_ctx_t *ctx, int reg_field, operand_t *rmop) {
         int addr = rmop->mem.disp;
         if (rmop->mem.disp_label[0]) {
             int l = 0;
-            resolve_label(ctx, rmop->mem.disp_label, &l);
+            if (!resolve_label(ctx, rmop->mem.disp_label, &l)) return 0;
             addr += l;
+            unsigned int off = ctx->sec_pc[ctx->cur_sec];
+            if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_ABS32, rmop->mem.disp_label, rmop->mem.disp)) {
+                return 0;
+            }
+            if (ctx->fmt_obj) {
+                // Relocation addend already carries disp, keep encoded placeholder zero.
+                addr = 0;
+            }
         }
         return emit32(ctx, (unsigned int)addr);
     }
@@ -570,6 +646,12 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
     if (streqi(mn, "push") && opn == 1) {
         if (ops[0].kind == OP_REG) return emit8(ctx, (unsigned int)(0x50 + ops[0].reg));
         if (ops[0].kind == OP_IMM || ops[0].kind == OP_LABEL) {
+            if (ctx->fmt_obj && ops[0].kind == OP_LABEL) {
+                if (!emit8(ctx, 0x68)) return 0;
+                unsigned int off = ctx->sec_pc[ctx->cur_sec];
+                if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_ABS32, ops[0].label, 0)) return 0;
+                return emit32(ctx, 0);
+            }
             if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
             if (imm >= -128 && imm <= 127) return emit8(ctx, 0x6A) && emit8(ctx, (unsigned int)(imm & 0xFF));
             return emit8(ctx, 0x68) && emit32(ctx, (unsigned int)imm);
@@ -584,6 +666,12 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
 
     if (streqi(mn, "call") && opn == 1) {
         if (ops[0].kind == OP_LABEL || ops[0].kind == OP_IMM) {
+            if (ctx->fmt_obj && ops[0].kind == OP_LABEL) {
+                if (!emit8(ctx, 0xE8)) return 0;
+                unsigned int off = ctx->sec_pc[ctx->cur_sec];
+                if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_REL32, ops[0].label, 0)) return 0;
+                return emit32(ctx, 0);
+            }
             if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
             int rel = imm - ((int)cur_pc(ctx) + 5);
             return emit8(ctx, 0xE8) && emit32(ctx, (unsigned int)rel);
@@ -593,6 +681,12 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
 
     if (streqi(mn, "jmp") && opn == 1) {
         if (ops[0].kind == OP_LABEL || ops[0].kind == OP_IMM) {
+            if (ctx->fmt_obj && ops[0].kind == OP_LABEL) {
+                if (!emit8(ctx, 0xE9)) return 0;
+                unsigned int off = ctx->sec_pc[ctx->cur_sec];
+                if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_REL32, ops[0].label, 0)) return 0;
+                return emit32(ctx, 0);
+            }
             if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
             int rel = imm - ((int)cur_pc(ctx) + 5);
             return emit8(ctx, 0xE9) && emit32(ctx, (unsigned int)rel);
@@ -601,6 +695,12 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
     }
 
     if (is_jcc(mn, &cc) && opn == 1) {
+        if (ctx->fmt_obj && ops[0].kind == OP_LABEL) {
+            if (!emit8(ctx, 0x0F) || !emit8(ctx, (unsigned int)(0x80 + cc))) return 0;
+            unsigned int off = ctx->sec_pc[ctx->cur_sec];
+            if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_REL32, ops[0].label, 0)) return 0;
+            return emit32(ctx, 0);
+        }
         if (!resolve_imm(ctx, &ops[0], &imm)) return 0;
         int rel = imm - ((int)cur_pc(ctx) + 6);
         return emit8(ctx, 0x0F) && emit8(ctx, (unsigned int)(0x80 + cc)) && emit32(ctx, (unsigned int)rel);
@@ -627,6 +727,13 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
     if (streqi(mn, "mov") && opn == 2) {
         int bits = infer_bits_from_operand(&ops[0], infer_bits_from_operand(&ops[1], 32));
         if (ops[0].kind == OP_REG && (ops[1].kind == OP_IMM || ops[1].kind == OP_LABEL)) {
+            if (ctx->fmt_obj && ops[1].kind == OP_LABEL && bits == 32) {
+                if (!maybe_prefix_16(ctx, bits)) return 0;
+                if (!emit8(ctx, (unsigned int)(0xB8 + ops[0].reg))) return 0;
+                unsigned int off = ctx->sec_pc[ctx->cur_sec];
+                if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_ABS32, ops[1].label, 0)) return 0;
+                return emit32(ctx, 0);
+            }
             if (!resolve_imm(ctx, &ops[1], &imm)) return 0;
             if (!maybe_prefix_16(ctx, bits)) return 0;
             return emit8(ctx, (unsigned int)(0xB8 + ops[0].reg)) &&
@@ -641,6 +748,19 @@ static int encode_instruction(asm_ctx_t *ctx, char *mn, operand_t *ops, int opn)
             return emit8(ctx, (bits == 8) ? 0x88 : 0x89) && emit_rm_operand(ctx, ops[1].reg, &ops[0]);
         }
         if (ops[0].kind == OP_MEM && (ops[1].kind == OP_IMM || ops[1].kind == OP_LABEL)) {
+            if (ctx->fmt_obj && ops[1].kind == OP_LABEL) {
+                bits = infer_bits_from_operand(&ops[0], 32);
+                if (bits != 32) {
+                    print_err("obj reloc supports only 32-bit mem immediates");
+                    ctx->had_error = 1;
+                    return 0;
+                }
+                if (!maybe_prefix_16(ctx, bits)) return 0;
+                if (!emit8(ctx, 0xC7) || !emit_rm_operand(ctx, 0, &ops[0])) return 0;
+                unsigned int off = ctx->sec_pc[ctx->cur_sec];
+                if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_ABS32, ops[1].label, 0)) return 0;
+                return emit32(ctx, 0);
+            }
             if (!resolve_imm(ctx, &ops[1], &imm)) return 0;
             bits = infer_bits_from_operand(&ops[0], 32);
             if (!maybe_prefix_16(ctx, bits)) return 0;
@@ -789,8 +909,14 @@ static int emit_data_item(asm_ctx_t *ctx, const char *tok, int bytes) {
     int val = 0;
     int ok = parse_int(s, &val);
     if (!ok) {
+        if (ctx->fmt_obj && bytes == 4 && ctx->pass == 2) {
+            unsigned int off = ctx->sec_pc[ctx->cur_sec];
+            if (!add_reloc(ctx, (unsigned int)ctx->cur_sec, off, MOBJ_RELOC_ABS32, s, 0)) return 0;
+            val = 0;
+            ok = 1;
+        }
         // label value
-        if (!resolve_label(ctx, s, &val) && ctx->pass == 1) val = 0;
+        if (!ok && !resolve_label(ctx, s, &val) && ctx->pass == 1) val = 0;
     }
     if (bytes == 1) return emit8(ctx, (unsigned int)(val & 0xFF));
     if (bytes == 2) return emit16(ctx, (unsigned int)(val & 0xFFFF));
@@ -839,7 +965,18 @@ static int process_line(asm_ctx_t *ctx, char *line) {
     mnem[mi] = 0;
     char *rest = ltrim(s + mi);
 
-    if (streqi(mnem, "bits") || streqi(mnem, "global") || streqi(mnem, "extern")) {
+    if (streqi(mnem, "bits")) {
+        return 1;
+    }
+
+    if (streqi(mnem, "global") || streqi(mnem, "extern")) {
+        char toks[64][MAX_TOK];
+        int n = split_operands(rest, toks, 64);
+        for (int i = 0; i < n; i++) {
+            if (!toks[i][0]) continue;
+            if (streqi(mnem, "global")) mark_label_global(ctx, toks[i]);
+            else mark_label_extern(ctx, toks[i]);
+        }
         return 1;
     }
 
@@ -994,7 +1131,10 @@ static int run_pass(asm_ctx_t *ctx, int pass) {
     ctx->pass = pass;
     ctx->cur_sec = SEC_TEXT;
     memset(ctx->sec_pc, 0, sizeof(ctx->sec_pc));
-    if (pass == 2) memset(ctx->sec_len, 0, sizeof(ctx->sec_len));
+    if (pass == 2) {
+        memset(ctx->sec_len, 0, sizeof(ctx->sec_len));
+        ctx->reloc_count = 0;
+    }
 
     int p = 0;
     ctx->line_no = 0;
@@ -1173,6 +1313,7 @@ void _start(int argc, char **argv) {
     ctx->src = src;
     ctx->src_len = n;
     ctx->org = have_org_cli ? org_cli : 0;
+    ctx->fmt_obj = fmt_obj;
 
     if (!assemble(ctx)) exit(1);
 
@@ -1191,12 +1332,14 @@ void _start(int argc, char **argv) {
         mobj_header_t h;
         memset(&h, 0, sizeof(h));
         h.magic[0] = 'M'; h.magic[1] = 'O'; h.magic[2] = 'B'; h.magic[3] = 'J';
-        h.version = 1;
+        h.version = 2;
         h.org = ctx->org;
         h.text_size = ctx->sec_len[SEC_TEXT];
         h.rodata_size = ctx->sec_len[SEC_RODATA];
         h.data_size = ctx->sec_len[SEC_DATA];
         h.bss_size = ctx->sec_len[SEC_BSS];
+        h.sym_count = (unsigned int)ctx->label_count;
+        h.reloc_count = (unsigned int)ctx->reloc_count;
         h.entry_off = 0;
         unsigned int ent = 0;
         if (find_label_addr(ctx, "$_start", &ent) || find_label_addr(ctx, "_start", &ent)) {
@@ -1226,6 +1369,32 @@ void _start(int argc, char **argv) {
             print_err("write failed");
             exit(1);
         }
+        for (int i = 0; i < ctx->label_count; i++) {
+            mobj_sym_t s;
+            memset(&s, 0, sizeof(s));
+            copy_lim(s.name, ctx->labels[i].name, MAX_NAME);
+            if (ctx->labels[i].defined) {
+                s.value_off = ctx->labels[i].offset;
+                s.section = (unsigned int)ctx->labels[i].section;
+            } else {
+                s.value_off = 0;
+                s.section = SEC_UNDEF;
+            }
+            if (ctx->labels[i].is_global) s.flags |= MOBJ_SYM_GLOBAL;
+            if (ctx->labels[i].is_extern || !ctx->labels[i].defined) s.flags |= MOBJ_SYM_EXTERN;
+            if (fwrite(ofd, &s, sizeof(s)) != (int)sizeof(s)) {
+                close(ofd);
+                print_err("write failed");
+                exit(1);
+            }
+        }
+        for (int i = 0; i < ctx->reloc_count; i++) {
+            if (fwrite(ofd, &ctx->relocs[i], sizeof(ctx->relocs[i])) != (int)sizeof(ctx->relocs[i])) {
+                close(ofd);
+                print_err("write failed");
+                exit(1);
+            }
+        }
     }
     close(ofd);
 
@@ -1233,7 +1402,8 @@ void _start(int argc, char **argv) {
     if (!fmt_obj) {
         print_num(ctx->out_len);
     } else {
-        int total = (int)sizeof(mobj_header_t) + ctx->sec_len[SEC_TEXT] + ctx->sec_len[SEC_RODATA] + ctx->sec_len[SEC_DATA];
+        int total = (int)sizeof(mobj_header_t) + ctx->sec_len[SEC_TEXT] + ctx->sec_len[SEC_RODATA] + ctx->sec_len[SEC_DATA]
+                  + (int)sizeof(mobj_sym_t) * ctx->label_count + (int)sizeof(mobj_reloc_t) * ctx->reloc_count;
         print_num(total);
     }
     print(" bytes to ");

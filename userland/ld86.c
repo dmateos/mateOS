@@ -3,16 +3,45 @@
 
 #define MAX_IN (2 * 1024 * 1024)
 
+#define MOBJ_SYM_GLOBAL 0x1u
+#define MOBJ_SYM_EXTERN 0x2u
+
+#define MOBJ_RELOC_ABS32 1u
+#define MOBJ_RELOC_REL32 2u
+
+#define SEC_TEXT 0u
+#define SEC_RODATA 1u
+#define SEC_DATA 2u
+#define SEC_BSS 3u
+#define SEC_UNDEF 0xFFFFFFFFu
+
 typedef struct __attribute__((packed)) {
     unsigned char magic[4];   // "MOBJ"
-    unsigned int version;     // 1
+    unsigned int version;     // 1 or 2
     unsigned int org;
     unsigned int entry_off;   // offset from start of image
     unsigned int text_size;
     unsigned int rodata_size;
     unsigned int data_size;
     unsigned int bss_size;
+    unsigned int sym_count;   // v2+
+    unsigned int reloc_count; // v2+
 } mobj_header_t;
+
+typedef struct __attribute__((packed)) {
+    char name[64];
+    unsigned int value_off;
+    unsigned int section; // SEC_*, or SEC_UNDEF
+    unsigned int flags;   // MOBJ_SYM_*
+} mobj_sym_t;
+
+typedef struct __attribute__((packed)) {
+    unsigned int section; // SEC_*
+    unsigned int offset;
+    unsigned int type;    // MOBJ_RELOC_*
+    unsigned int sym_index;
+    int addend;
+} mobj_reloc_t;
 
 typedef struct __attribute__((packed)) {
     unsigned char e_ident[16];
@@ -72,6 +101,13 @@ static int parse_int_local(const char *s, int *out) {
 
 static unsigned int align_up(unsigned int v, unsigned int a) {
     return (v + a - 1u) & ~(a - 1u);
+}
+
+static void wr32(unsigned char *p, unsigned int v) {
+    p[0] = (unsigned char)(v & 0xFFu);
+    p[1] = (unsigned char)((v >> 8) & 0xFFu);
+    p[2] = (unsigned char)((v >> 16) & 0xFFu);
+    p[3] = (unsigned char)((v >> 24) & 0xFFu);
 }
 
 static void usage(void) {
@@ -161,16 +197,29 @@ void _start(int argc, char **argv) {
     unsigned int mem_sz = st.size;
     unsigned char *payload = ibuf;
     int payload_sz = st.size;
+    mobj_header_t *mh = 0;
+    mobj_sym_t *msyms = 0;
+    mobj_reloc_t *mrels = 0;
+    unsigned int sec_base[4] = {0,0,0,0};
 
     if (st.size >= (int)sizeof(mobj_header_t)) {
-        mobj_header_t *mh = (mobj_header_t *)ibuf;
+        mh = (mobj_header_t *)ibuf;
         if (mh->magic[0] == 'M' && mh->magic[1] == 'O' && mh->magic[2] == 'B' && mh->magic[3] == 'J') {
-            if (mh->version != 1) {
+            if (mh->version != 1 && mh->version != 2) {
                 print("ld86: unsupported object version\n");
                 exit(1);
             }
             unsigned int seg_filesz = mh->text_size + mh->rodata_size + mh->data_size;
             unsigned int need = (unsigned int)sizeof(mobj_header_t) + seg_filesz;
+            if (mh->version >= 2) {
+                unsigned int sym_bytes = mh->sym_count * (unsigned int)sizeof(mobj_sym_t);
+                unsigned int rel_bytes = mh->reloc_count * (unsigned int)sizeof(mobj_reloc_t);
+                if (sym_bytes / sizeof(mobj_sym_t) != mh->sym_count || rel_bytes / sizeof(mobj_reloc_t) != mh->reloc_count) {
+                    print("ld86: bad object table sizes\n");
+                    exit(1);
+                }
+                need += sym_bytes + rel_bytes;
+            }
             if (need > st.size) {
                 print("ld86: bad object size\n");
                 exit(1);
@@ -180,6 +229,16 @@ void _start(int argc, char **argv) {
             file_sz = seg_filesz;
             mem_sz = seg_filesz + mh->bss_size;
             if (!entry_set) entry = base + mh->entry_off;
+
+            sec_base[SEC_TEXT] = 0;
+            sec_base[SEC_RODATA] = mh->text_size;
+            sec_base[SEC_DATA] = mh->text_size + mh->rodata_size;
+            sec_base[SEC_BSS] = mh->text_size + mh->rodata_size + mh->data_size;
+
+            if (mh->version >= 2) {
+                msyms = (mobj_sym_t *)(payload + seg_filesz);
+                mrels = (mobj_reloc_t *)((unsigned char *)msyms + (mh->sym_count * (unsigned int)sizeof(mobj_sym_t)));
+            }
         }
     }
 
@@ -228,6 +287,50 @@ void _start(int argc, char **argv) {
     ph->p_align = page;
 
     memcpy(obuf + code_off, payload, payload_sz);
+
+    if (mh && mh->version >= 2 && mh->reloc_count > 0) {
+        unsigned char *img = obuf + code_off;
+        for (unsigned int i = 0; i < mh->reloc_count; i++) {
+            mobj_reloc_t *r = &mrels[i];
+            if (r->section > SEC_DATA) {
+                print("ld86: bad reloc section\n");
+                exit(1);
+            }
+            if (r->sym_index >= mh->sym_count) {
+                print("ld86: bad reloc symbol index\n");
+                exit(1);
+            }
+            mobj_sym_t *s = &msyms[r->sym_index];
+            if (s->section == SEC_UNDEF) {
+                print("ld86: undefined symbol: ");
+                print(s->name);
+                print("\n");
+                exit(1);
+            }
+            if (s->section > SEC_BSS) {
+                print("ld86: bad symbol section\n");
+                exit(1);
+            }
+
+            unsigned int place_off = sec_base[r->section] + r->offset;
+            if (place_off + 4 > file_sz) {
+                print("ld86: reloc out of range\n");
+                exit(1);
+            }
+            unsigned int sym_addr = base + sec_base[s->section] + s->value_off;
+            int value = 0;
+            if (r->type == MOBJ_RELOC_ABS32) {
+                value = (int)sym_addr + r->addend;
+            } else if (r->type == MOBJ_RELOC_REL32) {
+                unsigned int place_addr = base + place_off;
+                value = (int)sym_addr + r->addend - (int)(place_addr + 4);
+            } else {
+                print("ld86: unknown relocation type\n");
+                exit(1);
+            }
+            wr32(img + place_off, (unsigned int)value);
+        }
+    }
 
     int ofd = open(out, O_WRONLY | O_CREAT | O_TRUNC);
     if (ofd < 0) {

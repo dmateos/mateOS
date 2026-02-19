@@ -23,7 +23,8 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Removed `cc` section-reorder hack.
 - Added `cc` temp-file cleanup by default (`--keep-temps` opt-in).
 - Verified in-OS smoke tests: return-only and print cases.
-- Added initial `as86 -f obj` container format (`MOBJ` v1) and `ld86` support for consuming it.
+- Added `as86 -f obj` `MOBJ` v2 with symbol and relocation tables.
+- Added relocation application in `ld86` for single-object `MOBJ` links.
 
 ## Current Hacks / Technical Debt
 
@@ -49,11 +50,11 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Remove remaining runtime injection hacks.
 
 2. Complete relocatable object support.
-- Extend `as86 -f obj` from container-only to full symbols + relocation records.
-- Resolve extern/global references during link.
+- Resolve extern/global references across multiple input objects.
+- Add reloc coverage for remaining instruction/data edge cases.
 
 3. Turn `ld86` into a real linker.
-- Multi-input `.o`, symbol resolution, reloc application, final ELF emit.
+- Multi-input `.o`, cross-object symbol resolution, final ELF emit.
 
 4. Add proper runtime objects.
 - `crt0.o` for `_start`/exit path.
