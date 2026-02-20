@@ -122,71 +122,6 @@ static void cleanup_tmp_files(const char *a, const char *b) {
     if (b && b[0]) unlink(b);
 }
 
-static int write_runtime_asm(const char *path) {
-    static const char *rt_src =
-        "; ---- cc runtime object ----\n"
-        "bits 32\n"
-        "section .text\n"
-        "global $_start\n"
-        "global $print\n"
-        "extern $main\n"
-        "$_start:\n"
-        "\tcall\t$main\n"
-        "\tmov\tebx, eax\n"
-        "\tmov\teax, 2\n"
-        "\tint\t0x80\n"
-        "..@cc_hang:\n"
-        "\tjmp\t..@cc_hang\n"
-        "\n";
-    static const char *rt_print =
-        "$print:\n"
-        "\tpush\tebp\n"
-        "\tmov\tebp, esp\n"
-        "\tpush\tebx\n"
-        "\tpush\tecx\n"
-        "\tpush\tesi\n"
-        "\tpush\tedx\n"
-        "\tmov\tecx, [ebp+8]\n"
-        "\tmov\tesi, ecx\n"
-        "\txor\tedx, edx\n"
-        "..@cc_strlen_loop:\n"
-        "\tcmp\tbyte [esi], 0\n"
-        "\tje\t..@cc_strlen_done\n"
-        "\tinc\tesi\n"
-        "\tinc\tedx\n"
-        "\tjmp\t..@cc_strlen_loop\n"
-        "..@cc_strlen_done:\n"
-        "\tmov\teax, 1\n"
-        "\tmov\tebx, 1\n"
-        "\tint\t0x80\n"
-        "\txor\teax, eax\n"
-        "\tpop\tedx\n"
-        "\tpop\tesi\n"
-        "\tpop\tecx\n"
-        "\tpop\tebx\n"
-        "\tleave\n"
-        "\tret\n";
-
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC);
-    if (fd < 0) {
-        print("cc: failed to create runtime asm\n");
-        return -1;
-    }
-
-    int n1 = strlen(rt_src);
-    int n2 = strlen(rt_print);
-    int ok = 1;
-    if (fwrite(fd, rt_src, (unsigned int)n1) != n1) ok = 0;
-    if (ok && fwrite(fd, rt_print, (unsigned int)n2) != n2) ok = 0;
-    if (!ok) {
-        close(fd);
-        print("cc: failed to write runtime asm\n");
-        return -1;
-    }
-    close(fd);
-    return 0;
-}
-
 static int ensure_runtime_obj(void) {
     static const char *rt_asm = "ccrt.asm";
     static const char *rt_obj = "ccrt.obj";
@@ -194,7 +129,6 @@ static int ensure_runtime_obj(void) {
     if (stat(rt_obj, &st) == 0 && st.size > 0) {
         return 0;
     }
-    if (write_runtime_asm(rt_asm) != 0) return -1;
     if (require_nonempty_file(rt_asm, "runtime asm") != 0) return -1;
     {
         const char *a[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", rt_obj, rt_asm, 0 };
