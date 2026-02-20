@@ -201,6 +201,7 @@ These are separate ELF binaries invoked by name:
 - `shutdown` - Power off (ACPI)
 - `hello` - Hello world demo
 - `test` - Run 23-test suite
+- `cctest` - Compiler smoke test (`cc test2.c` + `cc test.c` + run outputs; requires FAT16 test files)
 - `gui` - Start window manager (launches winterm + file manager)
 - `winterm` - Terminal emulator (inside WM) `.wlf`
 - `winedit` - GUI text editor `.wlf`
