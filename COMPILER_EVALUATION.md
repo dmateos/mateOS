@@ -6,8 +6,8 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 
 ### Working now
 - `smallerc.elf` runs in mateOS and emits x86 asm.
-- `as86.elf` assembles the current SmallerC output subset to flat binary.
-- `ld86.elf` wraps flat binary into ELF32 (single `PT_LOAD`).
+- `as86.elf` supports `-f bin` and `-f obj` (`MOBJ` v2 with symbols+relocs).
+- `ld86.elf` links flat binaries and `MOBJ` objects into ELF32 (single `PT_LOAD`).
 - `cc.elf` drives the full in-OS pipeline:
   - `smallerc -> as86 -f obj -> ld86`
 - Basic programs now build and run in-OS:
@@ -25,20 +25,21 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Verified in-OS smoke tests: return-only and print cases.
 - Added `as86 -f obj` `MOBJ` v2 with symbol and relocation tables.
 - Added relocation application in `ld86` for single-object `MOBJ` links.
+- Added multi-input linking in `ld86` with cross-object global symbol resolution.
 
 ## Current Hacks / Technical Debt
 
 1. `cc.c` rewrites generated asm by hand.
 - Injects built-in crt0 (`$_start`) and built-in `$print`.
 
-2. `as86.c` is still a flat assembler subset.
+2. `as86.c` is still a subset assembler.
 - Has real `.text/.rodata/.data/.bss` tracking and deterministic flat layout.
-- No relocatable object output.
+- Emits relocatable `MOBJ` objects (v2), but relocation coverage is still incomplete.
 - Two-pass sizing still uses a forward-label placeholder heuristic.
 
-3. `ld86.c` is a packer, not a full linker.
-- Wraps one flat binary into one ELF segment.
-- No multi-object linking, relocations, symbol resolution.
+3. `ld86.c` is still not a full linker.
+- Supports multi-input objects and applies core ABS32/REL32 relocations.
+- Still no standard ELF `.o` ingestion, no archive libs, no section GC, minimal diagnostics.
 
 4. Runtime/libc integration is temporary.
 - `smallerc/compat_runtime.c` exists mainly to get SmallerC running.
@@ -50,11 +51,11 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Remove remaining runtime injection hacks.
 
 2. Complete relocatable object support.
-- Resolve extern/global references across multiple input objects.
 - Add reloc coverage for remaining instruction/data edge cases.
+ - Add stronger duplicate/visibility diagnostics.
 
 3. Turn `ld86` into a real linker.
-- Multi-input `.o`, cross-object symbol resolution, final ELF emit.
+- Support standard ELF `.o` inputs, archives, and richer link diagnostics.
 
 4. Add proper runtime objects.
 - `crt0.o` for `_start`/exit path.
