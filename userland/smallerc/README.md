@@ -24,11 +24,11 @@ This folder tracks the in-OS SmallerC bring-up work.
 - `cc.elf` can build simple C programs in-OS using `smallerc.elf` through `as86 -f obj` + `ld86`.
 
 ## Current Temporary Integration
-1. `cc.c` uses checked-in runtime source (`ccrt.asm`) and cached runtime object (`ccrt.obj`) for `$_start`/`$print`, then links that with app object output.
+1. `cc.c` uses checked-in runtime sources (`crt0.asm`, `lprint.asm`) and cached runtime objects (`crt0.obj`, `lprint.obj`), then links them with app object output.
 2. `as86` emits `MOBJ` objects (v2 symbols/relocs); `ld86` links them into ELF32.
 
 ## Next Steps
 1. Upgrade object/link format toward standard ELF `.o` compatibility.
-2. Replace `ccrt.asm`/`ccrt.obj` flow with normal linked runtime objects (`crt0.o`, libc objs).
+2. Replace temporary runtime asm/object pair with normal linked runtime objects (`crt0.o`, libc objs).
 3. Consolidate compiler/runtime headers into shared `userland/include`.
 4. Add regression tests for return/print/rodata/externs and multi-file builds.

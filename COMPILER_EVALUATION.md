@@ -31,7 +31,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 ## Current Hacks / Technical Debt
 
 1. `cc.c` still has temporary runtime handling.
-- Uses checked-in runtime source (`ccrt.asm`) and caches assembled runtime object (`ccrt.obj`) for `crt0` + `$print`.
+- Uses checked-in runtime sources (`crt0.asm`, `lprint.asm`) and caches assembled runtime objects (`crt0.obj`, `lprint.obj`).
 - Not yet using reusable runtime library objects.
 
 2. `as86.c` is still a subset assembler.
@@ -50,7 +50,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 ## Next Steps (Priority Order)
 
 1. Replace remaining temporary runtime handling in `cc`.
-- Replace `ccrt.asm`/`ccrt.obj` flow with reusable runtime libs (`crt0.o`, libc objs).
+- Replace temporary asm/object runtime pair with reusable runtime libs (`crt0.o`, libc objs).
 
 2. Complete relocatable object support.
 - Add reloc coverage for remaining instruction/data edge cases.

@@ -1,18 +1,8 @@
-; mateOS C compiler runtime (temporary until crt0/libc object linking is native)
+; mateOS C compiler temporary print helper
 bits 32
 
 section .text
-global $_start
 global $print
-extern $main
-
-$_start:
-    call    $main
-    mov     ebx, eax
-    mov     eax, 2
-    int     0x80
-.hang:
-    jmp     .hang
 
 $print:
     push    ebp

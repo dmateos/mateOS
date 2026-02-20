@@ -122,19 +122,28 @@ static void cleanup_tmp_files(const char *a, const char *b) {
     if (b && b[0]) unlink(b);
 }
 
-static int ensure_runtime_obj(void) {
-    static const char *rt_asm = "ccrt.asm";
-    static const char *rt_obj = "ccrt.obj";
+static int ensure_runtime_obj_pair(void) {
+    static const char *crt0_asm = "crt0.asm";
+    static const char *crt0_obj = "crt0.obj";
+    static const char *print_asm = "lprint.asm";
+    static const char *print_obj = "lprint.obj";
     stat_t st;
-    if (stat(rt_obj, &st) == 0 && st.size > 0) {
-        return 0;
+    if (stat(crt0_obj, &st) != 0 || st.size == 0) {
+        if (require_nonempty_file(crt0_asm, "crt0 asm") != 0) return -1;
+        {
+            const char *a[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", crt0_obj, crt0_asm, 0 };
+            if (run_stage("as86.elf", a, 8) != 0) return -1;
+        }
+        if (require_nonempty_file(crt0_obj, "crt0 obj") != 0) return -1;
     }
-    if (require_nonempty_file(rt_asm, "runtime asm") != 0) return -1;
-    {
-        const char *a[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", rt_obj, rt_asm, 0 };
-        if (run_stage("as86.elf", a, 8) != 0) return -1;
+    if (stat(print_obj, &st) != 0 || st.size == 0) {
+        if (require_nonempty_file(print_asm, "print asm") != 0) return -1;
+        {
+            const char *a[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", print_obj, print_asm, 0 };
+            if (run_stage("as86.elf", a, 8) != 0) return -1;
+        }
+        if (require_nonempty_file(print_obj, "print obj") != 0) return -1;
     }
-    if (require_nonempty_file(rt_obj, "runtime obj") != 0) return -1;
     return 0;
 }
 
@@ -211,7 +220,7 @@ void _start(int argc, char **argv) {
     append_str(app_obj_tmp, sizeof(app_obj_tmp), ".obj");
 
     cleanup_stale_cc_temps();
-    if (ensure_runtime_obj() != 0) {
+    if (ensure_runtime_obj_pair() != 0) {
         if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp);
         exit(1);
     }
@@ -246,9 +255,9 @@ void _start(int argc, char **argv) {
         }
     }
     {
-        // Runtime object first so ld86 default entry points at $_start.
-        const char *a4[] = { "ld86.elf", "-o", output, "ccrt.obj", app_obj_tmp, 0 };
-        if (run_stage("ld86.elf", a4, 5) != 0) {
+        // Keep crt0 first so ld86 default entry points at $_start.
+        const char *a4[] = { "ld86.elf", "-o", output, "crt0.obj", app_obj_tmp, "lprint.obj", 0 };
+        if (run_stage("ld86.elf", a4, 6) != 0) {
             if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp);
             exit(1);
         }
