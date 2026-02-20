@@ -164,3 +164,9 @@ void format_ip4(unsigned int ip_be, char *out) {
     }
     out[p] = '\0';
 }
+
+// SmallerC-generated code currently references $print directly.
+void smallerc_print_alias(const char *s) __asm__("$print");
+void smallerc_print_alias(const char *s) {
+    print(s);
+}

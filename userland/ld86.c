@@ -2,7 +2,7 @@
 #include "libc.h"
 
 #define MAX_IN_BYTES (2 * 1024 * 1024)
-#define MAX_INPUTS 32
+#define MAX_INPUTS 128
 
 #define MOBJ_SYM_GLOBAL 0x1u
 
@@ -139,6 +139,16 @@ typedef struct __attribute__((packed)) {
     unsigned int r_info;
 } elf32_rel_t;
 
+typedef struct __attribute__((packed)) {
+    char name[16];
+    char mtime[12];
+    char uid[6];
+    char gid[6];
+    char mode[8];
+    char size[10];
+    char fmag[2];
+} ar_hdr_t;
+
 typedef struct {
     const char *path;
     unsigned char *buf;
@@ -205,6 +215,21 @@ static unsigned int rd32(const unsigned char *p) {
         | ((unsigned int)p[3] << 24);
 }
 
+static int parse_u32_dec_field(const char *s, int n, unsigned int *out) {
+    unsigned int v = 0;
+    int seen = 0;
+    for (int i = 0; i < n; i++) {
+        char c = s[i];
+        if (c == ' ' || c == '\t') continue;
+        if (c < '0' || c > '9') return 0;
+        seen = 1;
+        v = v * 10u + (unsigned int)(c - '0');
+    }
+    if (!seen) return 0;
+    *out = v;
+    return 1;
+}
+
 static int is_mobj_magic(const unsigned char *b, unsigned int n) {
     return n >= 8 && b[0] == 'M' && b[1] == 'O' && b[2] == 'B' && b[3] == 'J';
 }
@@ -216,6 +241,15 @@ static int is_elf_rel_object(const unsigned char *b, unsigned int n) {
         eh->e_ident[2] != ELF_MAGIC2 || eh->e_ident[3] != ELF_MAGIC3) return 0;
     if (eh->e_ident[4] != ELFCLASS32 || eh->e_ident[5] != ELFDATA2LSB) return 0;
     if (eh->e_type != ELF_ET_REL || eh->e_machine != ELF_EM_386) return 0;
+    return 1;
+}
+
+static int is_ar_archive(const unsigned char *b, unsigned int n) {
+    static const char sig[8] = { '!', '<', 'a', 'r', 'c', 'h', '>', '\n' };
+    if (n < 8) return 0;
+    for (int i = 0; i < 8; i++) {
+        if ((char)b[i] != sig[i]) return 0;
+    }
     return 1;
 }
 
@@ -701,30 +735,92 @@ void _start(int argc, char **argv) {
 
     input_t inputs[MAX_INPUTS];
     memset(inputs, 0, sizeof(inputs));
+    int input_count = 0;
 
     unsigned int total_file = 0;
     unsigned int total_mem = 0;
     int chosen_entry = 0;
 
     for (int i = 0; i < pos_count; i++) {
-        inputs[i].path = pos[i];
-        inputs[i].buf = read_whole_file(pos[i], &inputs[i].size);
-        if (!inputs[i].buf) {
+        unsigned int sz = 0;
+        unsigned char *buf = read_whole_file(pos[i], &sz);
+        if (!buf) {
             print("ld86: cannot read input: ");
             print(pos[i]);
             print("\n");
             exit(1);
         }
-        if (!parse_input(&inputs[i])) exit(1);
+        if (is_ar_archive(buf, sz)) {
+            unsigned int off = 8;
+            while (off + (unsigned int)sizeof(ar_hdr_t) <= sz) {
+                const ar_hdr_t *ah = (const ar_hdr_t *)(buf + off);
+                unsigned int msz = 0;
+                if (!parse_u32_dec_field(ah->size, 10, &msz)) {
+                    print("ld86: bad archive member size in ");
+                    print(pos[i]);
+                    print("\n");
+                    exit(1);
+                }
+                unsigned int data_off = off + (unsigned int)sizeof(ar_hdr_t);
+                if (data_off + msz > sz || data_off + msz < data_off) {
+                    print("ld86: truncated archive member in ");
+                    print(pos[i]);
+                    print("\n");
+                    exit(1);
+                }
+                int is_special = 0;
+                if (ah->name[0] == '/' || (ah->name[0] == '#' && ah->name[1] == '1')) is_special = 1;
+                if (!is_special && msz > 0) {
+                    if (input_count >= MAX_INPUTS) {
+                        print("ld86: too many expanded inputs\n");
+                        exit(1);
+                    }
+                    inputs[input_count].path = pos[i];
+                    inputs[input_count].buf = (unsigned char *)malloc(msz);
+                    if (!inputs[input_count].buf) {
+                        print("ld86: out of memory\n");
+                        exit(1);
+                    }
+                    memcpy(inputs[input_count].buf, buf + data_off, msz);
+                    inputs[input_count].size = msz;
+                    if (!parse_input(&inputs[input_count])) exit(1);
+                    inputs[input_count].image_off = total_file;
+                    total_file += inputs[input_count].payload_size;
+                    total_mem += inputs[input_count].payload_size + inputs[input_count].bss_size;
+                    if (!entry_set && !chosen_entry && inputs[input_count].is_obj) {
+                        entry = base + inputs[input_count].image_off + inputs[input_count].entry_off;
+                        chosen_entry = 1;
+                    }
+                    input_count++;
+                }
+                off = data_off + msz;
+                if (off & 1u) off++;
+            }
+        } else {
+            if (input_count >= MAX_INPUTS) {
+                print("ld86: too many input files\n");
+                exit(1);
+            }
+            inputs[input_count].path = pos[i];
+            inputs[input_count].buf = buf;
+            inputs[input_count].size = sz;
+            if (!parse_input(&inputs[input_count])) exit(1);
 
-        inputs[i].image_off = total_file;
-        total_file += inputs[i].payload_size;
-        total_mem += inputs[i].payload_size + inputs[i].bss_size;
+            inputs[input_count].image_off = total_file;
+            total_file += inputs[input_count].payload_size;
+            total_mem += inputs[input_count].payload_size + inputs[input_count].bss_size;
 
-        if (!entry_set && !chosen_entry && inputs[i].is_obj) {
-            entry = base + inputs[i].image_off + inputs[i].entry_off;
-            chosen_entry = 1;
+            if (!entry_set && !chosen_entry && inputs[input_count].is_obj) {
+                entry = base + inputs[input_count].image_off + inputs[input_count].entry_off;
+                chosen_entry = 1;
+            }
+            input_count++;
         }
+    }
+
+    if (input_count <= 0) {
+        print("ld86: no linkable inputs\n");
+        exit(1);
     }
 
     unsigned char *image = (unsigned char *)malloc(total_file > 0 ? total_file : 1);
@@ -734,13 +830,13 @@ void _start(int argc, char **argv) {
     }
     if (total_file) memset(image, 0, total_file);
 
-    for (int i = 0; i < pos_count; i++) {
+    for (int i = 0; i < input_count; i++) {
         if (inputs[i].payload_size > 0) {
             memcpy(image + inputs[i].image_off, inputs[i].payload, inputs[i].payload_size);
         }
     }
 
-    for (int i = 0; i < pos_count; i++) {
+    for (int i = 0; i < input_count; i++) {
         input_t *in = &inputs[i];
         if (!in->is_obj || in->obj_version < 2 || in->rel_count == 0) continue;
 
@@ -758,7 +854,7 @@ void _start(int argc, char **argv) {
             unsigned int place_off = in->image_off + place_local;
 
             unsigned int sym_addr = 0;
-            if (!resolve_symbol_addr(inputs, pos_count, i, r->sym_index, base, &sym_addr)) {
+            if (!resolve_symbol_addr(inputs, input_count, i, r->sym_index, base, &sym_addr)) {
                 exit(1);
             }
 

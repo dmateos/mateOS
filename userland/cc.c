@@ -2,9 +2,16 @@
 #include "libc.h"
 
 #define MAX_INPUTS 16
+#define IN_C 1
+#define IN_OBJ 2
+#define IN_LIB 3
 
 static void usage(void) {
-    print("usage: cc <input1.c> [input2.c ...] [-o output.elf] [--keep-temps]\n");
+    print("usage: cc [options] <inputs>\n");
+    print("  link: cc a.c b.c x.o lib.a -o app.elf\n");
+    print("  asm:  cc -S a.c [-o a.asm]\n");
+    print("  obj:  cc -c a.c [-o a.o]\n");
+    print("options: -o <out> -c -S --keep-temps\n");
 }
 
 static char lower_ch(char c) {
@@ -17,13 +24,6 @@ static int starts_with(const char *s, const char *pfx) {
         if (*s++ != *pfx++) return 0;
     }
     return 1;
-}
-
-static int ends_with(const char *s, const char *sfx) {
-    int ls = strlen(s);
-    int lx = strlen(sfx);
-    if (lx > ls) return 0;
-    return strcmp(s + (ls - lx), sfx) == 0;
 }
 
 static int ends_with_ci(const char *s, const char *sfx) {
@@ -135,18 +135,43 @@ static void cleanup_tmp_files(const char *a, const char *b) {
 
 static int ensure_runtime_inputs(void) {
     static const char *crt0_obj = "crt0.o";
-    static const char *print_obj = "cprint.o";
+    static const char *libc_obj = "libc.o";
+    static const char *sys_obj = "syscalls.o";
     stat_t st;
     if (stat(crt0_obj, &st) != 0 || st.size == 0) return -1;
-    if (require_nonempty_file(print_obj, "c print obj") != 0) return -1;
+    if (stat(libc_obj, &st) != 0 || st.size == 0) return -1;
+    if (stat(sys_obj, &st) != 0 || st.size == 0) return -1;
     return 0;
+}
+
+static int infer_input_kind(const char *path) {
+    if (ends_with_ci(path, ".c")) return IN_C;
+    if (ends_with_ci(path, ".o") || ends_with_ci(path, ".obj")) return IN_OBJ;
+    if (ends_with_ci(path, ".a")) return IN_LIB;
+    return 0;
+}
+
+static void derive_out_from_input(const char *in, const char *ext, char *out, int out_cap) {
+    memset(out, 0, (unsigned int)out_cap);
+    append_str(out, out_cap, in);
+    if (ends_with_ci(out, ".c") || ends_with_ci(out, ".o") || ends_with_ci(out, ".a") || ends_with_ci(out, ".obj")) {
+        int n = strlen(out);
+        int cut = 0;
+        if (ends_with_ci(out, ".obj")) cut = 4;
+        else cut = 2;
+        out[n - cut] = '\0';
+    }
+    append_str(out, out_cap, ext);
 }
 
 void _start(int argc, char **argv) {
     const char *inputs[MAX_INPUTS];
+    int input_kind[MAX_INPUTS];
     int input_count = 0;
     const char *output = 0;
     int keep_temps = 0;
+    int opt_c = 0;
+    int opt_S = 0;
     char out_buf[160];
     char pid_buf[16];
     char app_asm_tmp[MAX_INPUTS][64];
@@ -171,6 +196,14 @@ void _start(int argc, char **argv) {
             keep_temps = 1;
             continue;
         }
+        if (strcmp(a, "-c") == 0) {
+            opt_c = 1;
+            continue;
+        }
+        if (strcmp(a, "-S") == 0) {
+            opt_S = 1;
+            continue;
+        }
         if (starts_with(a, "-")) {
             print("cc: unknown option: ");
             print(a);
@@ -182,7 +215,15 @@ void _start(int argc, char **argv) {
             print("cc: too many input files\n");
             exit(1);
         }
+        int kind = infer_input_kind(a);
+        if (!kind) {
+            print("cc: unsupported input type: ");
+            print(a);
+            print("\n");
+            exit(1);
+        }
         inputs[input_count++] = a;
+        input_kind[input_count - 1] = kind;
     }
 
     if (input_count <= 0) {
@@ -190,22 +231,35 @@ void _start(int argc, char **argv) {
         exit(1);
     }
 
+    if (opt_c && opt_S) {
+        print("cc: cannot use -c and -S together\n");
+        exit(1);
+    }
+
+    if (opt_c || opt_S) {
+        for (int i = 0; i < input_count; i++) {
+            if (input_kind[i] != IN_C) {
+                print("cc: -c/-S accepts only .c inputs\n");
+                exit(1);
+            }
+        }
+    }
+
     if (!output) {
-        if (input_count != 1) {
-            print("cc: -o is required when compiling multiple input files\n");
-            exit(1);
+        if (input_count == 1) {
+            const char *ext = ".elf";
+            if (opt_c) ext = ".o";
+            else if (opt_S) ext = ".asm";
+            derive_out_from_input(inputs[0], ext, out_buf, sizeof(out_buf));
+            output = out_buf;
+        } else {
+            if (opt_c || opt_S) {
+                output = 0;
+            } else {
+                print("cc: -o is required when linking multiple inputs\n");
+                exit(1);
+            }
         }
-        memset(out_buf, 0, sizeof(out_buf));
-        append_str(out_buf, sizeof(out_buf), inputs[0]);
-        if (ends_with(out_buf, ".c")) {
-            int n = strlen(out_buf);
-            out_buf[n - 2] = '\0';
-        } else if (ends_with(out_buf, ".C")) {
-            int n = strlen(out_buf);
-            out_buf[n - 2] = '\0';
-        }
-        append_str(out_buf, sizeof(out_buf), ".elf");
-        output = out_buf;
     }
 
     itoa(getpid(), pid_buf);
@@ -227,14 +281,9 @@ void _start(int argc, char **argv) {
     }
 
     cleanup_stale_cc_temps();
-    if (ensure_runtime_inputs() != 0) {
-        if (!keep_temps) {
-            for (int i = 0; i < input_count; i++) cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
-        }
-        exit(1);
-    }
 
     for (int i = 0; i < input_count; i++) {
+        if (input_kind[i] != IN_C) continue;
         const char *a1[] = {
             "smallerc.elf",
             "-seg32",
@@ -256,7 +305,43 @@ void _start(int argc, char **argv) {
             exit(1);
         }
     }
+    if (opt_S) {
+        for (int i = 0; i < input_count; i++) {
+            char final_asm[160];
+            const char *dst = 0;
+            if (output && input_count == 1) dst = output;
+            else {
+                derive_out_from_input(inputs[i], ".asm", final_asm, sizeof(final_asm));
+                dst = final_asm;
+            }
+            if (strcmp(app_asm_tmp[i], dst) != 0) {
+                if (unlink(dst) < 0) { /* ignore missing */ }
+                int infd = open(app_asm_tmp[i], O_RDONLY);
+                int outfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC);
+                if (infd < 0 || outfd < 0) {
+                    print("cc: cannot write asm output\n");
+                    exit(1);
+                }
+                char buf[512];
+                int rn;
+                while ((rn = fread(infd, buf, sizeof(buf))) > 0) {
+                    if (fwrite(outfd, buf, (unsigned int)rn) != rn) {
+                        close(infd); close(outfd);
+                        print("cc: asm copy failed\n");
+                        exit(1);
+                    }
+                }
+                close(infd); close(outfd);
+                unlink(app_asm_tmp[i]);
+            }
+            if (require_nonempty_file(dst, "asm output") != 0) exit(1);
+        }
+        print("cc: built asm output\n");
+        exit(0);
+    }
+
     for (int i = 0; i < input_count; i++) {
+        if (input_kind[i] != IN_C) continue;
         const char *a2[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", app_obj_tmp[i], app_asm_tmp[i], 0 };
         if (run_stage("as86.elf", a2, 8) != 0) {
             if (!keep_temps) {
@@ -271,16 +356,63 @@ void _start(int argc, char **argv) {
             exit(1);
         }
     }
+    if (opt_c) {
+        for (int i = 0; i < input_count; i++) {
+            char final_obj[160];
+            const char *dst = 0;
+            if (output && input_count == 1) dst = output;
+            else {
+                derive_out_from_input(inputs[i], ".o", final_obj, sizeof(final_obj));
+                dst = final_obj;
+            }
+            if (strcmp(app_obj_tmp[i], dst) != 0) {
+                if (unlink(dst) < 0) { /* ignore missing */ }
+                int infd = open(app_obj_tmp[i], O_RDONLY);
+                int outfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC);
+                if (infd < 0 || outfd < 0) {
+                    print("cc: cannot write object output\n");
+                    exit(1);
+                }
+                char buf[512];
+                int rn;
+                while ((rn = fread(infd, buf, sizeof(buf))) > 0) {
+                    if (fwrite(outfd, buf, (unsigned int)rn) != rn) {
+                        close(infd); close(outfd);
+                        print("cc: object copy failed\n");
+                        exit(1);
+                    }
+                }
+                close(infd); close(outfd);
+                unlink(app_obj_tmp[i]);
+            }
+            if (!keep_temps) unlink(app_asm_tmp[i]);
+            if (require_nonempty_file(dst, "object output") != 0) exit(1);
+        }
+        print("cc: built object output\n");
+        exit(0);
+    }
+
+    if (ensure_runtime_inputs() != 0) {
+        if (!keep_temps) {
+            for (int i = 0; i < input_count; i++) cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
+        }
+        print("cc: missing runtime objects (crt0.o/libc.o/syscalls.o)\n");
+        exit(1);
+    }
     {
-        const char *a4[3 + 1 + MAX_INPUTS + 1 + 1];
+        const char *a4[3 + 1 + (MAX_INPUTS * 2) + 4];
         int n = 0;
         a4[n++] = "ld86.elf";
         a4[n++] = "-o";
         a4[n++] = output;
         // Keep crt0 first so ld86 default entry points at $_start.
         a4[n++] = "crt0.o";
-        for (int i = 0; i < input_count; i++) a4[n++] = app_obj_tmp[i];
-        a4[n++] = "cprint.o";
+        for (int i = 0; i < input_count; i++) {
+            if (input_kind[i] == IN_C) a4[n++] = app_obj_tmp[i];
+            else a4[n++] = inputs[i];
+        }
+        a4[n++] = "libc.o";
+        a4[n++] = "syscalls.o";
         a4[n] = 0;
         if (run_stage("ld86.elf", a4, n) != 0) {
             if (!keep_temps) {

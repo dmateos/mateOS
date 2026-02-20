@@ -25,6 +25,12 @@ static int fail(const char *msg, int rc) {
     return 1;
 }
 
+static int require_file_nonempty(const char *path) {
+    stat_t st;
+    if (stat(path, &st) < 0) return -1;
+    return (st.size > 0) ? 0 : -1;
+}
+
 static void finish_and_exit(int rc) {
     // For automated host-side smoke runs under QEMU with:
     //   -device isa-debug-exit,iobase=0xf4,iosize=0x04
@@ -62,6 +68,29 @@ void _start(int argc, char **argv) {
     }
 
     {
+        const char *a[] = { "cc.elf", "-S", "test2.c", "-o", "cc_s.asm", 0 };
+        int rc = run_prog_argv("cc.elf", a, 5);
+        if (rc != 0) finish_and_exit(fail("cc -S test2.c", rc));
+        if (require_file_nonempty("cc_s.asm") != 0) finish_and_exit(fail("missing cc_s.asm", -1));
+    }
+
+    {
+        const char *a[] = { "cc.elf", "-c", "test2.c", "-o", "cc_c.o", 0 };
+        int rc = run_prog_argv("cc.elf", a, 5);
+        if (rc != 0) finish_and_exit(fail("cc -c test2.c", rc));
+        if (require_file_nonempty("cc_c.o") != 0) finish_and_exit(fail("missing cc_c.o", -1));
+    }
+    {
+        const char *a[] = { "cc.elf", "cc_c.o", "-o", "cc_obj.elf", 0 };
+        int rc = run_prog_argv("cc.elf", a, 4);
+        if (rc != 0) finish_and_exit(fail("cc cc_c.o", rc));
+    }
+    {
+        int rc = run_prog("cc_obj.elf");
+        if (rc != 0) finish_and_exit(fail("run cc_obj.elf", rc));
+    }
+
+    {
         const char *a[] = { "cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0 };
         int rc = run_prog_argv("cc.elf", a, 5);
         if (rc != 0) finish_and_exit(fail("cc t3a.c t3b.c", rc));
@@ -69,6 +98,16 @@ void _start(int argc, char **argv) {
     {
         int rc = run_prog("ccmul.elf");
         if (rc != 0) finish_and_exit(fail("run ccmul.elf", rc));
+    }
+
+    {
+        const char *a[] = { "cc.elf", "t4.c", "libtiny.a", "-o", "cc_lib.elf", 0 };
+        int rc = run_prog_argv("cc.elf", a, 5);
+        if (rc != 0) finish_and_exit(fail("cc t4.c libtiny.a", rc));
+    }
+    {
+        int rc = run_prog("cc_lib.elf");
+        if (rc != 0) finish_and_exit(fail("run cc_lib.elf", rc));
     }
 
     print("cctest: PASS\n");

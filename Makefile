@@ -114,7 +114,7 @@ INITRD_EXTRA =
 ifneq ($(wildcard $(DOOM_WAD)),)
 INITRD_EXTRA += $(DOOM_WAD)
 endif
-INITRD_EXTRA += userland/crt0.o userland/cprint.o
+INITRD_EXTRA += userland/crt0.o userland/libc.o userland/syscalls.o userland/libtiny.a
 
 initrd.img:
 	@$(MAKE) -C userland
@@ -184,7 +184,8 @@ $(FAT16_IMG):
 		$(if $(wildcard test.c),--add test.c,) \
 		$(if $(wildcard test2.c),--add test2.c,) \
 		$(if $(wildcard t3a.c),--add t3a.c,) \
-		$(if $(wildcard t3b.c),--add t3b.c,)
+		$(if $(wildcard t3b.c),--add t3b.c,) \
+		$(if $(wildcard t4.c),--add t4.c,)
 
 fat16img: $(FAT16_IMG)
 
