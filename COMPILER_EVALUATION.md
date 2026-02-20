@@ -31,7 +31,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 ## Current Hacks / Technical Debt
 
 1. `cc.c` still has temporary runtime handling.
-- Builds a generated runtime asm/object (`crt0` + `$print`) per compile.
+- Builds/uses cached generated runtime files (`ccrt.asm`/`ccrt.obj`) for `crt0` + `$print`.
 - Not yet using reusable runtime library objects.
 
 2. `as86.c` is still a subset assembler.
