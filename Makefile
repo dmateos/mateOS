@@ -114,7 +114,7 @@ INITRD_EXTRA =
 ifneq ($(wildcard $(DOOM_WAD)),)
 INITRD_EXTRA += $(DOOM_WAD)
 endif
-INITRD_EXTRA += $(wildcard userland/crt0.asm userland/lprint.asm)
+INITRD_EXTRA += userland/crt0.asm userland/cprint.o
 
 initrd.img:
 	@$(MAKE) -C userland

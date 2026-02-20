@@ -9,6 +9,36 @@
 #define MOBJ_RELOC_ABS32 1u
 #define MOBJ_RELOC_REL32 2u
 
+#define ELF_MAGIC0 0x7Fu
+#define ELF_MAGIC1 'E'
+#define ELF_MAGIC2 'L'
+#define ELF_MAGIC3 'F'
+#define ELFCLASS32 1u
+#define ELFDATA2LSB 1u
+#define ELF_ET_REL 1u
+#define ELF_EM_386 3u
+
+#define ELF_SHT_NULL 0u
+#define ELF_SHT_PROGBITS 1u
+#define ELF_SHT_SYMTAB 2u
+#define ELF_SHT_STRTAB 3u
+#define ELF_SHT_REL 9u
+#define ELF_SHT_NOBITS 8u
+
+#define ELF_SHF_WRITE 0x1u
+#define ELF_SHF_ALLOC 0x2u
+#define ELF_SHF_EXECINSTR 0x4u
+
+#define ELF_SHN_UNDEF 0u
+#define ELF_SHN_ABS 0xFFF1u
+
+#define ELF_STB_LOCAL 0u
+#define ELF_STB_GLOBAL 1u
+#define ELF_STB_WEAK 2u
+
+#define ELF_R_386_32 1u
+#define ELF_R_386_PC32 2u
+
 #define SEC_TEXT 0u
 #define SEC_RODATA 1u
 #define SEC_DATA 2u
@@ -82,6 +112,33 @@ typedef struct __attribute__((packed)) {
     unsigned int p_align;
 } elf32_phdr_t;
 
+typedef struct __attribute__((packed)) {
+    unsigned int sh_name;
+    unsigned int sh_type;
+    unsigned int sh_flags;
+    unsigned int sh_addr;
+    unsigned int sh_offset;
+    unsigned int sh_size;
+    unsigned int sh_link;
+    unsigned int sh_info;
+    unsigned int sh_addralign;
+    unsigned int sh_entsize;
+} elf32_shdr_t;
+
+typedef struct __attribute__((packed)) {
+    unsigned int st_name;
+    unsigned int st_value;
+    unsigned int st_size;
+    unsigned char st_info;
+    unsigned char st_other;
+    unsigned short st_shndx;
+} elf32_sym_t;
+
+typedef struct __attribute__((packed)) {
+    unsigned int r_offset;
+    unsigned int r_info;
+} elf32_rel_t;
+
 typedef struct {
     const char *path;
     unsigned char *buf;
@@ -141,8 +198,271 @@ static void wr32(unsigned char *p, unsigned int v) {
     p[3] = (unsigned char)((v >> 24) & 0xFFu);
 }
 
+static unsigned int rd32(const unsigned char *p) {
+    return (unsigned int)p[0]
+        | ((unsigned int)p[1] << 8)
+        | ((unsigned int)p[2] << 16)
+        | ((unsigned int)p[3] << 24);
+}
+
 static int is_mobj_magic(const unsigned char *b, unsigned int n) {
     return n >= 8 && b[0] == 'M' && b[1] == 'O' && b[2] == 'B' && b[3] == 'J';
+}
+
+static int is_elf_rel_object(const unsigned char *b, unsigned int n) {
+    if (n < sizeof(elf32_ehdr_t)) return 0;
+    const elf32_ehdr_t *eh = (const elf32_ehdr_t *)b;
+    if (eh->e_ident[0] != ELF_MAGIC0 || eh->e_ident[1] != ELF_MAGIC1 ||
+        eh->e_ident[2] != ELF_MAGIC2 || eh->e_ident[3] != ELF_MAGIC3) return 0;
+    if (eh->e_ident[4] != ELFCLASS32 || eh->e_ident[5] != ELFDATA2LSB) return 0;
+    if (eh->e_type != ELF_ET_REL || eh->e_machine != ELF_EM_386) return 0;
+    return 1;
+}
+
+static int sec_kind_from_elf(const elf32_shdr_t *sh) {
+    if (!(sh->sh_flags & ELF_SHF_ALLOC)) return -1;
+    if (sh->sh_type == ELF_SHT_NOBITS) return (int)SEC_BSS;
+    if (sh->sh_flags & ELF_SHF_EXECINSTR) return (int)SEC_TEXT;
+    if (sh->sh_flags & ELF_SHF_WRITE) return (int)SEC_DATA;
+    return (int)SEC_RODATA;
+}
+
+static int parse_elf_rel_input(input_t *in) {
+    const elf32_ehdr_t *eh = (const elf32_ehdr_t *)in->buf;
+    if (eh->e_shentsize != sizeof(elf32_shdr_t) || eh->e_shnum == 0) {
+        print("ld86: bad ELF section table: ");
+        print(in->path);
+        print("\n");
+        return 0;
+    }
+    unsigned int sht_end = eh->e_shoff + (unsigned int)eh->e_shnum * (unsigned int)sizeof(elf32_shdr_t);
+    if (eh->e_shoff >= in->size || sht_end > in->size || sht_end < eh->e_shoff) {
+        print("ld86: truncated ELF section table: ");
+        print(in->path);
+        print("\n");
+        return 0;
+    }
+
+    const elf32_shdr_t *shdrs = (const elf32_shdr_t *)(in->buf + eh->e_shoff);
+    unsigned int shnum = eh->e_shnum;
+    int *sh_kind = (int *)malloc(shnum * sizeof(int));
+    unsigned int *sh_off_in_kind = (unsigned int *)malloc(shnum * sizeof(unsigned int));
+    if (!sh_kind || !sh_off_in_kind) {
+        print("ld86: out of memory\n");
+        return 0;
+    }
+    for (unsigned int i = 0; i < shnum; i++) {
+        sh_kind[i] = -1;
+        sh_off_in_kind[i] = 0;
+    }
+
+    unsigned int kind_size[4];
+    memset(kind_size, 0, sizeof(kind_size));
+
+    for (unsigned int i = 0; i < shnum; i++) {
+        const elf32_shdr_t *sh = &shdrs[i];
+        int kind = sec_kind_from_elf(sh);
+        if (kind < 0) continue;
+        unsigned int al = sh->sh_addralign ? sh->sh_addralign : 1u;
+        kind_size[kind] = align_up(kind_size[kind], al);
+        sh_off_in_kind[i] = kind_size[kind];
+        kind_size[kind] += sh->sh_size;
+        sh_kind[i] = kind;
+    }
+
+    in->is_obj = 1;
+    in->obj_version = 2;
+    in->entry_off = 0;
+    in->sec_base[SEC_TEXT] = 0;
+    in->sec_base[SEC_RODATA] = kind_size[SEC_TEXT];
+    in->sec_base[SEC_DATA] = kind_size[SEC_TEXT] + kind_size[SEC_RODATA];
+    in->sec_base[SEC_BSS] = kind_size[SEC_TEXT] + kind_size[SEC_RODATA] + kind_size[SEC_DATA];
+    in->payload_size = kind_size[SEC_TEXT] + kind_size[SEC_RODATA] + kind_size[SEC_DATA];
+    in->bss_size = kind_size[SEC_BSS];
+    in->payload = (unsigned char *)malloc(in->payload_size ? in->payload_size : 1);
+    if (!in->payload) {
+        print("ld86: out of memory\n");
+        return 0;
+    }
+    if (in->payload_size) memset(in->payload, 0, in->payload_size);
+
+    for (unsigned int i = 0; i < shnum; i++) {
+        const elf32_shdr_t *sh = &shdrs[i];
+        int kind = sh_kind[i];
+        if (kind < 0 || kind > (int)SEC_DATA) continue;
+        if (sh->sh_type == ELF_SHT_NOBITS) continue;
+        if (sh->sh_type != ELF_SHT_PROGBITS) continue;
+        if (sh->sh_offset + sh->sh_size > in->size || sh->sh_offset + sh->sh_size < sh->sh_offset) {
+            print("ld86: truncated ELF section data: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        unsigned int dst = in->sec_base[kind] + sh_off_in_kind[i];
+        if (dst + sh->sh_size > in->payload_size || dst + sh->sh_size < dst) {
+            print("ld86: ELF section overflow: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        memcpy(in->payload + dst, in->buf + sh->sh_offset, sh->sh_size);
+    }
+
+    int symtab_index = -1;
+    for (unsigned int i = 0; i < shnum; i++) {
+        if (shdrs[i].sh_type == ELF_SHT_SYMTAB) {
+            symtab_index = (int)i;
+            break;
+        }
+    }
+
+    const elf32_sym_t *symtab = 0;
+    const char *strtab = 0;
+    unsigned int strtab_size = 0;
+    if (symtab_index >= 0) {
+        const elf32_shdr_t *symsh = &shdrs[symtab_index];
+        if (symsh->sh_entsize != sizeof(elf32_sym_t) || symsh->sh_size % sizeof(elf32_sym_t) != 0) {
+            print("ld86: bad ELF symtab: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        if (symsh->sh_offset + symsh->sh_size > in->size || symsh->sh_offset + symsh->sh_size < symsh->sh_offset) {
+            print("ld86: truncated ELF symtab: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        if (symsh->sh_link >= shnum || shdrs[symsh->sh_link].sh_type != ELF_SHT_STRTAB) {
+            print("ld86: bad ELF strtab link: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        const elf32_shdr_t *strsh = &shdrs[symsh->sh_link];
+        if (strsh->sh_offset + strsh->sh_size > in->size || strsh->sh_offset + strsh->sh_size < strsh->sh_offset) {
+            print("ld86: truncated ELF strtab: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        symtab = (const elf32_sym_t *)(in->buf + symsh->sh_offset);
+        in->sym_count = symsh->sh_size / (unsigned int)sizeof(elf32_sym_t);
+        strtab = (const char *)(in->buf + strsh->sh_offset);
+        strtab_size = strsh->sh_size;
+        in->syms = (mobj_sym_t *)malloc(in->sym_count * (unsigned int)sizeof(mobj_sym_t));
+        if (!in->syms) {
+            print("ld86: out of memory\n");
+            return 0;
+        }
+        memset(in->syms, 0, in->sym_count * (unsigned int)sizeof(mobj_sym_t));
+        for (unsigned int i = 0; i < in->sym_count; i++) {
+            const elf32_sym_t *es = &symtab[i];
+            mobj_sym_t *ms = &in->syms[i];
+            unsigned int name_off = es->st_name;
+            if (name_off < strtab_size) {
+                int k = 0;
+                while (k < 63 && name_off + (unsigned int)k < strtab_size && strtab[name_off + (unsigned int)k]) {
+                    ms->name[k] = strtab[name_off + (unsigned int)k];
+                    k++;
+                }
+                ms->name[k] = 0;
+            }
+            unsigned int bind = (unsigned int)(es->st_info >> 4);
+            if (bind == ELF_STB_GLOBAL || bind == ELF_STB_WEAK) ms->flags |= MOBJ_SYM_GLOBAL;
+            ms->section = SEC_UNDEF;
+            ms->value_off = 0;
+            if (es->st_shndx == ELF_SHN_UNDEF) continue;
+            if (es->st_shndx == ELF_SHN_ABS) continue;
+            if (es->st_shndx >= shnum) continue;
+            int kind = sh_kind[es->st_shndx];
+            if (kind < 0) continue;
+            ms->section = (unsigned int)kind;
+            ms->value_off = sh_off_in_kind[es->st_shndx] + es->st_value;
+        }
+    }
+
+    unsigned int rel_count = 0;
+    for (unsigned int i = 0; i < shnum; i++) {
+        const elf32_shdr_t *sh = &shdrs[i];
+        if (sh->sh_type != ELF_SHT_REL) continue;
+        if (sh->sh_info >= shnum) continue;
+        int kind = sh_kind[sh->sh_info];
+        if (kind < 0 || kind > (int)SEC_DATA) continue;
+        if (sh->sh_entsize != sizeof(elf32_rel_t) || sh->sh_size % sizeof(elf32_rel_t) != 0) {
+            print("ld86: bad ELF reloc table: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        rel_count += sh->sh_size / (unsigned int)sizeof(elf32_rel_t);
+    }
+    in->rel_count = rel_count;
+    if (rel_count) {
+        if (!in->syms || in->sym_count == 0) {
+            print("ld86: relocations require symtab: ");
+            print(in->path);
+            print("\n");
+            return 0;
+        }
+        in->rels = (mobj_reloc_t *)malloc(rel_count * (unsigned int)sizeof(mobj_reloc_t));
+        if (!in->rels) {
+            print("ld86: out of memory\n");
+            return 0;
+        }
+        unsigned int rw = 0;
+        for (unsigned int i = 0; i < shnum; i++) {
+            const elf32_shdr_t *sh = &shdrs[i];
+            if (sh->sh_type != ELF_SHT_REL) continue;
+            if (sh->sh_info >= shnum) continue;
+            int kind = sh_kind[sh->sh_info];
+            if (kind < 0 || kind > (int)SEC_DATA) continue;
+            if (sh->sh_offset + sh->sh_size > in->size || sh->sh_offset + sh->sh_size < sh->sh_offset) {
+                print("ld86: truncated ELF reloc data: ");
+                print(in->path);
+                print("\n");
+                return 0;
+            }
+            const elf32_rel_t *rels = (const elf32_rel_t *)(in->buf + sh->sh_offset);
+            unsigned int rc = sh->sh_size / (unsigned int)sizeof(elf32_rel_t);
+            for (unsigned int j = 0; j < rc; j++) {
+                unsigned int rtype = rels[j].r_info & 0xFFu;
+                unsigned int rsym = rels[j].r_info >> 8;
+                if (rsym >= in->sym_count) {
+                    print("ld86: bad ELF reloc symbol index: ");
+                    print(in->path);
+                    print("\n");
+                    return 0;
+                }
+                if (!(rtype == ELF_R_386_32 || rtype == ELF_R_386_PC32)) {
+                    print("ld86: unsupported ELF relocation type in ");
+                    print(in->path);
+                    print("\n");
+                    return 0;
+                }
+                unsigned int off = sh_off_in_kind[sh->sh_info] + rels[j].r_offset;
+                unsigned int sec_lim = kind_size[kind];
+                if (off + 4 > sec_lim || off + 4 < off) {
+                    print("ld86: ELF relocation out of section range: ");
+                    print(in->path);
+                    print("\n");
+                    return 0;
+                }
+                unsigned int place = in->sec_base[kind] + off;
+                mobj_reloc_t *mr = &in->rels[rw++];
+                mr->section = (unsigned int)kind;
+                mr->offset = off;
+                mr->type = (rtype == ELF_R_386_32) ? MOBJ_RELOC_ABS32 : MOBJ_RELOC_REL32;
+                mr->sym_index = rsym;
+                mr->addend = (int)rd32(in->payload + place);
+            }
+        }
+        if (rw != rel_count) {
+            print("ld86: internal relocation count mismatch\n");
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static void usage(void) {
@@ -179,84 +499,91 @@ static int parse_input(input_t *in) {
     in->rels = 0;
     in->rel_count = 0;
     in->bss_size = 0;
-
-    if (!is_mobj_magic(in->buf, in->size)) {
-        in->payload = in->buf;
-        in->payload_size = in->size;
-        return 1;
+    in->payload = in->buf;
+    in->payload_size = in->size;
+    if (is_mobj_magic(in->buf, in->size)) {
+        unsigned int ver = *(unsigned int *)(in->buf + 4);
+        if (ver == 1) {
+            if (in->size < sizeof(mobj_header_v1_t)) {
+                print("ld86: truncated v1 object: ");
+                print(in->path);
+                print("\n");
+                return 0;
+            }
+            mobj_header_v1_t *h = (mobj_header_v1_t *)in->buf;
+            unsigned int filesz = h->text_size + h->rodata_size + h->data_size;
+            unsigned int need = (unsigned int)sizeof(mobj_header_v1_t) + filesz;
+            if (need > in->size) {
+                print("ld86: bad v1 object size: ");
+                print(in->path);
+                print("\n");
+                return 0;
+            }
+            in->is_obj = 1;
+            in->obj_version = 1;
+            in->entry_off = h->entry_off;
+            in->payload = in->buf + sizeof(mobj_header_v1_t);
+            in->payload_size = filesz;
+            in->bss_size = h->bss_size;
+            in->sec_base[SEC_TEXT] = 0;
+            in->sec_base[SEC_RODATA] = h->text_size;
+            in->sec_base[SEC_DATA] = h->text_size + h->rodata_size;
+            in->sec_base[SEC_BSS] = h->text_size + h->rodata_size + h->data_size;
+            return 1;
+        }
+        if (ver == 2) {
+            if (in->size < sizeof(mobj_header_v2_t)) {
+                print("ld86: truncated v2 object: ");
+                print(in->path);
+                print("\n");
+                return 0;
+            }
+            mobj_header_v2_t *h = (mobj_header_v2_t *)in->buf;
+            unsigned int filesz = h->text_size + h->rodata_size + h->data_size;
+            unsigned int sym_bytes = h->sym_count * (unsigned int)sizeof(mobj_sym_t);
+            unsigned int rel_bytes = h->reloc_count * (unsigned int)sizeof(mobj_reloc_t);
+            if (h->sym_count && sym_bytes / (unsigned int)sizeof(mobj_sym_t) != h->sym_count) return 0;
+            if (h->reloc_count && rel_bytes / (unsigned int)sizeof(mobj_reloc_t) != h->reloc_count) return 0;
+            unsigned int need = (unsigned int)sizeof(mobj_header_v2_t) + filesz + sym_bytes + rel_bytes;
+            if (need > in->size) {
+                print("ld86: bad v2 object size: ");
+                print(in->path);
+                print("\n");
+                return 0;
+            }
+            in->is_obj = 1;
+            in->obj_version = 2;
+            in->entry_off = h->entry_off;
+            in->payload = in->buf + sizeof(mobj_header_v2_t);
+            in->payload_size = filesz;
+            in->bss_size = h->bss_size;
+            in->sec_base[SEC_TEXT] = 0;
+            in->sec_base[SEC_RODATA] = h->text_size;
+            in->sec_base[SEC_DATA] = h->text_size + h->rodata_size;
+            in->sec_base[SEC_BSS] = h->text_size + h->rodata_size + h->data_size;
+            in->sym_count = h->sym_count;
+            in->rel_count = h->reloc_count;
+            in->syms = (mobj_sym_t *)(in->payload + filesz);
+            in->rels = (mobj_reloc_t *)((unsigned char *)in->syms + sym_bytes);
+            return 1;
+        }
+        print("ld86: unsupported object version in ");
+        print(in->path);
+        print("\n");
+        return 0;
     }
 
-    unsigned int ver = *(unsigned int *)(in->buf + 4);
-    if (ver == 1) {
-        if (in->size < sizeof(mobj_header_v1_t)) {
-            print("ld86: truncated v1 object: ");
-            print(in->path);
-            print("\n");
-            return 0;
-        }
-        mobj_header_v1_t *h = (mobj_header_v1_t *)in->buf;
-        unsigned int filesz = h->text_size + h->rodata_size + h->data_size;
-        unsigned int need = (unsigned int)sizeof(mobj_header_v1_t) + filesz;
-        if (need > in->size) {
-            print("ld86: bad v1 object size: ");
-            print(in->path);
-            print("\n");
-            return 0;
-        }
-        in->is_obj = 1;
-        in->obj_version = 1;
-        in->entry_off = h->entry_off;
-        in->payload = in->buf + sizeof(mobj_header_v1_t);
-        in->payload_size = filesz;
-        in->bss_size = h->bss_size;
-        in->sec_base[SEC_TEXT] = 0;
-        in->sec_base[SEC_RODATA] = h->text_size;
-        in->sec_base[SEC_DATA] = h->text_size + h->rodata_size;
-        in->sec_base[SEC_BSS] = h->text_size + h->rodata_size + h->data_size;
+    if (is_elf_rel_object(in->buf, in->size)) {
+        if (!parse_elf_rel_input(in)) return 0;
         return 1;
     }
-
-    if (ver == 2) {
-        if (in->size < sizeof(mobj_header_v2_t)) {
-            print("ld86: truncated v2 object: ");
-            print(in->path);
-            print("\n");
-            return 0;
-        }
-        mobj_header_v2_t *h = (mobj_header_v2_t *)in->buf;
-        unsigned int filesz = h->text_size + h->rodata_size + h->data_size;
-        unsigned int sym_bytes = h->sym_count * (unsigned int)sizeof(mobj_sym_t);
-        unsigned int rel_bytes = h->reloc_count * (unsigned int)sizeof(mobj_reloc_t);
-        if (h->sym_count && sym_bytes / (unsigned int)sizeof(mobj_sym_t) != h->sym_count) return 0;
-        if (h->reloc_count && rel_bytes / (unsigned int)sizeof(mobj_reloc_t) != h->reloc_count) return 0;
-        unsigned int need = (unsigned int)sizeof(mobj_header_v2_t) + filesz + sym_bytes + rel_bytes;
-        if (need > in->size) {
-            print("ld86: bad v2 object size: ");
-            print(in->path);
-            print("\n");
-            return 0;
-        }
-        in->is_obj = 1;
-        in->obj_version = 2;
-        in->entry_off = h->entry_off;
-        in->payload = in->buf + sizeof(mobj_header_v2_t);
-        in->payload_size = filesz;
-        in->bss_size = h->bss_size;
-        in->sec_base[SEC_TEXT] = 0;
-        in->sec_base[SEC_RODATA] = h->text_size;
-        in->sec_base[SEC_DATA] = h->text_size + h->rodata_size;
-        in->sec_base[SEC_BSS] = h->text_size + h->rodata_size + h->data_size;
-        in->sym_count = h->sym_count;
-        in->rel_count = h->reloc_count;
-        in->syms = (mobj_sym_t *)(in->payload + filesz);
-        in->rels = (mobj_reloc_t *)((unsigned char *)in->syms + sym_bytes);
-        return 1;
-    }
-
-    print("ld86: unsupported object version in ");
-    print(in->path);
-    print("\n");
-    return 0;
+    in->payload = in->buf;
+    in->payload_size = in->size;
+    in->is_obj = 0;
+    in->obj_version = 0;
+    in->entry_off = 0;
+    in->bss_size = 0;
+    return 1;
 }
 
 static int resolve_symbol_addr(input_t *inputs, int input_count,

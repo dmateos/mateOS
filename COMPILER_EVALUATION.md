@@ -7,7 +7,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 ### Working now
 - `smallerc.elf` runs in mateOS and emits x86 asm.
 - `as86.elf` supports `-f bin` and `-f obj` (`MOBJ` v2 with symbols+relocs).
-- `ld86.elf` links flat binaries and `MOBJ` objects into ELF32 (single `PT_LOAD`).
+- `ld86.elf` links flat binaries, `MOBJ` objects, and minimal ELF32 relocatable `.o` inputs into ELF32 (single `PT_LOAD`).
 - `cc.elf` drives the full in-OS pipeline:
   - `smallerc -> as86 -f obj -> ld86`
 - Basic programs now build and run in-OS:
@@ -26,12 +26,13 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Added `as86 -f obj` `MOBJ` v2 with symbol and relocation tables.
 - Added relocation application in `ld86` for single-object `MOBJ` links.
 - Added multi-input linking in `ld86` with cross-object global symbol resolution.
-- Replaced `cc` inline runtime injection with separate runtime object assembly/linking.
+- Added minimal ELF32 `.o` ingestion in `ld86` (alloc sections + symtab + `R_386_32`/`R_386_PC32` relocations).
+- Switched `cc` runtime to `crt0.obj` + `cprint.o` (removed `lprint` asm shim).
 
 ## Current Hacks / Technical Debt
 
 1. `cc.c` still has temporary runtime handling.
-- Uses checked-in runtime sources (`crt0.asm`, `lprint.asm`) and caches assembled runtime objects (`crt0.obj`, `lprint.obj`).
+- Uses checked-in `crt0.asm` (assembled in-OS to `crt0.obj`) plus prebuilt `cprint.o`.
 - Not yet using reusable runtime library objects.
 
 2. `as86.c` is still a subset assembler.
@@ -41,7 +42,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 
 3. `ld86.c` is still not a full linker.
 - Supports multi-input objects and applies core ABS32/REL32 relocations.
-- Still no standard ELF `.o` ingestion, no archive libs, no section GC, minimal diagnostics.
+- Has minimal ELF `.o` ingestion, but still no archive libs, no section GC, and minimal diagnostics.
 
 4. Runtime/libc integration is temporary.
 - `smallerc/compat_runtime.c` exists mainly to get SmallerC running.
