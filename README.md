@@ -107,6 +107,7 @@ make userland                # Build all userland programs
 make initrd                  # Build userland + pack into initrd.img
 make                         # Build kernel (dmos.bin)
 make run                     # Run in QEMU (text mode)
+make cc-smoke                # Headless compiler smoke test (autorun cctest)
 ```
 
 ### Kernel Versioning
@@ -137,6 +138,7 @@ make run NET=tap                  # TAP networking
 make run NET=1 HTTP=1             # Networking + port forward 8080->80
 make run FAT16=1                  # Attach FAT16 disk image
 make run GFX=1 NET=1 HTTP=1      # Graphics + networking + HTTP
+make cc-smoke                     # Headless compiler smoke test
 ```
 
 Flags can be combined freely:

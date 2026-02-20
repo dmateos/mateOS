@@ -3,6 +3,7 @@
 
 static multiboot_info_t *multiboot_info = NULL;
 static multiboot_module_t *initrd_module = NULL;
+static const char *kernel_cmdline = NULL;
 
 // VBE framebuffer info
 static uint32_t vbe_fb_addr = 0;
@@ -33,6 +34,13 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
   // Check for boot loader name
   if (mbi->flags & MULTIBOOT_FLAG_LOADER) {
     printf("  Bootloader: %s\n", (char *)mbi->boot_loader_name);
+  }
+
+  if (mbi->flags & MULTIBOOT_FLAG_CMDLINE) {
+    kernel_cmdline = (const char *)(uint32_t)mbi->cmdline;
+    if (kernel_cmdline) {
+      printf("  Cmdline: %s\n", kernel_cmdline);
+    }
   }
 
   // Check for modules (initrd)
@@ -94,3 +102,4 @@ uint32_t multiboot_get_vbe_width(void)  { return vbe_fb_width; }
 uint32_t multiboot_get_vbe_height(void) { return vbe_fb_height; }
 uint32_t multiboot_get_vbe_pitch(void)  { return vbe_fb_pitch; }
 uint32_t multiboot_get_vbe_bpp(void)    { return vbe_fb_bpp; }
+const char *multiboot_get_cmdline(void) { return kernel_cmdline; }

@@ -135,6 +135,10 @@ static void term_putc_adapter(char c) {
   term_putchar(c);
 }
 
+void console_set_serial_mirror(int enabled) {
+  (void)enabled;
+}
+
 static void klog_commit_line(void) {
   uint32_t slot = klog_head;
   if (klog_pending_len >= KLOG_LINE_MAX) {

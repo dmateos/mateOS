@@ -188,6 +188,26 @@ fat16img: $(FAT16_IMG)
 run-fat16:
 	$(MAKE) run FAT16=1
 
+cc-smoke: $(TARGET) initrd $(FAT16_IMG)
+	@$(MAKE) -B initrd.img
+	@echo "Running compiler smoke test in QEMU (autorun=cctest)..."
+	@log=".cc-smoke.log"; \
+	rm -f "$$log"; \
+	$(QEMU) -display none -serial stdio \
+		-kernel $(TARGET) -initrd initrd.img -no-reboot \
+		-drive file=$(FAT16_IMG),format=raw,if=ide \
+		-append "autorun=cctest serial=1" \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		> "$$log" 2>&1; \
+	rc=$$?; \
+	if grep -q "cctest: PASS" "$$log"; then \
+		echo "cc-smoke: PASS"; \
+		exit 0; \
+	fi; \
+	echo "cc-smoke: FAIL (qemu rc=$$rc)"; \
+	tail -n 80 "$$log"; \
+	exit 1
+
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)
 
@@ -201,4 +221,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run run-fat16 fat16img userland initrd
+.PHONY: clean rust run run-fat16 fat16img cc-smoke userland initrd

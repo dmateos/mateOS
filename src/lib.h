@@ -19,5 +19,6 @@ void kprintf(const char *format, ...);
 void itoa(int num, char *buf, int base);
 uint32_t klog_snapshot_size(void);
 int klog_read_bytes(uint32_t offset, void *buf, uint32_t len);
+void console_set_serial_mirror(int enabled);
 
 #endif

@@ -241,3 +241,7 @@ int detach(void) {
 void *sbrk(int increment) {
     return (void *)(unsigned int)__syscall1(SYS_SBRK, (unsigned int)increment);
 }
+
+int debug_exit(int code) {
+    return __syscall1(SYS_DEBUG_EXIT, (unsigned int)code);
+}

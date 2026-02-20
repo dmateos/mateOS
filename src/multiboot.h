@@ -89,5 +89,6 @@ uint32_t multiboot_get_vbe_width(void);
 uint32_t multiboot_get_vbe_height(void);
 uint32_t multiboot_get_vbe_pitch(void);   // Bytes per scanline
 uint32_t multiboot_get_vbe_bpp(void);     // Bits per pixel
+const char *multiboot_get_cmdline(void);  // Kernel command line or NULL
 
 #endif

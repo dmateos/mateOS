@@ -25,6 +25,16 @@ static int fail(const char *msg, int rc) {
     return 1;
 }
 
+static void finish_and_exit(int rc) {
+    // For automated host-side smoke runs under QEMU with:
+    //   -device isa-debug-exit,iobase=0xf4,iosize=0x04
+    // this provides a machine-readable result.
+    // rc=0 => host sees qemu exit status 1.
+    debug_exit(rc);
+    shutdown();
+    exit(rc);
+}
+
 void _start(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -34,23 +44,23 @@ void _start(int argc, char **argv) {
     {
         const char *a[] = { "cc.elf", "test2.c", "-o", "cc_ret.elf", 0 };
         int rc = run_prog_argv("cc.elf", a, 4);
-        if (rc != 0) exit(fail("cc test2.c", rc));
+        if (rc != 0) finish_and_exit(fail("cc test2.c", rc));
     }
     {
         int rc = run_prog("cc_ret.elf");
-        if (rc != 0) exit(fail("run cc_ret.elf", rc));
+        if (rc != 0) finish_and_exit(fail("run cc_ret.elf", rc));
     }
 
     {
         const char *a[] = { "cc.elf", "test.c", "-o", "cc_print.elf", 0 };
         int rc = run_prog_argv("cc.elf", a, 4);
-        if (rc != 0) exit(fail("cc test.c", rc));
+        if (rc != 0) finish_and_exit(fail("cc test.c", rc));
     }
     {
         int rc = run_prog("cc_print.elf");
-        if (rc != 0) exit(fail("run cc_print.elf", rc));
+        if (rc != 0) finish_and_exit(fail("run cc_print.elf", rc));
     }
 
     print("cctest: PASS\n");
-    exit(0);
+    finish_and_exit(0);
 }

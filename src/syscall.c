@@ -11,6 +11,7 @@
 #include "arch/i686/cpu.h"
 #include "arch/i686/interrupts.h"
 #include "arch/i686/util.h"
+#include "arch/i686/io.h"
 #include "arch/i686/pci.h"
 #include "liballoc/liballoc_1_1.h"
 #include "liballoc/liballoc_hooks.h"
@@ -473,6 +474,11 @@ static uint32_t sys_do_getticks(void) {
   return get_tick_count();
 }
 
+static int sys_do_debug_exit(uint32_t code) {
+  outb(0xF4, (uint8_t)(code & 0xFFu));
+  return 0;
+}
+
 // Kill a task by task id.
 static int sys_do_kill(uint32_t task_id) {
   return task_kill(task_id, -9);
@@ -690,6 +696,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_SBRK:
       return sys_do_sbrk((int32_t)ebx);
+
+    case SYS_DEBUG_EXIT:
+      return (uint32_t)sys_do_debug_exit(ebx);
 
     default:
       return (uint32_t)-1;

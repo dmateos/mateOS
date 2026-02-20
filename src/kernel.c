@@ -17,6 +17,7 @@
 #include "syscall.h"
 #include "pmm.h"
 #include "arch/i686/pci.h"
+#include "arch/i686/io.h"
 #include "window.h"
 #include "arch/i686/legacytty.h"
 #include "net.h"
@@ -27,6 +28,20 @@
 extern void rust_hello(void);
 extern int rust_add(int a, int b);
 
+static int cmdline_has_token(const char *cmdline, const char *token) {
+  if (!cmdline || !token || !token[0]) return 0;
+  size_t tlen = strlen(token);
+  const char *p = cmdline;
+  while (*p) {
+    while (*p == ' ') p++;
+    if (!*p) break;
+    const char *start = p;
+    while (*p && *p != ' ') p++;
+    size_t len = (size_t)(p - start);
+    if (len == tlen && memcmp(start, token, tlen) == 0) return 1;
+  }
+  return 0;
+}
 
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
@@ -37,6 +52,12 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   // Parse multiboot info (if provided by bootloader)
   printf("\n");
   multiboot_init(multiboot_magic, multiboot_info);
+  const char *cmdline = multiboot_get_cmdline();
+  if (cmdline_has_token(cmdline, "serial=1") || cmdline_has_token(cmdline, "autorun=cctest")) {
+    serial_init();
+    console_set_serial_mirror(1);
+    kprintf("[boot] serial mirror enabled\n");
+  }
 
   // Initialize ramfs from initrd module
   multiboot_module_t *initrd = multiboot_get_initrd();
@@ -99,13 +120,19 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   keyboard_buffer_init();
   keyboard_buffer_enable(1);
 
-  // Auto-launch shell.elf — loaded directly, no kernel trampoline
-  task_t *shell_task = task_create_user_elf("shell.elf", NULL, 0);
-  if (shell_task) {
+  const char *boot_prog = "shell.elf";
+  if (cmdline_has_token(cmdline, "autorun=cctest")) {
+    boot_prog = "cctest.elf";
+    kprintf("[boot] autorun requested: %s\n", boot_prog);
+  }
+
+  // Auto-launch boot program — loaded directly, no kernel trampoline
+  task_t *boot_task = task_create_user_elf(boot_prog, NULL, 0);
+  if (boot_task) {
     task_enable();
   } else {
-    printf("WARNING: shell.elf not found in ramfs\n");
-    printf("No shell available. System halted.\n");
+    printf("WARNING: %s not found in ramfs\n", boot_prog);
+    printf("No boot program available. System halted.\n");
   }
 
   // Main loop - just halt and wait for interrupts
