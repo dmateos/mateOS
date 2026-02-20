@@ -10,6 +10,8 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - `ld86.elf` links flat binaries, `MOBJ` objects, and minimal ELF32 relocatable `.o` inputs into ELF32 (single `PT_LOAD`).
 - `cc.elf` drives the full in-OS pipeline:
   - `smallerc -> as86 -f obj -> ld86`
+- `cc.elf` now supports multi-file compile/link:
+  - `cc a.c b.c -o app.elf`
 - Basic programs now build and run in-OS:
   - `return 0;`
   - `print("..."); return 0;`
@@ -27,12 +29,13 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Added relocation application in `ld86` for single-object `MOBJ` links.
 - Added multi-input linking in `ld86` with cross-object global symbol resolution.
 - Added minimal ELF32 `.o` ingestion in `ld86` (alloc sections + symtab + `R_386_32`/`R_386_PC32` relocations).
-- Switched `cc` runtime to `crt0.obj` + `cprint.o` (removed `lprint` asm shim).
+- Switched `cc` runtime to prebuilt objects (`crt0.o` + `cprint.o`) and removed runtime asm shims.
+- Added multi-file input support in `cc`.
 
 ## Current Hacks / Technical Debt
 
 1. `cc.c` still has temporary runtime handling.
-- Uses checked-in `crt0.asm` (assembled in-OS to `crt0.obj`) plus prebuilt `cprint.o`.
+- Uses prebuilt runtime objects (`crt0.o`, `cprint.o`) instead of a normal libc/crt link model.
 - Not yet using reusable runtime library objects.
 
 2. `as86.c` is still a subset assembler.
@@ -74,6 +77,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 Inside mateOS:
 - `cc test2.c -o app.elf` (return-only sample)
 - `cc test.c -o app.elf` (print sample)
+- `cc t3a.c t3b.c -o app.elf` (multi-file sample)
 - `app.elf`
 
 `cc` now removes temp files by default.

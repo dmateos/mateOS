@@ -454,7 +454,14 @@ static int parse_elf_rel_input(input_t *in) {
                 mr->offset = off;
                 mr->type = (rtype == ELF_R_386_32) ? MOBJ_RELOC_ABS32 : MOBJ_RELOC_REL32;
                 mr->sym_index = rsym;
-                mr->addend = (int)rd32(in->payload + place);
+                {
+                    int add = (int)rd32(in->payload + place);
+                    // ELF REL uses S + A - P for PC32, while ld86's internal
+                    // REL32 path applies against (P+4). Shift by +4 so both
+                    // models converge.
+                    if (rtype == ELF_R_386_PC32) add += 4;
+                    mr->addend = add;
+                }
             }
         }
         if (rw != rel_count) {

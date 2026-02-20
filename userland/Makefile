@@ -29,7 +29,7 @@ DOOM_PORT_CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -f
 	-DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 \
 	-DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE -DCMAP256
 
-all: $(PROGRAMS) cprint.o
+all: $(PROGRAMS) cprint.o crt0.o
 
 hello.elf: hello.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -161,6 +161,9 @@ ld86.elf: ld86.o syscalls.o libc.o
 cc.elf: cc.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
+
+crt0.o: crt0.s
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 smallerc/vendor/smlrc.o: smallerc/vendor/smlrc.c
 	$(CC) $(SMALLERC_CFLAGS) -c -o $@ $<

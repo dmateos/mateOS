@@ -61,6 +61,16 @@ void _start(int argc, char **argv) {
         if (rc != 0) finish_and_exit(fail("run cc_print.elf", rc));
     }
 
+    {
+        const char *a[] = { "cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0 };
+        int rc = run_prog_argv("cc.elf", a, 5);
+        if (rc != 0) finish_and_exit(fail("cc t3a.c t3b.c", rc));
+    }
+    {
+        int rc = run_prog("ccmul.elf");
+        if (rc != 0) finish_and_exit(fail("run ccmul.elf", rc));
+    }
+
     print("cctest: PASS\n");
     finish_and_exit(0);
 }

@@ -114,7 +114,7 @@ INITRD_EXTRA =
 ifneq ($(wildcard $(DOOM_WAD)),)
 INITRD_EXTRA += $(DOOM_WAD)
 endif
-INITRD_EXTRA += userland/crt0.asm userland/cprint.o
+INITRD_EXTRA += userland/crt0.o userland/cprint.o
 
 initrd.img:
 	@$(MAKE) -C userland
@@ -182,7 +182,9 @@ endif
 $(FAT16_IMG):
 	python3 tools/mkfat16_test_disk.py $(FAT16_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),) \
 		$(if $(wildcard test.c),--add test.c,) \
-		$(if $(wildcard test2.c),--add test2.c,)
+		$(if $(wildcard test2.c),--add test2.c,) \
+		$(if $(wildcard t3a.c),--add t3a.c,) \
+		$(if $(wildcard t3b.c),--add t3b.c,)
 
 fat16img: $(FAT16_IMG)
 
@@ -191,6 +193,7 @@ run-fat16:
 
 cc-smoke: $(TARGET) initrd $(FAT16_IMG)
 	@$(MAKE) -B initrd.img
+	@$(MAKE) -B $(FAT16_IMG)
 	@echo "Running compiler smoke test in QEMU (autorun=cctest)..."
 	@log=".cc-smoke.log"; \
 	rm -f "$$log"; \
