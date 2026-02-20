@@ -26,11 +26,13 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 - Added `as86 -f obj` `MOBJ` v2 with symbol and relocation tables.
 - Added relocation application in `ld86` for single-object `MOBJ` links.
 - Added multi-input linking in `ld86` with cross-object global symbol resolution.
+- Replaced `cc` inline runtime injection with separate runtime object assembly/linking.
 
 ## Current Hacks / Technical Debt
 
-1. `cc.c` rewrites generated asm by hand.
-- Injects built-in crt0 (`$_start`) and built-in `$print`.
+1. `cc.c` still has temporary runtime handling.
+- Builds a generated runtime asm/object (`crt0` + `$print`) per compile.
+- Not yet using reusable runtime library objects.
 
 2. `as86.c` is still a subset assembler.
 - Has real `.text/.rodata/.data/.bss` tracking and deterministic flat layout.
@@ -48,7 +50,7 @@ This document tracks the **current** compiler/toolchain state in mateOS and the 
 ## Next Steps (Priority Order)
 
 1. Replace remaining asm text surgery in `cc`.
-- Remove remaining runtime injection hacks.
+- Replace generated runtime object with reusable runtime libs (`crt0.o`, libc objs).
 
 2. Complete relocatable object support.
 - Add reloc coverage for remaining instruction/data edge cases.

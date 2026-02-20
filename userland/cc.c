@@ -36,11 +36,21 @@ static int ends_with_ci(const char *s, const char *sfx) {
 }
 
 static int is_cc_temp_name(const char *name) {
-    // Match cc_<digits>.asm / cc_<digits>.obj / cc_<digits>.bin.
-    if (!(name[0] == 'c' || name[0] == 'C')) return 0;
-    if (!(name[1] == 'c' || name[1] == 'C')) return 0;
-    if (name[2] != '_') return 0;
-    int i = 3;
+    // Match cc_<digits>.* and ccrt_<digits>.*
+    int i = 0;
+    if ((name[0] == 'c' || name[0] == 'C') &&
+        (name[1] == 'c' || name[1] == 'C') &&
+        name[2] == '_') {
+        i = 3;
+    } else if ((name[0] == 'c' || name[0] == 'C') &&
+               (name[1] == 'c' || name[1] == 'C') &&
+               (name[2] == 'r' || name[2] == 'R') &&
+               (name[3] == 't' || name[3] == 'T') &&
+               name[4] == '_') {
+        i = 5;
+    } else {
+        return 0;
+    }
     int have_digit = 0;
     while (name[i] >= '0' && name[i] <= '9') {
         i++;
@@ -113,17 +123,21 @@ static int require_nonempty_file(const char *path, const char *stage_name) {
     return 0;
 }
 
-static void cleanup_tmp_pair(const char *asm_tmp, const char *bin_tmp) {
-    unlink(asm_tmp);
-    unlink(bin_tmp);
+static void cleanup_tmp_files(const char *a, const char *b, const char *c, const char *d) {
+    if (a && a[0]) unlink(a);
+    if (b && b[0]) unlink(b);
+    if (c && c[0]) unlink(c);
+    if (d && d[0]) unlink(d);
 }
 
-static int inject_runtime_asm(const char *path) {
-    static const char *rt_prefix =
-        "; ---- cc built-in crt0 ----\n"
+static int write_runtime_asm(const char *path) {
+    static const char *rt_src =
+        "; ---- cc runtime object ----\n"
         "bits 32\n"
         "section .text\n"
         "global $_start\n"
+        "global $print\n"
+        "extern $main\n"
         "$_start:\n"
         "\tcall\t$main\n"
         "\tmov\tebx, eax\n"
@@ -132,11 +146,7 @@ static int inject_runtime_asm(const char *path) {
         "..@cc_hang:\n"
         "\tjmp\t..@cc_hang\n"
         "\n";
-    static const char *rt_suffix =
-        "\n"
-        "; ---- cc built-in runtime ----\n"
-        "section .text\n"
-        "global $print\n"
+    static const char *rt_print =
         "$print:\n"
         "\tpush\tebp\n"
         "\tmov\tebp, esp\n"
@@ -165,50 +175,20 @@ static int inject_runtime_asm(const char *path) {
         "\tleave\n"
         "\tret\n";
 
-    stat_t st;
-    if (stat(path, &st) < 0 || st.size == 0) {
-        print("cc: runtime inject stat failed\n");
-        return -1;
-    }
-
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC);
     if (fd < 0) {
-        print("cc: failed to open asm for runtime inject\n");
-        return -1;
-    }
-    char *src = (char *)malloc(st.size + 1);
-    if (!src) {
-        close(fd);
-        print("cc: out of memory in runtime inject\n");
-        return -1;
-    }
-    int rn = fread(fd, src, st.size);
-    close(fd);
-    if (rn != (int)st.size) {
-        print("cc: failed to read asm for runtime inject\n");
-        free(src);
-        return -1;
-    }
-    src[st.size] = '\0';
-    int n2 = (int)st.size;
-
-    fd = open(path, O_WRONLY | O_TRUNC);
-    if (fd < 0) {
-        print("cc: failed to reopen asm for runtime inject\n");
-        free(src);
+        print("cc: failed to create runtime asm\n");
         return -1;
     }
 
-    int n1 = strlen(rt_prefix);
-    int n3 = strlen(rt_suffix);
+    int n1 = strlen(rt_src);
+    int n2 = strlen(rt_print);
     int ok = 1;
-    if (fwrite(fd, rt_prefix, (unsigned int)n1) != n1) ok = 0;
-    if (ok && fwrite(fd, src, (unsigned int)n2) != n2) ok = 0;
-    if (ok && fwrite(fd, rt_suffix, (unsigned int)n3) != n3) ok = 0;
-    free(src);
+    if (fwrite(fd, rt_src, (unsigned int)n1) != n1) ok = 0;
+    if (ok && fwrite(fd, rt_print, (unsigned int)n2) != n2) ok = 0;
     if (!ok) {
         close(fd);
-        print("cc: failed to write runtime-injected asm\n");
+        print("cc: failed to write runtime asm\n");
         return -1;
     }
     close(fd);
@@ -221,8 +201,10 @@ void _start(int argc, char **argv) {
     int keep_temps = 0;
     char out_buf[160];
     char pid_buf[16];
-    char asm_tmp[64];
-    char obj_tmp[64];
+    char app_asm_tmp[64];
+    char app_obj_tmp[64];
+    char rt_asm_tmp[64];
+    char rt_obj_tmp[64];
 
     if (argc < 2) {
         usage();
@@ -278,14 +260,22 @@ void _start(int argc, char **argv) {
     }
 
     itoa(getpid(), pid_buf);
-    memset(asm_tmp, 0, sizeof(asm_tmp));
-    memset(obj_tmp, 0, sizeof(obj_tmp));
-    append_str(asm_tmp, sizeof(asm_tmp), "cc_");
-    append_str(asm_tmp, sizeof(asm_tmp), pid_buf);
-    append_str(asm_tmp, sizeof(asm_tmp), ".asm");
-    append_str(obj_tmp, sizeof(obj_tmp), "cc_");
-    append_str(obj_tmp, sizeof(obj_tmp), pid_buf);
-    append_str(obj_tmp, sizeof(obj_tmp), ".obj");
+    memset(app_asm_tmp, 0, sizeof(app_asm_tmp));
+    memset(app_obj_tmp, 0, sizeof(app_obj_tmp));
+    memset(rt_asm_tmp, 0, sizeof(rt_asm_tmp));
+    memset(rt_obj_tmp, 0, sizeof(rt_obj_tmp));
+    append_str(app_asm_tmp, sizeof(app_asm_tmp), "cc_");
+    append_str(app_asm_tmp, sizeof(app_asm_tmp), pid_buf);
+    append_str(app_asm_tmp, sizeof(app_asm_tmp), ".asm");
+    append_str(app_obj_tmp, sizeof(app_obj_tmp), "cc_");
+    append_str(app_obj_tmp, sizeof(app_obj_tmp), pid_buf);
+    append_str(app_obj_tmp, sizeof(app_obj_tmp), ".obj");
+    append_str(rt_asm_tmp, sizeof(rt_asm_tmp), "ccrt_");
+    append_str(rt_asm_tmp, sizeof(rt_asm_tmp), pid_buf);
+    append_str(rt_asm_tmp, sizeof(rt_asm_tmp), ".asm");
+    append_str(rt_obj_tmp, sizeof(rt_obj_tmp), "ccrt_");
+    append_str(rt_obj_tmp, sizeof(rt_obj_tmp), pid_buf);
+    append_str(rt_obj_tmp, sizeof(rt_obj_tmp), ".obj");
 
     cleanup_stale_cc_temps();
 
@@ -295,47 +285,69 @@ void _start(int argc, char **argv) {
             "-seg32",
             "-no-leading-underscore",
             input,
-            asm_tmp,
+            app_asm_tmp,
             0
         };
         if (run_stage("smallerc.elf", a1, 5) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
             exit(1);
         }
-        if (require_nonempty_file(asm_tmp, "smallerc") != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
-            exit(1);
-        }
-        if (inject_runtime_asm(asm_tmp) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
+        if (require_nonempty_file(app_asm_tmp, "smallerc") != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
             exit(1);
         }
     }
     {
-        const char *a2[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", obj_tmp, asm_tmp, 0 };
+        if (write_runtime_asm(rt_asm_tmp) != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
+            exit(1);
+        }
+        if (require_nonempty_file(rt_asm_tmp, "runtime asm") != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
+            exit(1);
+        }
+    }
+    {
+        const char *a2[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", app_obj_tmp, app_asm_tmp, 0 };
         if (run_stage("as86.elf", a2, 8) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
             exit(1);
         }
-        if (require_nonempty_file(obj_tmp, "as86") != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
+        if (require_nonempty_file(app_obj_tmp, "as86(app)") != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
             exit(1);
         }
     }
     {
-        const char *a3[] = { "ld86.elf", "-o", output, obj_tmp, 0 };
-        if (run_stage("ld86.elf", a3, 4) != 0) {
-            if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
+        const char *a3[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", rt_obj_tmp, rt_asm_tmp, 0 };
+        if (run_stage("as86.elf", a3, 8) != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
+            exit(1);
+        }
+        if (require_nonempty_file(rt_obj_tmp, "as86(runtime)") != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
+            exit(1);
+        }
+    }
+    {
+        // Runtime object first so ld86 default entry points at $_start.
+        const char *a4[] = { "ld86.elf", "-o", output, rt_obj_tmp, app_obj_tmp, 0 };
+        if (run_stage("ld86.elf", a4, 5) != 0) {
+            if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
             exit(1);
         }
     }
 
-    if (!keep_temps) cleanup_tmp_pair(asm_tmp, obj_tmp);
+    if (!keep_temps) cleanup_tmp_files(app_asm_tmp, app_obj_tmp, rt_asm_tmp, rt_obj_tmp);
     else {
         print("cc: temp files: ");
-        print(asm_tmp);
+        print(app_asm_tmp);
         print(" ");
-        print(obj_tmp);
+        print(app_obj_tmp);
+        print(" ");
+        print(rt_asm_tmp);
+        print(" ");
+        print(rt_obj_tmp);
         print("\n");
     }
 
