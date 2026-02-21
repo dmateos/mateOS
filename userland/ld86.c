@@ -714,6 +714,11 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
             if (!sym_name_eq_loose(cs->name, s->name)) continue;
             unsigned int addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
             if (found) {
+                // Allow multiple loose-name aliases within the same object
+                // (e.g. "$print" and "print" in libc.o).
+                if (found_input == i) {
+                    continue;
+                }
                 print("ld86: duplicate global symbol: ");
                 print(s->name);
                 print(" provided by ");

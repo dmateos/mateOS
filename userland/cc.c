@@ -135,12 +135,10 @@ static void cleanup_tmp_files(const char *a, const char *b) {
 
 static int ensure_runtime_inputs(void) {
     static const char *crt0_obj = "crt0.o";
-    static const char *cprint_obj = "cprint.o";
     static const char *libc_obj = "libc.o";
     static const char *sys_obj = "syscalls.o";
     stat_t st;
     if (stat(crt0_obj, &st) != 0 || st.size == 0) return -1;
-    if (stat(cprint_obj, &st) != 0 || st.size == 0) return -1;
     if (stat(libc_obj, &st) != 0 || st.size == 0) return -1;
     if (stat(sys_obj, &st) != 0 || st.size == 0) return -1;
     return 0;
@@ -398,7 +396,7 @@ void _start(int argc, char **argv) {
         if (!keep_temps) {
             for (int i = 0; i < input_count; i++) cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
         }
-        print("cc: missing runtime objects (crt0.o/cprint.o/libc.o/syscalls.o)\n");
+        print("cc: missing runtime objects (crt0.o/libc.o/syscalls.o)\n");
         exit(1);
     }
     {
@@ -409,7 +407,6 @@ void _start(int argc, char **argv) {
         a4[n++] = output;
         // Keep crt0 first so ld86 default entry points at $_start.
         a4[n++] = "crt0.o";
-        a4[n++] = "cprint.o";
         for (int i = 0; i < input_count; i++) {
             if (input_kind[i] == IN_C) a4[n++] = app_obj_tmp[i];
             else a4[n++] = inputs[i];

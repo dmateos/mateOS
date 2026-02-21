@@ -11,6 +11,7 @@
 #define PMM_FRAME_COUNT ((PMM_END - PMM_START) / PMM_FRAME_SIZE)  // 6144
 
 void pmm_init(void);
+void pmm_reserve_region(uint32_t start_addr, uint32_t size_bytes);
 
 // Allocate a single 4KB frame, returns physical address or 0 on failure
 uint32_t pmm_alloc_frame(void);

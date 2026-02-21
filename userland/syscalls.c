@@ -245,18 +245,3 @@ void *sbrk(int increment) {
 int debug_exit(int code) {
     return __syscall1(SYS_DEBUG_EXIT, (unsigned int)code);
 }
-
-static unsigned int raw_strlen(const char *s) {
-    unsigned int n = 0;
-    if (!s) return 0;
-    while (s[n]) n++;
-    return n;
-}
-
-// SmallerC commonly emits calls to $print. Keep a direct syscall-level export
-// so links don't depend on libc symbol aliases.
-void smallerc_print_syscall_alias(const char *s) __asm__("$print") __attribute__((weak));
-void smallerc_print_syscall_alias(const char *s) {
-    unsigned int n = raw_strlen(s);
-    if (n) (void)write(1, s, n);
-}
