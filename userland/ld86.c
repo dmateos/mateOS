@@ -184,6 +184,10 @@ static int sym_name_eq_loose(const char *a, const char *b) {
     return 0;
 }
 
+static const char *sym_strip_dollar(const char *s) {
+    return (s && s[0] == '$') ? (s + 1) : s;
+}
+
 static void path_copy(char *dst, int cap, const char *src) {
     int i = 0;
     if (cap <= 0) return;
@@ -724,6 +728,26 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
             found_input = i;
         }
     }
+    if (!found) {
+        // Fallback: some imported ELF objects may not mark aliases as global.
+        // For unresolved externs, allow a loose-name match against any defined
+        // symbol (e.g. "$print" <-> "print").
+        const char *want = sym_strip_dollar(s->name);
+        for (int i = 0; i < input_count && !found; i++) {
+            input_t *cand = &inputs[i];
+            if (!cand->is_obj || cand->obj_version < 2) continue;
+            for (unsigned int j = 0; j < cand->sym_count; j++) {
+                mobj_sym_t *cs = &cand->syms[j];
+                if (cs->section == SEC_UNDEF) continue;
+                if (strcmp(sym_strip_dollar(cs->name), want) != 0) continue;
+                found = 1;
+                found_addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
+                found_input = i;
+                break;
+            }
+        }
+    }
+
     if (!found) {
         print("ld86: undefined symbol: ");
         print(s->name);
