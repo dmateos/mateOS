@@ -213,6 +213,10 @@ cc-smoke: $(TARGET) initrd $(FAT16_IMG)
 	tail -n 80 "$$log"; \
 	exit 1
 
+ld86-host-check:
+	@$(MAKE) -C userland ld86.elf libc.o crt0.o libtiny.a
+	@sh tools/ld86_host_check.sh
+
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)
 

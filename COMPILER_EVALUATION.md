@@ -86,3 +86,5 @@ Inside mateOS:
 
 `cc` now removes temp files by default.
 - Use `--keep-temps` to keep `cc_<pid>.asm` and `cc_<pid>.obj` for debugging.
+- Fast host-side parser sanity check:
+  - `make ld86-host-check`

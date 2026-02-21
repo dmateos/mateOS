@@ -151,6 +151,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
     const char *path;
+    char path_buf[96];
     unsigned char *buf;
     unsigned int size;
 
@@ -173,6 +174,50 @@ typedef struct {
 } input_t;
 
 static int streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
+
+static void path_copy(char *dst, int cap, const char *src) {
+    int i = 0;
+    if (cap <= 0) return;
+    while (src[i] && i < cap - 1) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = 0;
+}
+
+static void path_append(char *dst, int cap, const char *src) {
+    int n = strlen(dst);
+    int i = 0;
+    while (src[i] && n + i + 1 < cap) {
+        dst[n + i] = src[i];
+        i++;
+    }
+    dst[n + i] = 0;
+}
+
+static void ar_member_name(const ar_hdr_t *ah, char *out, int out_cap) {
+    int j = 0;
+    for (int i = 0; i < 16 && j + 1 < out_cap; i++) {
+        char c = ah->name[i];
+        if (c == '/' || c == ' ' || c == '\0') break;
+        out[j++] = c;
+    }
+    if (j == 0 && out_cap >= 2) {
+        out[0] = '?';
+        j = 1;
+    }
+    out[j] = 0;
+}
+
+static void set_input_path(input_t *in, const char *file, const char *member) {
+    memset(in->path_buf, 0, sizeof(in->path_buf));
+    path_copy(in->path_buf, sizeof(in->path_buf), file);
+    if (member && member[0]) {
+        path_append(in->path_buf, sizeof(in->path_buf), ":");
+        path_append(in->path_buf, sizeof(in->path_buf), member);
+    }
+    in->path = in->path_buf;
+}
 
 static int parse_int_local(const char *s, int *out) {
     int sign = 1, i = 0, base = 10, v = 0;
@@ -471,6 +516,8 @@ static int parse_elf_rel_input(input_t *in) {
                 if (!(rtype == ELF_R_386_32 || rtype == ELF_R_386_PC32)) {
                     print("ld86: unsupported ELF relocation type in ");
                     print(in->path);
+                    print(" type=");
+                    print_num((int)rtype);
                     print("\n");
                     return 0;
                 }
@@ -629,6 +676,7 @@ static int parse_input(input_t *in) {
 
 static int resolve_symbol_addr(input_t *inputs, int input_count,
                                int owner_idx, unsigned int sym_idx,
+                               unsigned int ref_section, unsigned int ref_offset,
                                unsigned int base, unsigned int *out_addr) {
     input_t *owner = &inputs[owner_idx];
     if (sym_idx >= owner->sym_count) return 0;
@@ -642,6 +690,7 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
 
     int found = 0;
     unsigned int found_addr = 0;
+    int found_input = -1;
     for (int i = 0; i < input_count; i++) {
         input_t *cand = &inputs[i];
         if (!cand->is_obj || cand->obj_version < 2) continue;
@@ -651,19 +700,30 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
             if (!(cs->flags & MOBJ_SYM_GLOBAL)) continue;
             if (strcmp(cs->name, s->name) != 0) continue;
             unsigned int addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
-            if (found && found_addr != addr) {
+            if (found) {
                 print("ld86: duplicate global symbol: ");
                 print(s->name);
+                print(" provided by ");
+                print(inputs[found_input].path);
+                print(" and ");
+                print(cand->path);
                 print("\n");
                 return 0;
             }
             found = 1;
             found_addr = addr;
+            found_input = i;
         }
     }
     if (!found) {
         print("ld86: undefined symbol: ");
         print(s->name);
+        print(" referenced by ");
+        print(owner->path);
+        print(" sec=");
+        print_num((int)ref_section);
+        print(" off=");
+        print_hex(ref_offset);
         print("\n");
         return 0;
     }
@@ -775,7 +835,9 @@ void _start(int argc, char **argv) {
                         print("ld86: too many expanded inputs\n");
                         exit(1);
                     }
-                    inputs[input_count].path = pos[i];
+                    char member[24];
+                    ar_member_name(ah, member, sizeof(member));
+                    set_input_path(&inputs[input_count], pos[i], member);
                     inputs[input_count].buf = (unsigned char *)malloc(msz);
                     if (!inputs[input_count].buf) {
                         print("ld86: out of memory\n");
@@ -801,7 +863,7 @@ void _start(int argc, char **argv) {
                 print("ld86: too many input files\n");
                 exit(1);
             }
-            inputs[input_count].path = pos[i];
+            set_input_path(&inputs[input_count], pos[i], 0);
             inputs[input_count].buf = buf;
             inputs[input_count].size = sz;
             if (!parse_input(&inputs[input_count])) exit(1);
@@ -854,7 +916,8 @@ void _start(int argc, char **argv) {
             unsigned int place_off = in->image_off + place_local;
 
             unsigned int sym_addr = 0;
-            if (!resolve_symbol_addr(inputs, input_count, i, r->sym_index, base, &sym_addr)) {
+            if (!resolve_symbol_addr(inputs, input_count, i, r->sym_index,
+                                     r->section, r->offset, base, &sym_addr)) {
                 exit(1);
             }
 
