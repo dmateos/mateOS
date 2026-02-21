@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 LDFLAGS = -m32 -T user.ld -nostdlib -static -Wl,--build-id=none
 
-PROGRAMS = hello.elf test.elf cctest.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf
+PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf
 SMALLERC_CFLAGS = -m32 -nostdlib -nostdinc -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 
 DOOMGENERIC_H = doom/doomgeneric/doomgeneric/doomgeneric.h
@@ -40,6 +40,10 @@ test.elf: test.o syscalls.o libc.o
 	@echo "Built $@"
 
 cctest.elf: cctest.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+ccsymtest.elf: ccsymtest.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 

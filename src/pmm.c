@@ -32,6 +32,23 @@ void pmm_init(void) {
          PMM_START, PMM_END);
 }
 
+void pmm_reserve_region(uint32_t start_addr, uint32_t size_bytes) {
+  if (!size_bytes) return;
+  uint32_t end_addr = start_addr + size_bytes;
+  if (end_addr < start_addr) end_addr = 0xFFFFFFFFu;
+
+  // Intersect with PMM managed range.
+  if (end_addr <= PMM_START || start_addr >= PMM_END) return;
+  if (start_addr < PMM_START) start_addr = PMM_START;
+  if (end_addr > PMM_END) end_addr = PMM_END;
+
+  uint32_t first = start_addr & ~(PMM_FRAME_SIZE - 1u);
+  uint32_t last = (end_addr + PMM_FRAME_SIZE - 1u) & ~(PMM_FRAME_SIZE - 1u);
+  for (uint32_t addr = first; addr < last; addr += PMM_FRAME_SIZE) {
+    bitmap_set(frame_index(addr));
+  }
+}
+
 uint32_t pmm_alloc_frame(void) {
   for (uint32_t i = 0; i < PMM_FRAME_COUNT; i++) {
     if (!bitmap_test(i)) {

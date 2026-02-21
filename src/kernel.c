@@ -43,6 +43,36 @@ static int cmdline_has_token(const char *cmdline, const char *token) {
   return 0;
 }
 
+static int cmdline_get_value(const char *cmdline, const char *key,
+                             char *out, size_t out_cap) {
+  if (!cmdline || !key || !key[0] || !out || out_cap < 2) return 0;
+  size_t klen = strlen(key);
+  const char *p = cmdline;
+  while (*p) {
+    while (*p == ' ') p++;
+    if (!*p) break;
+    const char *start = p;
+    while (*p && *p != ' ') p++;
+    size_t len = (size_t)(p - start);
+    if (len > klen + 1 && start[klen] == '=' && memcmp(start, key, klen) == 0) {
+      size_t vlen = len - (klen + 1);
+      if (vlen >= out_cap) vlen = out_cap - 1;
+      memcpy(out, start + klen + 1, vlen);
+      out[vlen] = 0;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int str_ends_with(const char *s, const char *sfx) {
+  if (!s || !sfx) return 0;
+  size_t ls = strlen(s);
+  size_t lx = strlen(sfx);
+  if (lx > ls) return 0;
+  return memcmp(s + (ls - lx), sfx, lx) == 0;
+}
+
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   init_686();
   kprintf("[boot] mateOS %s (abi=%d, built=%s)\n",
@@ -53,7 +83,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   printf("\n");
   multiboot_init(multiboot_magic, multiboot_info);
   const char *cmdline = multiboot_get_cmdline();
-  if (cmdline_has_token(cmdline, "serial=1") || cmdline_has_token(cmdline, "autorun=cctest")) {
+  if (cmdline_has_token(cmdline, "serial=1") || cmdline_get_value(cmdline, "autorun", (char[2]){0}, 2)) {
     serial_init();
     console_set_serial_mirror(1);
     kprintf("[boot] serial mirror enabled\n");
@@ -78,6 +108,11 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
   // Initialize physical memory manager
   pmm_init();
+  if (initrd && initrd->mod_end > initrd->mod_start) {
+    pmm_reserve_region(initrd->mod_start, initrd->mod_end - initrd->mod_start);
+    kprintf("[boot] pmm reserved initrd: 0x%x-0x%x\n",
+            initrd->mod_start, initrd->mod_end);
+  }
   kprintf("[boot] pmm init ok\n");
 
   // Scan PCI bus
@@ -121,8 +156,18 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   keyboard_buffer_enable(1);
 
   const char *boot_prog = "shell.elf";
-  if (cmdline_has_token(cmdline, "autorun=cctest")) {
-    boot_prog = "cctest.elf";
+  char autorun_name[64];
+  char autorun_prog[72];
+  if (cmdline_get_value(cmdline, "autorun", autorun_name, sizeof(autorun_name))) {
+    memset(autorun_prog, 0, sizeof(autorun_prog));
+    size_t n = strlen(autorun_name);
+    if (n >= sizeof(autorun_prog) - 1) n = sizeof(autorun_prog) - 1;
+    memcpy(autorun_prog, autorun_name, n);
+    autorun_prog[n] = 0;
+    if (!str_ends_with(autorun_prog, ".elf") && n + 4 < sizeof(autorun_prog)) {
+      memcpy(autorun_prog + n, ".elf", 5);
+    }
+    boot_prog = autorun_prog;
     kprintf("[boot] autorun requested: %s\n", boot_prog);
   }
 
