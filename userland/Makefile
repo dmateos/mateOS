@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 LDFLAGS = -m32 -T user.ld -nostdlib -static -Wl,--build-id=none
 
-PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf tcc.elf
+PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf tccsmoke.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf tcc.elf
 SMALLERC_CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 TINYCC_CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Itinycc/vendor -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall -DONE_SOURCE=1
 
@@ -45,6 +45,10 @@ cctest.elf: cctest.o syscalls.o libc.o
 	@echo "Built $@"
 
 ccsymtest.elf: ccsymtest.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+tccsmoke.elf: tccsmoke.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
@@ -189,7 +193,7 @@ smallerc/compat_runtime.o: smallerc/compat_runtime.c
 tinycc/tcc_main.o: tinycc/vendor/tcc.c
 	$(CC) $(TINYCC_CFLAGS) -c -o $@ $<
 
-tinycc/tinycc_entry.o: tinycc/tinycc_entry.c
+tinycc/tinycc_entry.o: tinycc/tinycc_entry.s
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 tinycc/tcc_builtins.o: tinycc/tcc_builtins.c

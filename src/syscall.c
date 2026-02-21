@@ -133,14 +133,28 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     if (seg_end > user_end) user_end = seg_end;
 
     for (uint32_t page_vaddr = seg_start; page_vaddr < seg_end; page_vaddr += 0x1000) {
-      uint32_t phys = pmm_alloc_frame();
-      if (!phys) {
-        printf("[exec] out of physical frames\n");
-        kfree(data);
-        return 0;
+      uint32_t dir_idx = page_vaddr >> 22;
+      uint32_t table_idx = (page_vaddr >> 12) & 0x3FF;
+      uint32_t phys = 0;
+
+      if (page_dir->tables[dir_idx] & PAGE_PRESENT) {
+        page_table_t *pt = (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
+        if (pt->pages[table_idx] & PAGE_PRESENT) {
+          phys = pt->pages[table_idx] & ~0xFFF;
+        }
       }
 
-      memset((void *)phys, 0, 0x1000);
+      if (!phys) {
+        phys = pmm_alloc_frame();
+        if (!phys) {
+          printf("[exec] out of physical frames\n");
+          kfree(data);
+          return 0;
+        }
+        memset((void *)phys, 0, 0x1000);
+        paging_map_page(page_dir, page_vaddr, phys,
+                        PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+      }
 
       uint32_t copy_start = (page_vaddr > vaddr) ? page_vaddr : vaddr;
       uint32_t copy_end = (page_vaddr + 0x1000 < vaddr + filesz)
@@ -151,10 +165,57 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
         uint32_t src_offset = copy_start - vaddr;
         memcpy((void *)(phys + dst_offset), src + src_offset, copy_end - copy_start);
       }
-
-      paging_map_page(page_dir, page_vaddr, phys,
-                      PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
     }
+  }
+
+  if (strcmp(filename, "tcc.elf") == 0) {
+    uint32_t probe_va = 0x00739b45u;
+    uint32_t dir_idx = probe_va >> 22;
+    uint32_t table_idx = (probe_va >> 12) & 0x3FF;
+    uint32_t phys = 0;
+    if (page_dir->tables[dir_idx] & PAGE_PRESENT) {
+      page_table_t *pt = (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
+      phys = pt->pages[table_idx] & ~0xFFF;
+    }
+
+    uint8_t exp[4] = {0};
+    uint8_t direct[4] = {0};
+    {
+      uint32_t foff_direct = 0x1000u + (probe_va - 0x00700000u);
+      direct[0] = *((uint8_t *)elf + foff_direct + 0);
+      direct[1] = *((uint8_t *)elf + foff_direct + 1);
+      direct[2] = *((uint8_t *)elf + foff_direct + 2);
+      direct[3] = *((uint8_t *)elf + foff_direct + 3);
+    }
+    uint32_t pva = 0, poff = 0;
+    for (int i = 0; i < elf->e_phnum; i++) {
+      if (phdr[i].p_type != PT_LOAD) continue;
+      if (probe_va >= phdr[i].p_vaddr && probe_va + 4 <= phdr[i].p_vaddr + phdr[i].p_filesz) {
+        pva = phdr[i].p_vaddr;
+        poff = phdr[i].p_offset;
+        uint32_t foff = poff + (probe_va - pva);
+        exp[0] = *((uint8_t *)elf + foff + 0);
+        exp[1] = *((uint8_t *)elf + foff + 1);
+        exp[2] = *((uint8_t *)elf + foff + 2);
+        exp[3] = *((uint8_t *)elf + foff + 3);
+        break;
+      }
+    }
+
+    uint8_t got[4] = {0};
+    if (phys) {
+      uint32_t page_off = probe_va & 0xFFF;
+      got[0] = *((uint8_t *)(phys + page_off + 0));
+      got[1] = *((uint8_t *)(phys + page_off + 1));
+      got[2] = *((uint8_t *)(phys + page_off + 2));
+      got[3] = *((uint8_t *)(phys + page_off + 3));
+    }
+    kprintf("[execdbg] tcc hdr=%x %x %x %x bytes va=0x%x pa=0x%x direct=%x %x %x %x exp=%x %x %x %x got=%x %x %x %x\n",
+            ((uint8_t *)elf)[0], ((uint8_t *)elf)[1], ((uint8_t *)elf)[2], ((uint8_t *)elf)[3],
+            probe_va, phys,
+            direct[0], direct[1], direct[2], direct[3],
+            exp[0], exp[1], exp[2], exp[3],
+            got[0], got[1], got[2], got[3]);
   }
 
   // Allocate and map multi-page user stack (grows downward)

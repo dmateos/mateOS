@@ -234,6 +234,27 @@ cc-symbol-smoke: $(TARGET) initrd $(FAT16_IMG)
 	tail -n 80 "$$log"; \
 	exit 1
 
+tcc-smoke: $(TARGET) initrd $(FAT16_IMG)
+	@$(MAKE) -B initrd.img
+	@$(MAKE) -B $(FAT16_IMG)
+	@echo "Running TinyCC smoke test in QEMU (autorun=tccsmoke)..."
+	@log=".tcc-smoke.log"; \
+	rm -f "$$log"; \
+	$(QEMU) -display none -serial stdio \
+		-kernel $(TARGET) -initrd initrd.img -no-reboot \
+		-drive file=$(FAT16_IMG),format=raw,if=ide \
+		-append "autorun=tccsmoke serial=1" \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		> "$$log" 2>&1; \
+	rc=$$?; \
+	if grep -q "tccsmoke: PASS" "$$log"; then \
+		echo "tcc-smoke: PASS"; \
+		exit 0; \
+	fi; \
+	echo "tcc-smoke: FAIL (qemu rc=$$rc)"; \
+	tail -n 100 "$$log"; \
+	exit 1
+
 ld86-host-check:
 	@$(MAKE) -C userland ld86.elf libc.o crt0.o libtiny.a
 	@sh tools/ld86_host_check.sh
@@ -255,4 +276,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run run-fat16 fat16img cc-smoke cc-symbol-smoke userland initrd tinycc-phase1
+.PHONY: clean rust run run-fat16 fat16img cc-smoke cc-symbol-smoke tcc-smoke userland initrd tinycc-phase1

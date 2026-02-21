@@ -261,11 +261,20 @@ ST_FUNC void libc_free(void *ptr)
 #define free(p) use_tcc_free(p)
 #define realloc(p, s) use_tcc_realloc(p, s)
 
-/* global so that every tcc_alloc()/tcc_free() call doesn't need to be changed */
-static void *(*reallocator)(void*, unsigned long) = default_reallocator;
+/* global so that every tcc_alloc()/tcc_free() call doesn't need to be changed.
+   On mateOS we defensively lazy-init this in case .data function pointer
+   relocations are not populated as expected at process start. */
+static void *(*reallocator)(void*, unsigned long) = 0;
+
+static void ensure_reallocator(void)
+{
+    if (!reallocator)
+        reallocator = default_reallocator;
+}
 
 LIBTCCAPI void tcc_set_realloc(TCCReallocFunc *realloc)
 {
+    ensure_reallocator();
     reallocator = realloc ? realloc : default_reallocator;
 }
 
@@ -278,16 +287,19 @@ LIBTCCAPI void tcc_set_realloc(TCCReallocFunc *realloc)
 
 PUB_FUNC void tcc_free(void *ptr)
 {
+    ensure_reallocator();
     reallocator(ptr, 0);
 }
 
 PUB_FUNC void *tcc_malloc(unsigned long size)
 {
+    ensure_reallocator();
     return reallocator(0, size);
 }
 
 PUB_FUNC void *tcc_realloc(void *ptr, unsigned long size)
 {
+    ensure_reallocator();
     return reallocator(ptr, size);
 }
 
