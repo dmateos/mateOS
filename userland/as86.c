@@ -1296,7 +1296,7 @@ void _start(int argc, char **argv) {
         print_err("out of memory");
         exit(1);
     }
-    int n = fread(fd, src, MAX_SRC - 1);
+    int n = fd_read(fd, src, MAX_SRC - 1);
     close(fd);
     if (n < 0) {
         print_err("read failed");
@@ -1323,7 +1323,7 @@ void _start(int argc, char **argv) {
         exit(1);
     }
     if (!fmt_obj) {
-        if (fwrite(ofd, ctx->out, (unsigned int)ctx->out_len) != ctx->out_len) {
+        if (fd_write(ofd, ctx->out, (unsigned int)ctx->out_len) != ctx->out_len) {
             close(ofd);
             print_err("write failed");
             exit(1);
@@ -1346,25 +1346,25 @@ void _start(int argc, char **argv) {
             h.entry_off = ent - ctx->org;
         }
 
-        if (fwrite(ofd, &h, sizeof(h)) != (int)sizeof(h)) {
+        if (fd_write(ofd, &h, sizeof(h)) != (int)sizeof(h)) {
             close(ofd);
             print_err("write failed");
             exit(1);
         }
         if (ctx->sec_len[SEC_TEXT] &&
-            fwrite(ofd, ctx->sec_out[SEC_TEXT], (unsigned int)ctx->sec_len[SEC_TEXT]) != ctx->sec_len[SEC_TEXT]) {
+            fd_write(ofd, ctx->sec_out[SEC_TEXT], (unsigned int)ctx->sec_len[SEC_TEXT]) != ctx->sec_len[SEC_TEXT]) {
             close(ofd);
             print_err("write failed");
             exit(1);
         }
         if (ctx->sec_len[SEC_RODATA] &&
-            fwrite(ofd, ctx->sec_out[SEC_RODATA], (unsigned int)ctx->sec_len[SEC_RODATA]) != ctx->sec_len[SEC_RODATA]) {
+            fd_write(ofd, ctx->sec_out[SEC_RODATA], (unsigned int)ctx->sec_len[SEC_RODATA]) != ctx->sec_len[SEC_RODATA]) {
             close(ofd);
             print_err("write failed");
             exit(1);
         }
         if (ctx->sec_len[SEC_DATA] &&
-            fwrite(ofd, ctx->sec_out[SEC_DATA], (unsigned int)ctx->sec_len[SEC_DATA]) != ctx->sec_len[SEC_DATA]) {
+            fd_write(ofd, ctx->sec_out[SEC_DATA], (unsigned int)ctx->sec_len[SEC_DATA]) != ctx->sec_len[SEC_DATA]) {
             close(ofd);
             print_err("write failed");
             exit(1);
@@ -1382,14 +1382,14 @@ void _start(int argc, char **argv) {
             }
             if (ctx->labels[i].is_global) s.flags |= MOBJ_SYM_GLOBAL;
             if (ctx->labels[i].is_extern || !ctx->labels[i].defined) s.flags |= MOBJ_SYM_EXTERN;
-            if (fwrite(ofd, &s, sizeof(s)) != (int)sizeof(s)) {
+            if (fd_write(ofd, &s, sizeof(s)) != (int)sizeof(s)) {
                 close(ofd);
                 print_err("write failed");
                 exit(1);
             }
         }
         for (int i = 0; i < ctx->reloc_count; i++) {
-            if (fwrite(ofd, &ctx->relocs[i], sizeof(ctx->relocs[i])) != (int)sizeof(ctx->relocs[i])) {
+            if (fd_write(ofd, &ctx->relocs[i], sizeof(ctx->relocs[i])) != (int)sizeof(ctx->relocs[i])) {
                 close(ofd);
                 print_err("write failed");
                 exit(1);

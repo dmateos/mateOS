@@ -324,8 +324,8 @@ void _start(int argc, char **argv) {
                 }
                 char buf[512];
                 int rn;
-                while ((rn = fread(infd, buf, sizeof(buf))) > 0) {
-                    if (fwrite(outfd, buf, (unsigned int)rn) != rn) {
+                while ((rn = fd_read(infd, buf, sizeof(buf))) > 0) {
+                    if (fd_write(outfd, buf, (unsigned int)rn) != rn) {
                         close(infd); close(outfd);
                         print("cc: asm copy failed\n");
                         exit(1);
@@ -375,8 +375,8 @@ void _start(int argc, char **argv) {
                 }
                 char buf[512];
                 int rn;
-                while ((rn = fread(infd, buf, sizeof(buf))) > 0) {
-                    if (fwrite(outfd, buf, (unsigned int)rn) != rn) {
+                while ((rn = fd_read(infd, buf, sizeof(buf))) > 0) {
+                    if (fd_write(outfd, buf, (unsigned int)rn) != rn) {
                         close(infd); close(outfd);
                         print("cc: object copy failed\n");
                         exit(1);

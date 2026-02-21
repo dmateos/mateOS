@@ -185,7 +185,7 @@ static int write_all(int fd, const char *buf, int len) {
 static int fwrite_all_fd(int fd, const char *buf, int len) {
     int off = 0;
     while (off < len) {
-        int n = fwrite(fd, buf + off, (unsigned int)(len - off));
+        int n = fd_write(fd, buf + off, (unsigned int)(len - off));
         if (n <= 0) return -1;
         off += n;
     }
@@ -225,7 +225,7 @@ int fgetc(void *stream) {
     mate_file_t *f = (mate_file_t *)stream;
     unsigned char ch;
     if (!f) return EOF;
-    int n = fread(f->fd, &ch, 1);
+    int n = fd_read(f->fd, &ch, 1);
     if (n <= 0) return EOF;
     return (int)ch;
 }
@@ -234,7 +234,7 @@ int fputc(int ch, void *stream) {
     mate_file_t *f = (mate_file_t *)stream;
     unsigned char c = (unsigned char)ch;
     if (!f) return EOF;
-    if (fwrite(f->fd, &c, 1) != 1) return EOF;
+    if (fd_write(f->fd, &c, 1) != 1) return EOF;
     return c;
 }
 

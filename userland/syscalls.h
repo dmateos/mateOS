@@ -145,8 +145,8 @@ typedef struct {
 
 // File I/O syscalls
 int open(const char *path, int flags);
-int fread(int fd, void *buf, unsigned int len);
-int fwrite(int fd, const void *buf, unsigned int len);
+int fd_read(int fd, void *buf, unsigned int len);
+int fd_write(int fd, const void *buf, unsigned int len);
 int close(int fd);
 int seek(int fd, int offset, int whence);
 int stat(const char *path, stat_t *st);

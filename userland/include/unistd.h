@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+typedef int ssize_t;
+
 int close(int fd);
 int read(int fd, void *buf, unsigned int len);
 int write(int fd, const void *buf, unsigned int len);
@@ -20,5 +22,9 @@ long sysconf(int name);
 #define X_OK 1
 
 #define _SC_PAGESIZE 30
+
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
 
 #endif

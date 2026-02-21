@@ -85,7 +85,7 @@ static int serve_index_htm(int client) {
     if (fd < 0) return -1;
 
     while (total < (int)sizeof(file_body)) {
-        int n = fread(fd, file_body + total,
+        int n = fd_read(fd, file_body + total,
                       (unsigned int)(sizeof(file_body) - (unsigned int)total));
         if (n <= 0) break;
         total += n;
@@ -105,7 +105,7 @@ static int read_file(const char *path, char *dst, int cap) {
     if (fd < 0) return 0;
 
     while (total < cap) {
-        int n = fread(fd, dst + total, (unsigned int)(cap - total));
+        int n = fd_read(fd, dst + total, (unsigned int)(cap - total));
         if (n <= 0) break;
         total += n;
     }

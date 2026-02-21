@@ -1,4 +1,4 @@
-# TinyCC Port (Phase 1)
+# TinyCC Port Status
 
 This folder tracks TinyCC bring-up work for mateOS.
 
@@ -7,7 +7,7 @@ This folder tracks TinyCC bring-up work for mateOS.
 - TinyCC source is expected from a local checkout (default: `/tmp/tinycc`).
 - We now have a repeatable Phase 1 probe to measure ABI/header gaps against mateOS userland runtime.
 - Phase 2 bootstrap completed: shared userspace headers plus libc shims now satisfy TinyCC host-object symbol/header expectations in the probe.
-- No in-OS `tcc.elf` binary is integrated yet.
+- Phase 3 integration completed: `tcc.elf` now builds in `userland/` from vendored TinyCC i386 sources.
 
 ## Run the probe
 
@@ -38,9 +38,17 @@ Current result:
 - Missing headers: `0`
 - Missing symbols: `0`
 
+## Build TinyCC
+
+From repo root:
+
+```sh
+make -C userland tcc.elf
+```
+
 ## Next steps
 
-1. Add missing C headers to a shared userspace include set (not Smallerc-only).
-2. Implement/shim missing runtime symbols in `userland/libc.c` (or split into a dedicated runtime shim).
-3. Build a reduced TinyCC frontend target for mateOS (`-c`/`-S` first), then layer linking/runtime support.
-4. Replace weak placeholder stubs (`dlopen`, pthread/semaphore internals, `mmap` policy, setjmp) with real implementations as needed by real TinyCC execution paths.
+1. Run in-OS execution smoke tests for `tcc.elf` via shell and capture stable logs.
+2. Add a `tcc-smoke` harness (spawn `tcc.elf`, compile a tiny C file, run result).
+3. Replace weak placeholder stubs (`dlopen`, pthread/semaphore internals, `mmap` policy, setjmp) with real implementations as execution paths require.
+4. Move from vendored ad-hoc import to scripted TinyCC source sync/update workflow.

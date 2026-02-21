@@ -131,7 +131,7 @@ static int load_file(const char *path) {
 
     text_len = 0;
     while (text_len < MAX_TEXT - 1) {
-        int n = fread(fd, text + text_len,
+        int n = fd_read(fd, text + text_len,
                       (unsigned int)(MAX_TEXT - 1 - text_len));
         if (n <= 0) break;
         text_len += n;
@@ -148,7 +148,7 @@ static int save_file(const char *path) {
 
     int written = 0;
     while (written < text_len) {
-        int n = fwrite(fd, text + written,
+        int n = fd_write(fd, text + written,
                        (unsigned int)(text_len - written));
         if (n <= 0) { close(fd); return -1; }
         written += n;

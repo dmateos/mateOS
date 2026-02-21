@@ -570,7 +570,7 @@ static unsigned char *read_whole_file(const char *path, unsigned int *out_size) 
         close(fd);
         return 0;
     }
-    int rn = fread(fd, buf, st.size);
+    int rn = fd_read(fd, buf, st.size);
     close(fd);
     if (rn != (int)st.size) return 0;
     *out_size = st.size;
@@ -987,7 +987,7 @@ void _start(int argc, char **argv) {
         print("ld86: cannot open output\n");
         exit(1);
     }
-    if (fwrite(ofd, obuf, out_sz) != (int)out_sz) {
+    if (fd_write(ofd, obuf, out_sz) != (int)out_sz) {
         close(ofd);
         print("ld86: write failed\n");
         exit(1);

@@ -98,6 +98,7 @@ Inside mateOS:
 - i386 host build currently fails here due missing multilib host headers, so mateOS porting should continue from source/ABI analysis rather than relying on host i386 build.
 - A repeatable Phase 1 probe now exists at `tools/tinycc_phase1_probe.sh`.
 - Probe output is written to `userland/tinycc/PHASE1_GAP.md`.
+- `tcc.elf` is now integrated in `userland/` and builds from vendored TinyCC i386 sources (`userland/tinycc/vendor/`).
 
 Current probe snapshot:
 - TinyCC external symbols: 105
