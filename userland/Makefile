@@ -30,7 +30,7 @@ DOOM_PORT_CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -f
 	-DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 \
 	-DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE -DCMAP256
 
-all: $(PROGRAMS) crt0.o libtiny.a
+all: $(PROGRAMS) crt0.o cprint.o libtiny.a
 
 hello.elf: hello.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -168,6 +168,9 @@ tcc.elf: tinycc/tinycc_entry.o tinycc/tcc_main.o tinycc/tcc_builtins.o syscalls.
 	@echo "Built $@"
 
 crt0.o: crt0.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+cprint.o: cprint.s
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 libtiny.a: libtiny.o
