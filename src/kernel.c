@@ -16,6 +16,7 @@
 #include "task.h"
 #include "syscall.h"
 #include "pmm.h"
+#include "memlayout.h"
 #include "arch/i686/pci.h"
 #include "arch/i686/io.h"
 #include "window.h"
@@ -89,11 +90,39 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     kprintf("[boot] serial mirror enabled\n");
   }
 
-  // Initialize ramfs from initrd module
+  // Initialize physical memory manager early (needed to relocate initrd)
+  pmm_init();
+  kprintf("[boot] pmm init ok\n");
+
+  // Initialize ramfs from initrd module.
+  // The initrd may overlap the kernel heap (0x400000-0x600000).  If so,
+  // copy it into PMM frames first so ramfs pointers stay valid.
   multiboot_module_t *initrd = multiboot_get_initrd();
   if (initrd) {
-    ramfs_init((void *)initrd->mod_start,
-               initrd->mod_end - initrd->mod_start);
+    uint32_t initrd_start = initrd->mod_start;
+    uint32_t initrd_size = initrd->mod_end - initrd->mod_start;
+
+    // Reserve original initrd region in PMM so it isn't allocated
+    pmm_reserve_region(initrd_start, initrd_size);
+    kprintf("[boot] pmm reserved initrd: 0x%x-0x%x\n",
+            initrd_start, initrd_start + initrd_size);
+
+    if (initrd_start + initrd_size > KERNEL_HEAP_START) {
+      // Initrd overlaps heap — relocate to PMM frames
+      uint32_t nframes = (initrd_size + 0xFFF) / 0x1000;
+      uint32_t copy_base = pmm_alloc_frames(nframes);
+      if (copy_base) {
+        memcpy((void *)copy_base, (void *)initrd_start, initrd_size);
+        kprintf("[boot] initrd relocated: 0x%x -> 0x%x (%d bytes, %d frames)\n",
+                initrd_start, copy_base, initrd_size, nframes);
+        ramfs_init((void *)copy_base, initrd_size);
+      } else {
+        kprintf("[boot] WARNING: failed to allocate %d frames for initrd copy\n", nframes);
+        ramfs_init((void *)initrd_start, initrd_size);
+      }
+    } else {
+      ramfs_init((void *)initrd_start, initrd_size);
+    }
   } else {
     ramfs_init(NULL, 0);
   }
@@ -105,15 +134,6 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   printf("\n");
   rust_hello();
   printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
-
-  // Initialize physical memory manager
-  pmm_init();
-  if (initrd && initrd->mod_end > initrd->mod_start) {
-    pmm_reserve_region(initrd->mod_start, initrd->mod_end - initrd->mod_start);
-    kprintf("[boot] pmm reserved initrd: 0x%x-0x%x\n",
-            initrd->mod_start, initrd->mod_end);
-  }
-  kprintf("[boot] pmm init ok\n");
 
   // Scan PCI bus
   pci_init();

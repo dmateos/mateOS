@@ -279,20 +279,6 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
 
   uint32_t user_esp = USER_STACK_TOP_PAGE_VADDR + str_off;
 
-  if (strcmp(filename, "tcc.elf") == 0) {
-    uint32_t probe = 0x00739000u;
-    uint32_t di = probe >> 22;
-    uint32_t ti = (probe >> 12) & 0x3FF;
-    uint32_t phys = 0;
-    if (page_dir->tables[di] & PAGE_PRESENT) {
-      page_table_t *pt = (page_table_t *)(page_dir->tables[di] & ~0xFFF);
-      phys = pt->pages[ti] & ~0xFFF;
-    }
-    kprintf("[execdbg] %s argc=%d argv=0x%x user_esp=0x%x ret=0x%x\n",
-            filename, argc, argv_vaddr, user_esp, *(uint32_t *)(page + str_off));
-    kprintf("[execdbg] %s map va=0x%x -> pa=0x%x\n", filename, probe, phys);
-  }
-
   // Allocate kernel stack (for interrupts/syscalls when in user mode)
   uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
   if (!kernel_stack) {

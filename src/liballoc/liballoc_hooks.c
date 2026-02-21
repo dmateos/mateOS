@@ -79,6 +79,7 @@ int liballoc_free(void* ptr, size_t num_pages) {
 
 void liballoc_heap_info(uint32_t *start, uint32_t *end, uint32_t *current) {
     if (start) *start = (uint32_t)KERNEL_HEAP_START;
-    if (end) *end = (uint32_t)KERNEL_HEAP_END;
+    if (end) *end = (uint32_t)heap_end;
     if (current) *current = (uint32_t)heap_current;
 }
+

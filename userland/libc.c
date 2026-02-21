@@ -286,11 +286,17 @@ unsigned long long __isoc23_strtoull(const char *nptr, char **endptr, int base) 
 }
 
 void *malloc(size_t n) {
-    if (n == 0) return NULL;
+    if (n == 0) {
+        write(2, "[malloc(0)]\n", 12);
+        return NULL;
+    }
     {
         unsigned int need = align8((unsigned int)n + (unsigned int)sizeof(alloc_hdr_t));
         alloc_hdr_t *h = (alloc_hdr_t *)sbrk((int)need);
-        if ((unsigned int)h == 0xFFFFFFFFu) return NULL;
+        if ((unsigned int)h == 0xFFFFFFFFu) {
+            write(2, "[malloc fail: sbrk returned -1]\n", 32);
+            return NULL;
+        }
         h->size = (unsigned int)n;
         return (void *)(h + 1);
     }
@@ -952,12 +958,14 @@ int pthread_spin_unlock(pthread_spinlock_t *lock) {
 }
 
 void *dlopen(const char *filename, int flags) {
+    write(2, "[dlopen called]\n", 16);
     (void)filename;
     (void)flags;
     return NULL;
 }
 
 void *dlsym(void *handle, const char *symbol) {
+    write(2, "[dlsym called]\n", 15);
     (void)handle;
     (void)symbol;
     return NULL;
