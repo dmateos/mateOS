@@ -175,6 +175,15 @@ typedef struct {
 
 static int streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
+static int sym_name_eq_loose(const char *a, const char *b) {
+    if (!a || !b) return 0;
+    if (strcmp(a, b) == 0) return 1;
+    if (a[0] == '$' && strcmp(a + 1, b) == 0) return 1;
+    if (b[0] == '$' && strcmp(a, b + 1) == 0) return 1;
+    if (a[0] == '$' && b[0] == '$' && strcmp(a + 1, b + 1) == 0) return 1;
+    return 0;
+}
+
 static void path_copy(char *dst, int cap, const char *src) {
     int i = 0;
     if (cap <= 0) return;
@@ -698,7 +707,7 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
             mobj_sym_t *cs = &cand->syms[j];
             if (cs->section == SEC_UNDEF) continue;
             if (!(cs->flags & MOBJ_SYM_GLOBAL)) continue;
-            if (strcmp(cs->name, s->name) != 0) continue;
+            if (!sym_name_eq_loose(cs->name, s->name)) continue;
             unsigned int addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
             if (found) {
                 print("ld86: duplicate global symbol: ");
