@@ -217,6 +217,10 @@ ld86-host-check:
 	@$(MAKE) -C userland ld86.elf libc.o crt0.o libtiny.a
 	@sh tools/ld86_host_check.sh
 
+TINYCC_SRC ?= /tmp/tinycc
+tinycc-phase1:
+	@sh tools/tinycc_phase1_probe.sh "$(TINYCC_SRC)"
+
 test64:
 	qemu-system-x86_64 -display curses -kernel $(TARGET)
 
@@ -230,4 +234,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run run-fat16 fat16img cc-smoke userland initrd
+.PHONY: clean rust run run-fat16 fat16img cc-smoke userland initrd tinycc-phase1

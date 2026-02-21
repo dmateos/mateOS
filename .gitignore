@@ -8,3 +8,4 @@
 # Rust build artifacts
 rust/target/
 rust/Cargo.lock
+userland/tinycc/PHASE1_GAP.md
