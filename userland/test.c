@@ -702,7 +702,7 @@ static int test_vfs_io(void) {
     }
 
     unsigned char hdr[4];
-    int n = fread(fd, hdr, 4);
+    int n = fd_read(fd, hdr, 4);
     if (n != 4) {
         print("  FAILED: fread header bytes=");
         print_num(n);
@@ -726,7 +726,7 @@ static int test_vfs_io(void) {
         return 0;
     }
     unsigned char b0 = 0;
-    n = fread(fd, &b0, 1);
+    n = fd_read(fd, &b0, 1);
     if (n != 1 || b0 != 0x7F) {
         print("  FAILED: seek+read verification\n");
         close(fd);

@@ -202,11 +202,11 @@ int open(const char *path, int flags) {
     return __syscall2(SYS_OPEN, (unsigned int)path, (unsigned int)flags);
 }
 
-int fread(int fd, void *buf, unsigned int len) {
+int fd_read(int fd, void *buf, unsigned int len) {
     return __syscall3(SYS_FREAD, (unsigned int)fd, (unsigned int)buf, len);
 }
 
-int fwrite(int fd, const void *buf, unsigned int len) {
+int fd_write(int fd, const void *buf, unsigned int len) {
     return __syscall3(SYS_FWRITE, (unsigned int)fd, (unsigned int)buf, len);
 }
 

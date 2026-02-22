@@ -1,8 +1,6 @@
 #include "ramfs.h"
 #include "vfs.h"
 #include "lib.h"
-#include "task.h"
-#include "arch/i686/paging.h"
 
 static ramfs_file_t files[RAMFS_MAX_FILES];
 static int file_count = 0;
@@ -84,6 +82,8 @@ void ramfs_init(void *initrd_start, uint32_t initrd_size) {
 
 ramfs_file_t *ramfs_lookup(const char *name) {
   if (!name) return NULL;
+  // Strip leading slashes — ramfs is flat, no directories
+  while (name[0] == '/') name++;
 
   for (int i = 0; i < file_count; i++) {
     if (files[i].in_use && strcmp(files[i].name, name) == 0) {
@@ -166,30 +166,8 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
   uint32_t avail = f->size - off;
   if (len > avail) len = avail;
 
-  // Source (initrd data) and destination (user buffer) may live in different
-  // address spaces: user processes remap pages at 0x700000+ for their code/BSS,
-  // which can overlap the initrd's physical location.  Always bounce through
-  // a kernel-heap buffer when a user process is active.
   uint32_t src_addr = f->data + off;
-  task_t *cur = task_current();
-  if (cur && cur->page_dir) {
-    #define BOUNCE_SZ 4096
-    static uint8_t bounce[BOUNCE_SZ];
-    uint32_t done = 0;
-    while (done < len) {
-      uint32_t chunk = len - done;
-      if (chunk > BOUNCE_SZ) chunk = BOUNCE_SZ;
-      // Read initrd data using kernel page tables
-      paging_switch(paging_get_kernel_dir());
-      memcpy(bounce, (void *)(src_addr + done), chunk);
-      // Write to user buffer using process page tables
-      paging_switch(cur->page_dir);
-      memcpy((uint8_t *)buf + done, bounce, chunk);
-      done += chunk;
-    }
-  } else {
-    memcpy(buf, (void *)src_addr, len);
-  }
+  memcpy(buf, (void *)src_addr, len);
 
   ramfs_open_files[handle].offset += len;
   return (int)len;

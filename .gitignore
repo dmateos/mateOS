@@ -1,10 +1,20 @@
 *.bin
 *.iso
 *.o
+*.a
 */*.o
+*/*.a
 */*.elf
 */*.wlf
+*.img
+*.log
+._*
+.DS_Store
+**/.DS_Store
 
 # Rust build artifacts
 rust/target/
 rust/Cargo.lock
+userland/rust-winhello/target/
+userland/tinycc/PHASE1_GAP.md
+userland/tinycc/PHASE1_GAP.md

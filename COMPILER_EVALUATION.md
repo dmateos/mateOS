@@ -88,3 +88,21 @@ Inside mateOS:
 - Use `--keep-temps` to keep `cc_<pid>.asm` and `cc_<pid>.obj` for debugging.
 - Fast host-side parser sanity check:
   - `make ld86-host-check`
+- TinyCC Phase 1 ABI/header gap probe (expects source at `/tmp/tinycc`):
+  - `make tinycc-phase1`
+  - optional source path: `make tinycc-phase1 TINYCC_SRC=/path/to/tinycc`
+
+## TinyCC Bring-Up Status
+
+- TinyCC source builds on host (`/tmp/tinycc`) for default x86_64 target.
+- i386 host build currently fails here due missing multilib host headers, so mateOS porting should continue from source/ABI analysis rather than relying on host i386 build.
+- A repeatable Phase 1 probe now exists at `tools/tinycc_phase1_probe.sh`.
+- Probe output is written to `userland/tinycc/PHASE1_GAP.md`.
+- `tcc.elf` is now integrated in `userland/` and builds from vendored TinyCC i386 sources (`userland/tinycc/vendor/`).
+
+Current probe snapshot:
+- TinyCC external symbols: 105
+- Already provided by mateOS userland (`libc.o` + `syscalls.o`): 105
+- Missing symbols to implement/shim: 0
+- TinyCC requested libc headers: 37
+- Missing headers vs `userland/include + userland/smallerc/include`: 0

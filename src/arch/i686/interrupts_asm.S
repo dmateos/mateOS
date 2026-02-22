@@ -15,12 +15,20 @@ flush_idt:
     # Stack: [error_code] [EIP] [CS] [EFLAGS] (possibly [ESP] [SS] for user mode)
     pusha
     # Now stack: [pusha regs 32 bytes] [error_code] [EIP] [CS] [EFLAGS]
-    # Error code is at ESP+32
-    mov 32(%esp), %eax          # Get error code from stack
-    push %eax                   # Push error code as second arg
-    push $\num                  # Push interrupt number as first arg
+    # Error code is at ESP+32, fault EIP at ESP+36, CS at ESP+40, user ESP at ESP+48
+    mov %esp, %esi              # pusha frame pointer
+    mov 48(%esp), %ecx          # user esp (ring3 faults)
+    mov 40(%esp), %ebx          # fault cs
+    mov 36(%esp), %edx          # fault eip
+    mov 32(%esp), %eax          # error code
+    push %esi                   # arg6: regs frame pointer
+    push %ecx                   # arg5: user esp
+    push %ebx                   # arg4: fault cs
+    push %edx                   # arg3: fault eip
+    push %eax                   # arg2: error code
+    push $\num                  # arg1: interrupt number
     call idt_exception_handler
-    add $8, %esp                # Cleanup both pushed args
+    add $24, %esp               # Cleanup pushed args
     popa
     add $4, %esp                # Cleanup CPU-pushed error code
     iret
@@ -31,10 +39,17 @@ flush_idt:
   .align 4
   isr\num:
     pusha
+    mov %esp, %esi
+    # fault EIP is at ESP+32. CS/user ESP are unavailable here.
+    mov 32(%esp), %edx
+    push %esi
+    push $0
+    push $0
+    push %edx
     push $0
     push $\num
     call idt_exception_handler
-    add $8, %esp                #cleanup bytes pushed by push above
+    add $24, %esp               #cleanup bytes pushed by push above
     popa
     iret
 .endm

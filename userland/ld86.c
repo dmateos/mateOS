@@ -175,6 +175,19 @@ typedef struct {
 
 static int streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
+static int sym_name_eq_loose(const char *a, const char *b) {
+    if (!a || !b) return 0;
+    if (strcmp(a, b) == 0) return 1;
+    if (a[0] == '$' && strcmp(a + 1, b) == 0) return 1;
+    if (b[0] == '$' && strcmp(a, b + 1) == 0) return 1;
+    if (a[0] == '$' && b[0] == '$' && strcmp(a + 1, b + 1) == 0) return 1;
+    return 0;
+}
+
+static const char *sym_strip_dollar(const char *s) {
+    return (s && s[0] == '$') ? (s + 1) : s;
+}
+
 static void path_copy(char *dst, int cap, const char *src) {
     int i = 0;
     if (cap <= 0) return;
@@ -570,7 +583,7 @@ static unsigned char *read_whole_file(const char *path, unsigned int *out_size) 
         close(fd);
         return 0;
     }
-    int rn = fread(fd, buf, st.size);
+    int rn = fd_read(fd, buf, st.size);
     close(fd);
     if (rn != (int)st.size) return 0;
     *out_size = st.size;
@@ -698,7 +711,7 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
             mobj_sym_t *cs = &cand->syms[j];
             if (cs->section == SEC_UNDEF) continue;
             if (!(cs->flags & MOBJ_SYM_GLOBAL)) continue;
-            if (strcmp(cs->name, s->name) != 0) continue;
+            if (!sym_name_eq_loose(cs->name, s->name)) continue;
             unsigned int addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
             if (found) {
                 // Allow multiple loose-name aliases within the same object
@@ -720,6 +733,26 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
             found_input = i;
         }
     }
+    if (!found) {
+        // Fallback: some imported ELF objects may not mark aliases as global.
+        // For unresolved externs, allow a loose-name match against any defined
+        // symbol (e.g. "$print" <-> "print").
+        const char *want = sym_strip_dollar(s->name);
+        for (int i = 0; i < input_count && !found; i++) {
+            input_t *cand = &inputs[i];
+            if (!cand->is_obj || cand->obj_version < 2) continue;
+            for (unsigned int j = 0; j < cand->sym_count; j++) {
+                mobj_sym_t *cs = &cand->syms[j];
+                if (cs->section == SEC_UNDEF) continue;
+                if (strcmp(sym_strip_dollar(cs->name), want) != 0) continue;
+                found = 1;
+                found_addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
+                found_input = i;
+                break;
+            }
+        }
+    }
+
     if (!found) {
         print("ld86: undefined symbol: ");
         print(s->name);
@@ -992,7 +1025,7 @@ void _start(int argc, char **argv) {
         print("ld86: cannot open output\n");
         exit(1);
     }
-    if (fwrite(ofd, obuf, out_sz) != (int)out_sz) {
+    if (fd_write(ofd, obuf, out_sz) != (int)out_sz) {
         close(ofd);
         print("ld86: write failed\n");
         exit(1);

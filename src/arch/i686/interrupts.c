@@ -159,7 +159,9 @@ void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries) {
 
 void idt_breakpoint(void) { asm volatile("int $0x03"); }
 
-void idt_exception_handler(uint32_t number, uint32_t noerror) {
+void idt_exception_handler(uint32_t number, uint32_t noerror, uint32_t fault_eip,
+                           uint32_t fault_cs, uint32_t fault_esp,
+                           uint32_t regs_ptr) {
   task_t *cur = task_current();
 
   switch (number) {
@@ -187,8 +189,27 @@ void idt_exception_handler(uint32_t number, uint32_t noerror) {
   case 0xE: {
     extern uint32_t get_cr2(void);
     uint32_t fault_addr = get_cr2();
+    uint32_t *r = (uint32_t *)regs_ptr;
+    uint32_t reg_edi = r ? r[0] : 0;
+    uint32_t reg_esi = r ? r[1] : 0;
+    uint32_t reg_ebp = r ? r[2] : 0;
+    uint32_t reg_esp = r ? r[3] : 0;
+    uint32_t reg_ebx = r ? r[4] : 0;
+    uint32_t reg_edx = r ? r[5] : 0;
+    uint32_t reg_ecx = r ? r[6] : 0;
+    uint32_t reg_eax = r ? r[7] : 0;
+    uint8_t *ipb = (uint8_t *)fault_eip;
+    uint32_t b0 = ipb ? ipb[0] : 0;
+    uint32_t b1 = ipb ? ipb[1] : 0;
+    uint32_t b2 = ipb ? ipb[2] : 0;
+    uint32_t b3 = ipb ? ipb[3] : 0;
     printf("Page fault at 0x%x err=0x%x (", fault_addr, noerror);
-    kprintf("[fault] page fault addr=0x%x err=0x%x\n", fault_addr, noerror);
+    kprintf("[fault] page fault addr=0x%x err=0x%x eip=0x%x cs=0x%x uesp=0x%x "
+            "eax=0x%x ebx=0x%x ecx=0x%x edx=0x%x esi=0x%x edi=0x%x ebp=0x%x esp=0x%x "
+            "ip=%x %x %x %x\n",
+            fault_addr, noerror, fault_eip, fault_cs, fault_esp,
+            reg_eax, reg_ebx, reg_ecx, reg_edx, reg_esi, reg_edi, reg_ebp, reg_esp,
+            b0, b1, b2, b3);
     if (noerror & 0x1) printf("present "); else printf("not-present ");
     if (noerror & 0x2) printf("write "); else printf("read ");
     if (noerror & 0x4) printf("user"); else printf("supervisor");

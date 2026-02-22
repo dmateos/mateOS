@@ -108,6 +108,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
   }
 
   elf32_ehdr_t *elf = (elf32_ehdr_t *)data;
+
   if (!elf_validate(elf)) {
     printf("[exec] invalid ELF: %s\n", filename);
     kfree(data);
@@ -133,14 +134,28 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     if (seg_end > user_end) user_end = seg_end;
 
     for (uint32_t page_vaddr = seg_start; page_vaddr < seg_end; page_vaddr += 0x1000) {
-      uint32_t phys = pmm_alloc_frame();
-      if (!phys) {
-        printf("[exec] out of physical frames\n");
-        kfree(data);
-        return 0;
+      uint32_t dir_idx = page_vaddr >> 22;
+      uint32_t table_idx = (page_vaddr >> 12) & 0x3FF;
+      uint32_t phys = 0;
+
+      if (page_dir->tables[dir_idx] & PAGE_PRESENT) {
+        page_table_t *pt = (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
+        if (pt->pages[table_idx] & PAGE_PRESENT) {
+          phys = pt->pages[table_idx] & ~0xFFF;
+        }
       }
 
-      memset((void *)phys, 0, 0x1000);
+      if (!phys) {
+        phys = pmm_alloc_frame();
+        if (!phys) {
+          printf("[exec] out of physical frames\n");
+          kfree(data);
+          return 0;
+        }
+        memset((void *)phys, 0, 0x1000);
+        paging_map_page(page_dir, page_vaddr, phys,
+                        PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+      }
 
       uint32_t copy_start = (page_vaddr > vaddr) ? page_vaddr : vaddr;
       uint32_t copy_end = (page_vaddr + 0x1000 < vaddr + filesz)
@@ -151,9 +166,6 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
         uint32_t src_offset = copy_start - vaddr;
         memcpy((void *)(phys + dst_offset), src + src_offset, copy_end - copy_start);
       }
-
-      paging_map_page(page_dir, page_vaddr, phys,
-                      PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
     }
   }
 
@@ -661,7 +673,14 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_FWRITE: {
       task_t *cur = task_current();
       if (!cur || !cur->fd_table) return (uint32_t)-1;
-      return (uint32_t)vfs_write(cur->fd_table, (int)ebx, (const void *)ecx, edx);
+      int fwfd = (int)ebx;
+      // Console-backed fds (fs_id == -1): route to console output
+      if (fwfd >= 0 && fwfd < VFS_MAX_FDS_PER_TASK &&
+          cur->fd_table->fds[fwfd].in_use &&
+          cur->fd_table->fds[fwfd].fs_id == -1) {
+        return (uint32_t)sys_do_write(fwfd, (const char *)ecx, (size_t)edx);
+      }
+      return (uint32_t)vfs_write(cur->fd_table, fwfd, (const void *)ecx, edx);
     }
 
     case SYS_CLOSE: {

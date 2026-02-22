@@ -26,7 +26,7 @@ void _start(int argc, char **argv) {
 
     char buf[256];
     while (1) {
-        int n = fread(in, buf, sizeof(buf));
+        int n = fd_read(in, buf, sizeof(buf));
         if (n < 0) {
             print("cp: read failed\n");
             close(in);
@@ -37,7 +37,7 @@ void _start(int argc, char **argv) {
 
         int off = 0;
         while (off < n) {
-            int w = fwrite(out, buf + off, (unsigned int)(n - off));
+            int w = fd_write(out, buf + off, (unsigned int)(n - off));
             if (w <= 0) {
                 print("cp: write failed\n");
                 close(in);

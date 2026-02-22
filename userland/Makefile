@@ -1,9 +1,10 @@
 CC = gcc
-CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
+CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 LDFLAGS = -m32 -T user.ld -nostdlib -static -Wl,--build-id=none
 
-PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf
-SMALLERC_CFLAGS = -m32 -nostdlib -nostdinc -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
+PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf tccsmoke.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf tcc.elf
+SMALLERC_CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
+TINYCC_CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Itinycc/vendor -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall -DONE_SOURCE=1
 
 DOOMGENERIC_H = doom/doomgeneric/doomgeneric/doomgeneric.h
 DOOM_DIR = doom/doomgeneric/doomgeneric
@@ -29,7 +30,7 @@ DOOM_PORT_CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -f
 	-DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 \
 	-DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE -DCMAP256
 
-all: $(PROGRAMS) crt0.o libtiny.a
+all: $(PROGRAMS) crt0.o crt1.o crti.o crtn.o cprint.o libtiny.a libc.a
 
 hello.elf: hello.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -44,6 +45,10 @@ cctest.elf: cctest.o syscalls.o libc.o
 	@echo "Built $@"
 
 ccsymtest.elf: ccsymtest.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+tccsmoke.elf: tccsmoke.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
@@ -166,10 +171,29 @@ cc.elf: cc.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 
+tcc.elf: tinycc/tinycc_entry.o tinycc/tcc_main.o tinycc/tcc_builtins.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
 crt0.o: crt0.s
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+crt1.o: crt1.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+crti.o: crti.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+crtn.o: crtn.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+cprint.o: cprint.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 libtiny.a: libtiny.o
+	ar rcs $@ $^
+
+libc.a: libc.o syscalls.o
 	ar rcs $@ $^
 
 smallerc/vendor/smlrc.o: smallerc/vendor/smlrc.c
@@ -177,6 +201,15 @@ smallerc/vendor/smlrc.o: smallerc/vendor/smlrc.c
 
 smallerc/compat_runtime.o: smallerc/compat_runtime.c
 	$(CC) $(SMALLERC_CFLAGS) -c -o $@ $<
+
+tinycc/tcc_main.o: tinycc/vendor/tcc.c
+	$(CC) $(TINYCC_CFLAGS) -c -o $@ $<
+
+tinycc/tinycc_entry.o: tinycc/tinycc_entry.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+tinycc/tcc_builtins.o: tinycc/tcc_builtins.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 ifneq ($(wildcard $(DOOMGENERIC_H)),)
 doom.elf: $(DOOM_OBJ)
@@ -199,6 +232,6 @@ endif
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f *.o *.a *.elf *.wlf smallerc/*.o smallerc/vendor/*.o doom/*.o doom/compat/*.o doom/doomgeneric/doomgeneric/*.o
+	rm -f *.o *.a *.elf *.wlf smallerc/*.o smallerc/vendor/*.o tinycc/*.o doom/*.o doom/compat/*.o doom/doomgeneric/doomgeneric/*.o
 
 .PHONY: all clean

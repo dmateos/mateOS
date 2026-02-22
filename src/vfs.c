@@ -148,7 +148,6 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
         }
     }
 
-    kprintf("[vfs] open fail path=%s err=%d\n", path, -4);
     return -1;
 }
 
@@ -157,6 +156,7 @@ int vfs_read(vfs_fd_table_t *fdt, int fd, void *buf, uint32_t len) {
     if (!fdt->fds[fd].in_use) return -1;
 
     int fs = fdt->fds[fd].fs_id;
+    if (fs < 0 && fs > VFS_VIRT_BASE_ID) return -1; // console fd, not VFS-backed
     int vfi = vfs_virtual_index_from_fs_id(fs);
     if (vfi >= 0) {
         int n = virtual_files[vfi].read_fn((uint32_t)fdt->fds[fd].fs_handle, buf, len);
@@ -180,6 +180,7 @@ int vfs_write(vfs_fd_table_t *fdt, int fd, const void *buf, uint32_t len) {
     if (!fdt->fds[fd].in_use) return -1;
 
     int fs = fdt->fds[fd].fs_id;
+    if (fs < 0 && fs > VFS_VIRT_BASE_ID) return -1; // console fd, not VFS-backed
     int vfi = vfs_virtual_index_from_fs_id(fs);
     if (vfi >= 0) {
         kprintf("[vfs] write fail path=%s err=%d\n", fdt->fds[fd].debug_path, -1);
@@ -221,6 +222,7 @@ int vfs_seek(vfs_fd_table_t *fdt, int fd, int offset, int whence) {
     if (!fdt->fds[fd].in_use) return -1;
 
     int fs = fdt->fds[fd].fs_id;
+    if (fs < 0 && fs > VFS_VIRT_BASE_ID) return -1; // console fd, not seekable
     int vfi = vfs_virtual_index_from_fs_id(fs);
     if (vfi >= 0) {
         int size = (int)virtual_files[vfi].size_fn();

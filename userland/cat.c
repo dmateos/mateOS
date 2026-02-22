@@ -17,7 +17,7 @@ void _start(int argc, char **argv) {
 
     char buf[256];
     int n;
-    while ((n = fread(fd, buf, sizeof(buf))) > 0) {
+    while ((n = fd_read(fd, buf, sizeof(buf))) > 0) {
         write(1, buf, n);
     }
     close(fd);
