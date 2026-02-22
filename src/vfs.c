@@ -328,11 +328,7 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
 
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->stat) continue;
-        if (filesystems[fs]->stat(path, st) == 0) {
-            kprintf("[vfs_stat] '%s' found by fs[%d]='%s' type=%d\n",
-                    path, fs, filesystems[fs]->name, st->type);
-            return 0;
-        }
+        if (filesystems[fs]->stat(path, st) == 0) return 0;
     }
     return -1;
 }

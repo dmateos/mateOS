@@ -261,12 +261,45 @@ void _start(int argc_unused, char **argv_unused) {
     };
 
     while (1) {
-        term_print("$ ");
+        // Show cwd in prompt
+        {
+            char cwdbuf[64];
+            if (getcwd(cwdbuf, sizeof(cwdbuf))) {
+                term_print(cwdbuf);
+            }
+            term_print("$ ");
+        }
         term_redraw();
         int len = readline(line, sizeof(line));
         if (len < 0) break;
 
         if (len == 0) continue;
+
+        // cd builtin — must be handled in this process (changes its own cwd)
+        if (len >= 2 && line[0] == 'c' && line[1] == 'd' &&
+            (line[2] == ' ' || line[2] == '\0')) {
+            const char *dir = (line[2] == ' ') ? line + 3 : "/";
+            while (*dir == ' ') dir++;
+            if (*dir == '\0') dir = "/";
+            if (chdir(dir) < 0) {
+                term_print("cd: no such directory: ");
+                term_print(dir);
+                term_print("\n");
+            }
+            term_redraw();
+            continue;
+        }
+
+        // pwd builtin
+        if (len == 3 && line[0] == 'p' && line[1] == 'w' && line[2] == 'd') {
+            char cwdbuf[64];
+            if (getcwd(cwdbuf, sizeof(cwdbuf))) {
+                term_print(cwdbuf);
+                term_print("\n");
+            }
+            term_redraw();
+            continue;
+        }
 
         cmd_result_t builtin = cmd_try_builtin(line, &io);
         if (builtin == CMD_HANDLED) {

@@ -15,6 +15,7 @@
 #define TEXT_BOT (H - STATUS_H)
 
 /* Ctrl key codes (ASCII 1-26) */
+#define CTRL_B 2
 #define CTRL_O 15
 #define CTRL_S 19
 #define CTRL_N 14
@@ -114,7 +115,7 @@ static void redraw(void) {
             ugfx_buf_string(buf, W, H, 4, H - STATUS_H + 1, status, 15);
         } else {
             ugfx_buf_string(buf, W, H, 4, H - STATUS_H + 1,
-                            "^O Open  ^S Save  ^N New  ESC Quit", 7);
+                            "^O Open  ^S Save  ^B Build  ^N New  ESC Quit", 7);
         }
     }
 }
@@ -189,6 +190,67 @@ static void do_new(void) {
     filepath[0] = '\0';
     dirty = 0;
     set_status("New file");
+}
+
+/* Check if filepath ends with ".c" */
+static int is_c_file(void) {
+    int len = 0;
+    while (filepath[len]) len++;
+    return (len >= 2 && filepath[len - 2] == '.' && filepath[len - 1] == 'c');
+}
+
+/* Compile current .c file with TCC. Saves first, then spawns tcc. */
+static void do_compile(void) {
+    if (!filepath[0]) {
+        set_status("Save file first");
+        return;
+    }
+    if (!is_c_file()) {
+        set_status("Not a .c file");
+        return;
+    }
+    // Save before compiling
+    if (dirty) {
+        if (save_file(filepath) < 0) {
+            set_status("Save failed");
+            return;
+        }
+        dirty = 0;
+    }
+    // Build output name: replace .c with .elf
+    char outname[MAX_PATH];
+    int len = 0;
+    while (filepath[len]) len++;
+    if (len >= MAX_PATH - 3) {
+        set_status("Path too long");
+        return;
+    }
+    memcpy(outname, filepath, (unsigned int)(len - 1));  // copy up to '.'
+    outname[len - 1] = 'e';
+    outname[len]     = 'l';
+    outname[len + 1] = 'f';
+    outname[len + 2] = '\0';
+
+    const char *args[] = { "tcc.elf", filepath, "-o", outname };
+    int child = spawn_argv(args[0], args, 4);
+    if (child < 0) {
+        set_status("tcc not found");
+        return;
+    }
+    // Wait for compilation
+    int code = wait(child);
+    if (code == 0) {
+        set_status("Compiled: ");
+        // Append output name to status
+        int slen = 0;
+        while (status[slen]) slen++;
+        int i = 0;
+        while (outname[i] && slen < (int)sizeof(status) - 1)
+            status[slen++] = outname[i++];
+        status[slen] = '\0';
+    } else {
+        set_status("Compile failed");
+    }
 }
 
 /* Handle a key in prompt mode (open/save-as). Returns 1 if prompt is done. */
@@ -276,6 +338,9 @@ void _start(int argc, char **argv) {
                     flush();
                 } else if (key == CTRL_N) {
                     do_new();
+                    flush();
+                } else if (key == CTRL_B) {
+                    do_compile();
                     flush();
                 } else if (key == '\b') {
                     if (text_len > 0) {
