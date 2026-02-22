@@ -40,6 +40,8 @@ typedef struct vfs_fs_ops {
     int (*stat)(const char *path, vfs_stat_t *st);
     int (*readdir)(const char *path, int index, char *buf, uint32_t size);
     int (*unlink)(const char *path);
+    int (*mkdir)(const char *path);
+    int (*rmdir)(const char *path);
 } vfs_fs_ops_t;
 
 // Open file descriptor (kernel-side)
@@ -75,6 +77,12 @@ int vfs_seek(vfs_fd_table_t *fdt, int fd, int offset, int whence);
 int vfs_stat(const char *path, vfs_stat_t *st);
 int vfs_readdir(const char *path, int index, char *buf, uint32_t size);
 int vfs_unlink(const char *path);
+int vfs_mkdir(const char *path);
+int vfs_rmdir(const char *path);
+
+// Resolve a relative path against a cwd into an absolute path.
+// out must be at least VFS_PATH_MAX bytes.
+void vfs_resolve_path(const char *cwd, const char *rel, char *out);
 
 // Helper: read entire file into kmalloc'd buffer (caller must kfree)
 int vfs_read_file(const char *path, void **out_data, uint32_t *out_size);

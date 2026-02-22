@@ -59,6 +59,7 @@ void task_init(void) {
   idle->user_brk_min = 0;
   idle->user_brk = 0;
   idle->runtime_ticks = 0;
+  memcpy(idle->cwd, "/", 2);  // Root cwd for kernel task
 
   current_task = idle;
   task_list_head = idle;
@@ -151,6 +152,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
   task->stdout_wid = -1;
   task->detached = 0;
   task->runtime_ticks = 0;
+  memcpy(task->cwd, "/", 2);  // Default cwd for kernel tasks
 
   // Add to circular task list (skip if reusing — already linked)
   if (!reusing) {
@@ -340,6 +342,13 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   task->stdout_wid = -1;
   task->detached = 0;
   task->runtime_ticks = 0;
+
+  // Inherit parent's cwd, or default to "/"
+  if (parent && parent->cwd[0]) {
+    memcpy(task->cwd, parent->cwd, VFS_PATH_MAX);
+  } else {
+    memcpy(task->cwd, "/", 2);
+  }
 
   // Allocate per-task file descriptor table
   task->fd_table = (vfs_fd_table_t *)kmalloc(sizeof(vfs_fd_table_t));

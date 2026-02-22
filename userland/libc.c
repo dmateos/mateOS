@@ -705,13 +705,7 @@ int remove(const char *path) {
     return unlink(path);
 }
 
-char *getcwd(char *buf, size_t size) {
-    const char *root = "/";
-    if (!buf || size < 2) return NULL;
-    buf[0] = root[0];
-    buf[1] = '\0';
-    return buf;
-}
+// getcwd is implemented in syscalls.c via SYS_GETCWD
 
 int access(const char *path, int mode) {
     stat_t st;

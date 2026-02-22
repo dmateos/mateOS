@@ -45,16 +45,29 @@ static void print_padded(const char *s, int width) {
 
 void _start(int argc, char **argv) {
     int by_ext = 0;
+    const char *path = 0;  // NULL = use cwd via readdir
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "--ext") == 0) {
             by_ext = 1;
+        } else {
+            path = argv[i];
         }
     }
 
     char names[256][32];
     int count = 0;
-    while (count < 256 && readdir((unsigned int)count, names[count], sizeof(names[count])) > 0) {
-        count++;
+
+    if (path) {
+        // List a specific directory
+        while (count < 256 && readdir_path(path, (unsigned int)count, names[count]) > 0) {
+            count++;
+        }
+    } else {
+        // List current working directory (uses cwd via kernel)
+        while (count < 256 && readdir((unsigned int)count, names[count], sizeof(names[count])) > 0) {
+            count++;
+        }
     }
 
     for (int i = 0; i < count; i++) {

@@ -436,9 +436,22 @@ static int sys_do_wait_nb(uint32_t task_id) {
 }
 
 // Readdir: copy filename at index into user buffer (via VFS)
-static int sys_do_readdir(uint32_t index, char *buf, uint32_t size) {
+// If path is non-NULL, list that directory; otherwise use task's cwd.
+static int sys_do_readdir(const char *path, uint32_t index, char *buf, uint32_t size) {
   if (!buf || size == 0) return 0;
-  return vfs_readdir("/", (int)index, buf, size);
+  task_t *cur = task_current();
+  char resolved[VFS_PATH_MAX];
+  if (path && path[0]) {
+    vfs_resolve_path(cur ? cur->cwd : "/", path, resolved);
+  } else {
+    // Default to task's cwd
+    if (cur && cur->cwd[0]) {
+      memcpy(resolved, cur->cwd, VFS_PATH_MAX);
+    } else {
+      resolved[0] = '/'; resolved[1] = '\0';
+    }
+  }
+  return vfs_readdir(resolved, (int)index, buf, size);
 }
 
 // Getpid: return current task ID
@@ -526,6 +539,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return sys_do_getkey(ebx);
 
     case SYS_SPAWN:
+      // Spawn uses filename as-is — ramfs is flat, programs live at root.
+      // Shell already appends .elf/.wlf; no cwd resolution needed.
       return (uint32_t)sys_do_spawn((const char *)ebx,
                                      (const char **)ecx, (int)edx);
 
@@ -533,7 +548,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return (uint32_t)sys_do_wait(ebx);
 
     case SYS_READDIR:
-      return (uint32_t)sys_do_readdir(ebx, (char *)ecx, edx);
+      // readdir(path, index, buf) — ebx=path (NULL=cwd), ecx=index, edx=buf
+      // Buffer size fixed at 32 (matches FAT16 8.3 names and typical user buffers)
+      return (uint32_t)sys_do_readdir((const char *)ebx, ecx, (char *)edx, 32);
 
     case SYS_GETPID:
       return (uint32_t)sys_do_getpid();
@@ -661,7 +678,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_OPEN: {
       task_t *cur = task_current();
       if (!cur || !cur->fd_table) return (uint32_t)-1;
-      return (uint32_t)vfs_open(cur->fd_table, (const char *)ebx, (int)ecx);
+      char opath[VFS_PATH_MAX];
+      vfs_resolve_path(cur->cwd, (const char *)ebx, opath);
+      return (uint32_t)vfs_open(cur->fd_table, opath, (int)ecx);
     }
 
     case SYS_FREAD: {
@@ -697,15 +716,22 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_STAT: {
       if (!ebx || !ecx) return (uint32_t)-1;
-      return (uint32_t)vfs_stat((const char *)ebx, (vfs_stat_t *)ecx);
+      task_t *scur = task_current();
+      char spath[VFS_PATH_MAX];
+      vfs_resolve_path(scur ? scur->cwd : "/", (const char *)ebx, spath);
+      return (uint32_t)vfs_stat(spath, (vfs_stat_t *)ecx);
     }
 
     case SYS_DETACH:
       return (uint32_t)sys_do_detach();
 
-    case SYS_UNLINK:
+    case SYS_UNLINK: {
       if (!ebx) return (uint32_t)-1;
-      return (uint32_t)vfs_unlink((const char *)ebx);
+      task_t *ucur = task_current();
+      char upath[VFS_PATH_MAX];
+      vfs_resolve_path(ucur ? ucur->cwd : "/", (const char *)ebx, upath);
+      return (uint32_t)vfs_unlink(upath);
+    }
 
     case SYS_KILL:
       return (uint32_t)sys_do_kill(ebx);
@@ -718,6 +744,56 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_DEBUG_EXIT:
       return (uint32_t)sys_do_debug_exit(ebx);
+
+    case SYS_MKDIR: {
+      // mkdir(path) -> 0 or -1
+      if (!ebx) return (uint32_t)-1;
+      task_t *mcur = task_current();
+      char mpath[VFS_PATH_MAX];
+      vfs_resolve_path(mcur ? mcur->cwd : "/", (const char *)ebx, mpath);
+      return (uint32_t)vfs_mkdir(mpath);
+    }
+
+    case SYS_CHDIR: {
+      // chdir(path) -> 0 or -1
+      if (!ebx) return (uint32_t)-1;
+      task_t *ccur = task_current();
+      if (!ccur) return (uint32_t)-1;
+      char cpath[VFS_PATH_MAX];
+      vfs_resolve_path(ccur->cwd, (const char *)ebx, cpath);
+      // Validate that path exists and is a directory
+      vfs_stat_t cst;
+      if (vfs_stat(cpath, &cst) < 0) return (uint32_t)-1;
+      if (cst.type != VFS_DIR) return (uint32_t)-1;
+      // Update task's cwd
+      int clen = 0;
+      for (; cpath[clen] && clen < VFS_PATH_MAX - 1; clen++)
+        ccur->cwd[clen] = cpath[clen];
+      ccur->cwd[clen] = '\0';
+      return 0;
+    }
+
+    case SYS_RMDIR: {
+      // rmdir(path) -> 0 or -1
+      if (!ebx) return (uint32_t)-1;
+      task_t *rcur = task_current();
+      char rpath[VFS_PATH_MAX];
+      vfs_resolve_path(rcur ? rcur->cwd : "/", (const char *)ebx, rpath);
+      return (uint32_t)vfs_rmdir(rpath);
+    }
+
+    case SYS_GETCWD: {
+      // getcwd(buf, size) -> 0 or -1
+      if (!ebx || ecx == 0) return (uint32_t)-1;
+      task_t *gcur = task_current();
+      if (!gcur) return (uint32_t)-1;
+      char *gbuf = (char *)ebx;
+      uint32_t gsize = ecx;
+      int glen = strlen(gcur->cwd);
+      if ((uint32_t)(glen + 1) > gsize) return (uint32_t)-1;
+      memcpy(gbuf, gcur->cwd, glen + 1);
+      return 0;
+    }
 
     default:
       return (uint32_t)-1;

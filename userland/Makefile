@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 LDFLAGS = -m32 -T user.ld -nostdlib -static -Wl,--build-id=none
 
-PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf tccsmoke.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf tcc.elf
+PROGRAMS = hello.elf test.elf cctest.elf ccsymtest.elf tccsmoke.elf gui.elf shell.elf winhello.wlf winhello_rust.wlf winedit.wlf winterm.wlf winfm.wlf wintask.wlf ping.elf winsleep.wlf httpd.elf cat.elf echo.elf ls.elf tasks.elf ifconfig.elf shutdown.elf touch.elf writefile.elf del.elf cp.elf kill.elf burn.elf wintempleos.wlf smallerc.elf as86.elf ld86.elf cc.elf tcc.elf mkdir.elf rmdir.elf mv.elf
 SMALLERC_CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Ismallerc/include -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall
 TINYCC_CFLAGS = -m32 -nostdlib -nostdinc -Iinclude -Itinycc/vendor -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall -DONE_SOURCE=1
 
@@ -148,6 +148,18 @@ kill.elf: kill.o syscalls.o libc.o
 	@echo "Built $@"
 
 burn.elf: burn.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+mkdir.elf: mkdir.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+rmdir.elf: rmdir.o syscalls.o libc.o
+	$(CC) $(LDFLAGS) -o $@ $^
+	@echo "Built $@"
+
+mv.elf: mv.o syscalls.o libc.o
 	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "Built $@"
 

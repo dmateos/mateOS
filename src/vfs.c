@@ -107,6 +107,69 @@ int vfs_register_fs(const vfs_fs_ops_t *ops) {
     return id;
 }
 
+// Resolve a relative path against a cwd into an absolute path.
+// Handles ".", "..", leading "/" (absolute), and concatenation.
+void vfs_resolve_path(const char *cwd, const char *rel, char *out) {
+    char tmp[VFS_PATH_MAX];
+    int len = 0;
+
+    if (!rel || !out) return;
+
+    // If rel starts with '/', it's already absolute
+    if (rel[0] == '/') {
+        // Copy rel as-is
+        for (int i = 0; rel[i] && len < VFS_PATH_MAX - 1; i++)
+            tmp[len++] = rel[i];
+    } else {
+        // Start with cwd
+        if (cwd) {
+            for (int i = 0; cwd[i] && len < VFS_PATH_MAX - 1; i++)
+                tmp[len++] = cwd[i];
+        }
+        if (len == 0 || tmp[len - 1] != '/') {
+            if (len < VFS_PATH_MAX - 1) tmp[len++] = '/';
+        }
+        for (int i = 0; rel[i] && len < VFS_PATH_MAX - 1; i++)
+            tmp[len++] = rel[i];
+    }
+    tmp[len] = '\0';
+
+    // Now normalize: split on '/', process '.', '..', collapse '//'
+    // Use out as a stack of path components
+    char *parts[16];  // max depth
+    int depth = 0;
+
+    char *p = tmp;
+    while (*p) {
+        while (*p == '/') p++;
+        if (*p == '\0') break;
+        char *start = p;
+        while (*p && *p != '/') p++;
+        int clen = (int)(p - start);
+
+        if (clen == 1 && start[0] == '.') {
+            continue;  // skip "."
+        } else if (clen == 2 && start[0] == '.' && start[1] == '.') {
+            if (depth > 0) depth--;  // go up
+        } else {
+            if (depth < 16) {
+                start[clen] = '\0';  // null-terminate component in tmp
+                parts[depth++] = start;
+            }
+        }
+    }
+
+    // Reconstruct path
+    int pos = 0;
+    out[pos++] = '/';
+    for (int i = 0; i < depth && pos < VFS_PATH_MAX - 1; i++) {
+        if (i > 0 && pos < VFS_PATH_MAX - 1) out[pos++] = '/';
+        for (int j = 0; parts[i][j] && pos < VFS_PATH_MAX - 1; j++)
+            out[pos++] = parts[i][j];
+    }
+    out[pos] = '\0';
+}
+
 int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
     if (!fdt || !path) {
         kprintf("[vfs] open fail path=%s err=%d\n", path ? path : "(null)", -1);
@@ -246,6 +309,13 @@ int vfs_seek(vfs_fd_table_t *fdt, int fd, int offset, int whence) {
 int vfs_stat(const char *path, vfs_stat_t *st) {
     if (!path || !st) return -1;
 
+    // Root directory always exists
+    if (strcmp(path, "/") == 0) {
+        st->size = 0;
+        st->type = VFS_DIR;
+        return 0;
+    }
+
     int vfi = vfs_find_virtual_file(path);
     if (vfi >= 0) {
         st->size = virtual_files[vfi].size_fn();
@@ -257,7 +327,6 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
         if (!filesystems[fs]->stat) continue;
         if (filesystems[fs]->stat(path, st) == 0) return 0;
     }
-    kprintf("[vfs] stat fail path=%s err=%d\n", path, -1);
     return -1;
 }
 
@@ -300,6 +369,26 @@ int vfs_unlink(const char *path) {
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->unlink) continue;
         if (filesystems[fs]->unlink(path) == 0) return 0;
+    }
+    return -1;
+}
+
+int vfs_mkdir(const char *path) {
+    if (!path) return -1;
+
+    for (int fs = 0; fs < fs_count; fs++) {
+        if (!filesystems[fs]->mkdir) continue;
+        if (filesystems[fs]->mkdir(path) == 0) return 0;
+    }
+    return -1;
+}
+
+int vfs_rmdir(const char *path) {
+    if (!path) return -1;
+
+    for (int fs = 0; fs < fs_count; fs++) {
+        if (!filesystems[fs]->rmdir) continue;
+        if (filesystems[fs]->rmdir(path) == 0) return 0;
     }
     return -1;
 }

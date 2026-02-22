@@ -92,7 +92,12 @@ int wait(int task_id) {
 }
 
 int readdir(unsigned int index, char *buf, unsigned int size) {
-    return __syscall3(SYS_READDIR, index, (unsigned int)buf, size);
+    // Legacy: list cwd (path=NULL)
+    return __syscall3(SYS_READDIR, 0, index, (unsigned int)buf);
+}
+
+int readdir_path(const char *path, unsigned int index, char *buf) {
+    return __syscall3(SYS_READDIR, (unsigned int)path, index, (unsigned int)buf);
 }
 
 int getpid(void) {
@@ -244,4 +249,21 @@ void *sbrk(int increment) {
 
 int debug_exit(int code) {
     return __syscall1(SYS_DEBUG_EXIT, (unsigned int)code);
+}
+
+int mkdir(const char *path) {
+    return __syscall1(SYS_MKDIR, (unsigned int)path);
+}
+
+int rmdir(const char *path) {
+    return __syscall1(SYS_RMDIR, (unsigned int)path);
+}
+
+int chdir(const char *path) {
+    return __syscall1(SYS_CHDIR, (unsigned int)path);
+}
+
+char *getcwd(char *buf, unsigned int size) {
+    int rc = __syscall2(SYS_GETCWD, (unsigned int)buf, size);
+    return (rc == 0) ? buf : (char *)0;
 }

@@ -49,6 +49,10 @@
 #define SYS_UNLINK         43  // unlink(path) -> 0
 #define SYS_KILL           44  // kill(task_id) -> 0
 #define SYS_GETTICKS       45  // getticks() -> timer ticks (100Hz)
+#define SYS_MKDIR          46  // mkdir(path) -> 0 or -1
+#define SYS_CHDIR          47  // chdir(path) -> 0 or -1
+#define SYS_GETCWD         48  // getcwd(buf, size) -> 0 or -1
+#define SYS_RMDIR          49  // rmdir(path) -> 0 or -1
 #define SYS_NETSTATS       50  // netstats(out_rx, out_tx) -> 0
 #define SYS_SBRK           51  // sbrk(increment) -> old brk, -1 on error
 #define SYS_DEBUG_EXIT     52  // debug_exit(code) -> write code to port 0xF4

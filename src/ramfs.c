@@ -216,7 +216,8 @@ static int ramfs_vfs_stat(const char *path, vfs_stat_t *st) {
 }
 
 static int ramfs_vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
-  (void)path;  // ramfs has no subdirectories
+  // ramfs is flat — only list entries when viewing root directory
+  if (path && path[0] != '\0' && strcmp(path, "/") != 0) return 0;
   ramfs_file_t *f = ramfs_get_file_by_index(index);
   if (!f) return 0;
 

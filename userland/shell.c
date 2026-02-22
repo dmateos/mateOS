@@ -136,7 +136,14 @@ void _start(int argc, char **argv) {
         // Check for finished background jobs before showing prompt
         bg_check();
 
-        print("$ ");
+        // Show cwd in prompt
+        {
+            char cwdbuf[64];
+            if (getcwd(cwdbuf, sizeof(cwdbuf))) {
+                print(cwdbuf);
+            }
+            print("$ ");
+        }
         int len = readline(line, sizeof(line));
 
         if (len == 0) continue;
@@ -146,6 +153,31 @@ void _start(int argc, char **argv) {
             line[2] == 'b' && line[3] == 's') {
             bg_check();
             cmd_jobs();
+            continue;
+        }
+
+        // cd builtin — must be handled in shell process (changes its own cwd)
+        if (len >= 2 && line[0] == 'c' && line[1] == 'd' &&
+            (line[2] == ' ' || line[2] == '\0')) {
+            const char *dir = (line[2] == ' ') ? line + 3 : "/";
+            // Skip leading whitespace
+            while (*dir == ' ') dir++;
+            if (*dir == '\0') dir = "/";
+            if (chdir(dir) < 0) {
+                print("cd: no such directory: ");
+                print(dir);
+                print("\n");
+            }
+            continue;
+        }
+
+        // pwd builtin
+        if (len == 3 && line[0] == 'p' && line[1] == 'w' && line[2] == 'd') {
+            char cwdbuf[64];
+            if (getcwd(cwdbuf, sizeof(cwdbuf))) {
+                print(cwdbuf);
+                print("\n");
+            }
             continue;
         }
 

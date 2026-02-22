@@ -91,6 +91,9 @@ typedef struct task {
 
   // Per-task file descriptors
   vfs_fd_table_t *fd_table;
+
+  // Current working directory (absolute path, always starts with '/')
+  char cwd[VFS_PATH_MAX];
 } task_t;
 
 // Maximum number of tasks

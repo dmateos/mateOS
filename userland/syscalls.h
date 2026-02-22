@@ -46,6 +46,10 @@
 #define SYS_UNLINK         43
 #define SYS_KILL           44
 #define SYS_GETTICKS       45
+#define SYS_MKDIR          46
+#define SYS_CHDIR          47
+#define SYS_GETCWD         48
+#define SYS_RMDIR          49
 #define SYS_NETSTATS       50
 #define SYS_SBRK           51
 #define SYS_DEBUG_EXIT     52
@@ -66,7 +70,12 @@ int spawn(const char *filename);
 int spawn_argv(const char *filename, const char **argv, int argc);
 int wait(int task_id);
 int readdir(unsigned int index, char *buf, unsigned int size);
+int readdir_path(const char *path, unsigned int index, char *buf);
 int getpid(void);
+int mkdir(const char *path);
+int rmdir(const char *path);
+int chdir(const char *path);
+char *getcwd(char *buf, unsigned int size);
 void taskinfo(void);
 void shutdown(void);
 
