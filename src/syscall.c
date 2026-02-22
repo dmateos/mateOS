@@ -673,7 +673,14 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_FWRITE: {
       task_t *cur = task_current();
       if (!cur || !cur->fd_table) return (uint32_t)-1;
-      return (uint32_t)vfs_write(cur->fd_table, (int)ebx, (const void *)ecx, edx);
+      int fwfd = (int)ebx;
+      // Console-backed fds (fs_id == -1): route to console output
+      if (fwfd >= 0 && fwfd < VFS_MAX_FDS_PER_TASK &&
+          cur->fd_table->fds[fwfd].in_use &&
+          cur->fd_table->fds[fwfd].fs_id == -1) {
+        return (uint32_t)sys_do_write(fwfd, (const char *)ecx, (size_t)edx);
+      }
+      return (uint32_t)vfs_write(cur->fd_table, fwfd, (const void *)ecx, edx);
     }
 
     case SYS_CLOSE: {

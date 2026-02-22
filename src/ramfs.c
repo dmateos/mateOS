@@ -82,6 +82,8 @@ void ramfs_init(void *initrd_start, uint32_t initrd_size) {
 
 ramfs_file_t *ramfs_lookup(const char *name) {
   if (!name) return NULL;
+  // Strip leading slashes — ramfs is flat, no directories
+  while (name[0] == '/') name++;
 
   for (int i = 0; i < file_count; i++) {
     if (files[i].in_use && strcmp(files[i].name, name) == 0) {

@@ -345,6 +345,13 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
   task->fd_table = (vfs_fd_table_t *)kmalloc(sizeof(vfs_fd_table_t));
   if (task->fd_table) {
     memset(task->fd_table, 0, sizeof(vfs_fd_table_t));
+    // Reserve fd 0,1,2 for stdin/stdout/stderr (console-backed)
+    // fs_id=-1 signals these are console fds, not VFS-backed
+    for (int i = 0; i < 3; i++) {
+      task->fd_table->fds[i].in_use = 1;
+      task->fd_table->fds[i].fs_id = -1;
+      task->fd_table->fds[i].fs_handle = i;
+    }
   }
 
   // Add to circular task list (skip if reusing — already linked)

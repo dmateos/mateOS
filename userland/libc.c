@@ -454,11 +454,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
     int n;
     if (!f || !ptr || size == 0 || nmemb == 0) return 0;
     total = size * nmemb;
-    if (f->fd == 1 || f->fd == 2) {
-        n = write(f->fd, ptr, (unsigned int)total);
-    } else {
-        n = fd_write(f->fd, ptr, (unsigned int)total);
-    }
+    n = fd_write(f->fd, ptr, (unsigned int)total);
     if (n <= 0) return 0;
     return (size_t)n / size;
 }
@@ -467,11 +463,7 @@ int fputc(int ch, FILE *stream) {
     mate_file_t *f = (mate_file_t *)stream;
     unsigned char c = (unsigned char)ch;
     if (!f) return EOF;
-    if (f->fd == 1 || f->fd == 2) {
-        if (write(f->fd, &c, 1) != 1) return EOF;
-    } else {
-        if (fd_write(f->fd, &c, 1) != 1) return EOF;
-    }
+    if (fd_write(f->fd, &c, 1) != 1) return EOF;
     return (int)c;
 }
 
@@ -484,9 +476,6 @@ int puts(const char *s) {
 int fputs(const char *s, FILE *stream) {
     mate_file_t *f = (mate_file_t *)stream;
     if (!f) return EOF;
-    if (f->fd == 1 || f->fd == 2) {
-        return write_all(f->fd, s, strlen(s)) < 0 ? EOF : 0;
-    }
     return fwrite_all_fd(f->fd, s, strlen(s)) < 0 ? EOF : 0;
 }
 
