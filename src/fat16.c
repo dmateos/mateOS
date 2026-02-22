@@ -543,6 +543,8 @@ static int fat16_vfs_open(const char *path, int flags) {
 
     if (!found) {
         if (!(flags & O_CREAT)) return -1;
+        kprintf("[fat16_open] create '%s' rc=%d free_lba=%d free_off=%d parent.cl=%d\n",
+                path, rc, free_lba, free_off, parent.cluster);
         if (free_lba == 0) return -1;
 
         uint8_t sec[FAT16_SECTOR_SIZE];
@@ -703,6 +705,7 @@ static int fat16_vfs_stat(const char *path, vfs_stat_t *st) {
 
     fat16_dirent_t de;
     int rc = fat16_resolve_path(path, NULL, &de, NULL, NULL, NULL, NULL, NULL);
+    kprintf("[fat16_stat] path='%s' resolve_rc=%d\n", path, rc);
     if (rc == -2) {
         st->size = 0;
         st->type = VFS_DIR;
@@ -712,6 +715,7 @@ static int fat16_vfs_stat(const char *path, vfs_stat_t *st) {
 
     st->size = de.file_size;
     st->type = (de.attr & FAT16_ATTR_DIR) ? VFS_DIR : VFS_FILE;
+    kprintf("[fat16_stat] attr=0x%x type=%d\n", de.attr, st->type);
     return 0;
 }
 

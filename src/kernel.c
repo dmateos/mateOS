@@ -135,14 +135,10 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   rust_hello();
   printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
 
-  // Initialize physical memory manager
-  pmm_init();
-  if (initrd && initrd->mod_end > initrd->mod_start) {
-    pmm_reserve_region(initrd->mod_start, initrd->mod_end - initrd->mod_start);
-    kprintf("[boot] pmm reserved initrd: 0x%x-0x%x\n",
-            initrd->mod_start, initrd->mod_end);
-  }
-  kprintf("[boot] pmm init ok\n");
+  // NOTE: pmm_init() was already called above (line 94) before initrd
+  // relocation.  A second pmm_init() here would wipe the bitmap and
+  // free the frames that now hold the relocated initrd data, causing
+  // "invalid ELF" corruption when those frames get reused.
   // Scan PCI bus
   pci_init();
   kprintf("[boot] pci scan ok\n");

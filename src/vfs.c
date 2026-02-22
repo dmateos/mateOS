@@ -146,14 +146,17 @@ void vfs_resolve_path(const char *cwd, const char *rel, char *out) {
         char *start = p;
         while (*p && *p != '/') p++;
         int clen = (int)(p - start);
+        // Advance p past the separator before null-terminating,
+        // so the loop can continue to the next component.
+        if (*p == '/') p++;
 
         if (clen == 1 && start[0] == '.') {
-            continue;  // skip "."
+            // skip "."
         } else if (clen == 2 && start[0] == '.' && start[1] == '.') {
             if (depth > 0) depth--;  // go up
         } else {
             if (depth < 16) {
-                start[clen] = '\0';  // null-terminate component in tmp
+                start[clen] = '\0';
                 parts[depth++] = start;
             }
         }
@@ -325,7 +328,11 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
 
     for (int fs = 0; fs < fs_count; fs++) {
         if (!filesystems[fs]->stat) continue;
-        if (filesystems[fs]->stat(path, st) == 0) return 0;
+        if (filesystems[fs]->stat(path, st) == 0) {
+            kprintf("[vfs_stat] '%s' found by fs[%d]='%s' type=%d\n",
+                    path, fs, filesystems[fs]->name, st->type);
+            return 0;
+        }
     }
     return -1;
 }

@@ -680,7 +680,10 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       if (!cur || !cur->fd_table) return (uint32_t)-1;
       char opath[VFS_PATH_MAX];
       vfs_resolve_path(cur->cwd, (const char *)ebx, opath);
-      return (uint32_t)vfs_open(cur->fd_table, opath, (int)ecx);
+      int orc = vfs_open(cur->fd_table, opath, (int)ecx);
+      if (orc < 0) kprintf("[open] FAIL pid=%d cwd='%s' arg='%s' resolved='%s' flags=0x%x\n",
+                          cur->id, cur->cwd, (const char *)ebx, opath, ecx);
+      return (uint32_t)orc;
     }
 
     case SYS_FREAD: {
@@ -763,7 +766,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       vfs_resolve_path(ccur->cwd, (const char *)ebx, cpath);
       // Validate that path exists and is a directory
       vfs_stat_t cst;
-      if (vfs_stat(cpath, &cst) < 0) return (uint32_t)-1;
+      int stat_rc = vfs_stat(cpath, &cst);
+      kprintf("[chdir] path='%s' stat_rc=%d type=%d\n", cpath, stat_rc, stat_rc == 0 ? (int)cst.type : -1);
+      if (stat_rc < 0) return (uint32_t)-1;
       if (cst.type != VFS_DIR) return (uint32_t)-1;
       // Update task's cwd
       int clen = 0;
