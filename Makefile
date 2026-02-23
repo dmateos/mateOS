@@ -255,6 +255,28 @@ tcc-smoke: $(TARGET) initrd $(FAT16_IMG)
 	tail -n 100 "$$log"; \
 	exit 1
 
+doom-smoke: $(TARGET) initrd
+	@$(MAKE) -C userland doom.elf
+	@./tools/mkinitrd initrd.img userland/*.elf userland/*.wlf $(INITRD_EXTRA)
+	@echo "Running Doom startup smoke test in QEMU (autorun=doom)..."
+	@log=".doom-smoke.log"; \
+	rm -f "$$log"; \
+	timeout 30s $(QEMU) -display none -serial stdio \
+		-kernel $(TARGET) -initrd initrd.img -no-reboot \
+		-append "autorun=doom serial=1" \
+		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+		> "$$log" 2>&1; \
+	rc=$$?; \
+	if grep -q "\\[doom\\] headless startup OK" "$$log" || \
+	   grep -q "\\[doom\\] frame=5 wr=" "$$log" || \
+	   grep -q "\\[doom\\] frame=200 wr=" "$$log"; then \
+		echo "doom-smoke: PASS"; \
+		exit 0; \
+	fi; \
+	echo "doom-smoke: FAIL (qemu rc=$$rc)"; \
+	tail -n 120 "$$log"; \
+	exit 1
+
 ld86-host-check:
 	@$(MAKE) -C userland ld86.elf libc.o crt0.o libtiny.a
 	@sh tools/ld86_host_check.sh
@@ -276,4 +298,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run run-fat16 fat16img cc-smoke cc-symbol-smoke tcc-smoke userland initrd tinycc-phase1
+.PHONY: clean rust run run-fat16 fat16img cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland initrd tinycc-phase1

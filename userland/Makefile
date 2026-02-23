@@ -30,6 +30,10 @@ DOOM_PORT_CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -f
 	-DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 \
 	-DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE -DCMAP256
 
+ifneq ($(wildcard $(DOOMGENERIC_H)),)
+PROGRAMS += doom.elf
+endif
+
 all: $(PROGRAMS) crt0.o crt1.o crti.o crtn.o cprint.o libtiny.a libc.a
 
 hello.elf: hello.o syscalls.o libc.o

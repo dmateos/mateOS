@@ -7,8 +7,8 @@
 #define KERNEL_VERSION_ABI 1
 
 #define KERNEL_VERSION_STR "0.1.0"
-#define KERNEL_VERSION_GIT "1ddbd81-dirty"
-#define KERNEL_BUILD_DATE_UTC "2026-02-22T13:13:03Z"
-#define KERNEL_VERSION_FULL "0.1.0-g1ddbd81-dirty"
+#define KERNEL_VERSION_GIT "ebd0871-dirty"
+#define KERNEL_BUILD_DATE_UTC "2026-02-23T13:41:59Z"
+#define KERNEL_VERSION_FULL "0.1.0-gebd0871-dirty"
 
 #endif
