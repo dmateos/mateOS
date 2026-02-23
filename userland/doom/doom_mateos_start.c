@@ -80,9 +80,7 @@ void _start(int argc, char **argv) {
         argv = default_argv;
     }
 
-    k_write("[doom] _start\n", 14);
     doomgeneric_Create(argc, argv);
-    k_write("[doom] create-returned\n", 23);
 
     while (1) {
         doomgeneric_Tick();

@@ -117,39 +117,7 @@ static int map_key(int k) {
 }
 
 void DG_DebugMark(int stage) {
-    if (g_headless || g_wid < 0) {
-        k_write("[doom] stage=", 12);
-        k_write_num(stage);
-        k_write("\n", 1);
-        return;
-    }
-    int pixels = DOOMGENERIC_RESX * DOOMGENERIC_RESY;
-    // Stage marker that is readable even with odd palettes:
-    // - black background
-    // - white-ish bars count = stage (mod 32)
-    // - 8-bit binary stripe near top
-    for (int i = 0; i < pixels; i++) g_fb8[i] = 0;
-
-    int bars = stage & 31;
-    for (int b = 0; b < bars; b++) {
-        int x0 = 4 + b * 9;
-        for (int y = 12; y < 180; y++) {
-            for (int x = x0; x < x0 + 6 && x < DOOMGENERIC_RESX; x++) {
-                g_fb8[y * DOOMGENERIC_RESX + x] = 255;
-            }
-        }
-    }
-
-    for (int bit = 0; bit < 8; bit++) {
-        int on = (stage >> bit) & 1;
-        int x0 = 8 + bit * 36;
-        for (int y = 2; y < 10; y++) {
-            for (int x = x0; x < x0 + 28 && x < DOOMGENERIC_RESX; x++) {
-                g_fb8[y * DOOMGENERIC_RESX + x] = on ? 200 : 40;
-            }
-        }
-    }
-    (void)k_win_write(g_wid, g_fb8, (unsigned int)pixels);
+    (void)stage;
 }
 
 void DG_Init(void) {
@@ -161,7 +129,6 @@ void DG_Init(void) {
 
     DG_ScreenBuffer = g_fb8;
     memset(g_fb8, 0, sizeof(g_fb8));
-    DG_DebugMark(3);
 }
 
 void DG_DrawFrame(void) {
@@ -191,14 +158,6 @@ void DG_DrawFrame(void) {
         (void)k_detach();
         detached = 1;
     }
-
-    // Debug overlay: top scanline color bars + blinking marker.
-    // If these are visible, window blit path works and issue is in Doom render/palette.
-    for (int x = 0; x < DOOMGENERIC_RESX; x++) {
-        g_fb8[x] = (uint8_t)((x & 15) + 1);
-    }
-    g_fb8[0] = (uint8_t)((dbg & 1) ? 12 : 10);
-    g_fb8[1] = (uint8_t)((dbg & 1) ? 10 : 12);
 
     int wr = k_win_write(g_wid, g_fb8, (unsigned int)pixels);
     if (dbg <= 5u || (dbg % 200u) == 0u) {
