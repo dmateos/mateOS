@@ -67,7 +67,7 @@ void _start(int argc, char **argv) {
         "-iwad",
         "DOOM1.WAD",
         "-mb",
-        "3",
+        "2",
         "-nosound",
         "-nomusic",
         "-nosfx",

@@ -179,7 +179,13 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
       if (page_dir->tables[dir_idx] & PAGE_PRESENT) {
         page_table_t *pt = (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
         if (pt->pages[table_idx] & PAGE_PRESENT) {
-          phys = pt->pages[table_idx] & ~0xFFF;
+          uint32_t pte = pt->pages[table_idx];
+          // Only reuse pages that were already mapped as user pages
+          // (eg overlapping PT_LOAD segments). Kernel identity mappings in the
+          // user VA range must be replaced with fresh user-mapped frames.
+          if (pte & PAGE_USER) {
+            phys = pte & ~0xFFF;
+          }
         }
       }
 

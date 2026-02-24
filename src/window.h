@@ -8,7 +8,7 @@
 #define WIN_TITLE_MAX 32
 #define WIN_KEY_BUF_SIZE 16
 #define WIN_TEXT_BUF_SIZE 2048
-#define WIN_MAX_WIDTH  600
+#define WIN_MAX_WIDTH  800
 #define WIN_MAX_HEIGHT 500
 
 // Window ID encoding: (generation << 8) | slot_index

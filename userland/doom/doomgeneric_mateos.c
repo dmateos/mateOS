@@ -12,7 +12,6 @@ extern pixel_t* DG_ScreenBuffer;
 static int g_wid = -1;
 static int g_headless = 0;
 static uint8_t g_fb8[DOOMGENERIC_RESX * DOOMGENERIC_RESY];
-static uint8_t g_fb8_present[DOOMGENERIC_RESX * DOOMGENERIC_RESY];
 static uint8_t g_doom_to_wm[256];
 static uint8_t g_wm_r[256], g_wm_g[256], g_wm_b[256];
 static int g_wm_palette_init = 0;
@@ -232,10 +231,10 @@ void DG_DrawFrame(void) {
         refresh_doom_palette_map();
     }
     for (int i = 0; i < pixels; i++) {
-        g_fb8_present[i] = g_doom_to_wm[g_fb8[i]];
+        g_fb8[i] = g_doom_to_wm[g_fb8[i]];
     }
 
-    int wr = k_win_write(g_wid, g_fb8_present, (unsigned int)pixels);
+    int wr = k_win_write(g_wid, g_fb8, (unsigned int)pixels);
     if (dbg <= 5u || (dbg % 200u) == 0u) {
         k_write("[doom] frame=", 13);
         k_write_num((int)dbg);

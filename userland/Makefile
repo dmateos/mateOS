@@ -27,7 +27,7 @@ DOOM_SRC_C = $(DOOM_CORE_C) doom/doomgeneric_mateos.c doom/doom_mateos_start.c d
 DOOM_OBJ = $(DOOM_SRC_C:.c=.o)
 DOOM_PORT_CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie -O2 -Wall \
 	-Idoom/compat -Idoom -Idoom/doomgeneric/doomgeneric \
-	-DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200 \
+	-DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 \
 	-DNORMALUNIX -DLINUX -DSNDSERV -D_DEFAULT_SOURCE -DCMAP256
 
 ifneq ($(wildcard $(DOOMGENERIC_H)),)
