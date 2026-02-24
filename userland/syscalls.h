@@ -63,7 +63,7 @@ void yield(void);
 unsigned char *gfx_init(void);
 void gfx_exit(void);
 unsigned char getkey(unsigned int flags);
-unsigned int gfx_info(void);  // Returns (width << 16) | height
+unsigned int gfx_info(void);  // Returns (bpp<<24)|(width<<12)|height
 
 // Process management syscalls
 int spawn(const char *filename);

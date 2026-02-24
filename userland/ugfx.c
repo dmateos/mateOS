@@ -3,7 +3,10 @@
 
 int ugfx_width = 320;
 int ugfx_height = 200;
+static int ugfx_bpp = 8;
 static unsigned char *framebuffer = (unsigned char *)0;
+static unsigned short palette565[256];
+static int palette565_init = 0;
 
 // 8x8 bitmap font (ASCII 32-126) - same as kernel's font8x8
 static const unsigned char font8x8[95][8] = {
@@ -199,13 +202,82 @@ static const unsigned char font8x8[95][8] = {
     {0x6E, 0x3B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 };
 
+static unsigned short rgb888_to_565(unsigned int r, unsigned int g, unsigned int b) {
+    return (unsigned short)(((r & 0xF8u) << 8) | ((g & 0xFCu) << 3) | (b >> 3));
+}
+
+static void ugfx_init_palette565(void) {
+    if (palette565_init) return;
+
+    static const unsigned char cga_palette[16][3] = {
+        { 0,  0,  0}, { 0,  0, 42}, { 0, 42,  0}, { 0, 42, 42},
+        {42,  0,  0}, {42,  0, 42}, {42, 21,  0}, {42, 42, 42},
+        {21, 21, 21}, {21, 21, 63}, {21, 63, 21}, {21, 63, 63},
+        {63, 21, 21}, {63, 21, 63}, {63, 63, 21}, {63, 63, 63},
+    };
+
+    for (int i = 0; i < 16; i++) {
+        unsigned int r = (unsigned int)cga_palette[i][0] * 255u / 63u;
+        unsigned int g = (unsigned int)cga_palette[i][1] * 255u / 63u;
+        unsigned int b = (unsigned int)cga_palette[i][2] * 255u / 63u;
+        palette565[i] = rgb888_to_565(r, g, b);
+    }
+
+    unsigned char idx = 16;
+    for (int r = 0; r < 6; r++) {
+        for (int g = 0; g < 6; g++) {
+            for (int b = 0; b < 6; b++) {
+                unsigned int rr = (unsigned int)(r * 255 / 5);
+                unsigned int gg = (unsigned int)(g * 255 / 5);
+                unsigned int bb = (unsigned int)(b * 255 / 5);
+                palette565[idx++] = rgb888_to_565(rr, gg, bb);
+            }
+        }
+    }
+
+    for (int i = 0; i < 24; i++) {
+        unsigned int v = (unsigned int)(i * 255 / 23);
+        palette565[232 + i] = rgb888_to_565(v, v, v);
+    }
+
+    palette565_init = 1;
+}
+
+static inline void fb_write_idx(int x, int y, unsigned char color) {
+    if (ugfx_bpp == 16) {
+        ((unsigned short *)framebuffer)[y * ugfx_width + x] = palette565[color];
+    } else {
+        framebuffer[y * ugfx_width + x] = color;
+    }
+}
+
+static inline unsigned char fb_read_idx(int x, int y) {
+    if (ugfx_bpp == 16) return 0;
+    return framebuffer[y * ugfx_width + x];
+}
+
 int ugfx_init(void) {
     framebuffer = gfx_init();
     if (!framebuffer) return -1;
 
     unsigned int info = gfx_info();
-    ugfx_width  = (int)(info >> 16);
-    ugfx_height = (int)(info & 0xFFFF);
+    {
+        int bpp = (int)((info >> 24) & 0xFF);
+        int w12 = (int)((info >> 12) & 0xFFF);
+        int h12 = (int)(info & 0xFFF);
+
+        if (bpp >= 8 && w12 > 0 && h12 > 0) {
+            ugfx_bpp = bpp;
+            ugfx_width = w12;
+            ugfx_height = h12;
+        } else {
+            // Backward-compatible parse for older kernels.
+            ugfx_bpp = 8;
+            ugfx_width  = (int)(info >> 16);
+            ugfx_height = (int)(info & 0xFFFF);
+        }
+    }
+    if (ugfx_bpp == 16) ugfx_init_palette565();
 
     return 0;
 }
@@ -217,12 +289,12 @@ void ugfx_exit(void) {
 
 void ugfx_pixel(int x, int y, unsigned char color) {
     if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return;
-    framebuffer[y * ugfx_width + x] = color;
+    fb_write_idx(x, y, color);
 }
 
 unsigned char ugfx_read_pixel(int x, int y) {
     if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return 0;
-    return framebuffer[y * ugfx_width + x];
+    return fb_read_idx(x, y);
 }
 
 void ugfx_rect(int x, int y, int w, int h, unsigned char color) {
@@ -230,7 +302,7 @@ void ugfx_rect(int x, int y, int w, int h, unsigned char color) {
         if (row < 0 || row >= ugfx_height) continue;
         for (int col = x; col < x + w; col++) {
             if (col < 0 || col >= ugfx_width) continue;
-            framebuffer[row * ugfx_width + col] = color;
+            fb_write_idx(col, row, color);
         }
     }
 }
@@ -243,8 +315,16 @@ void ugfx_rect_outline(int x, int y, int w, int h, unsigned char color) {
 }
 
 void ugfx_clear(unsigned char color) {
-    for (int i = 0; i < ugfx_width * ugfx_height; i++) {
-        framebuffer[i] = color;
+    if (ugfx_bpp == 16) {
+        unsigned short c = palette565[color];
+        unsigned short *fb16 = (unsigned short *)framebuffer;
+        for (int i = 0; i < ugfx_width * ugfx_height; i++) {
+            fb16[i] = c;
+        }
+    } else {
+        for (int i = 0; i < ugfx_width * ugfx_height; i++) {
+            framebuffer[i] = color;
+        }
     }
 }
 
@@ -253,7 +333,7 @@ void ugfx_hline(int x, int y, int w, unsigned char color) {
     for (int i = 0; i < w; i++) {
         int cx = x + i;
         if (cx >= 0 && cx < ugfx_width) {
-            framebuffer[y * ugfx_width + cx] = color;
+            fb_write_idx(cx, y, color);
         }
     }
 }
@@ -263,7 +343,7 @@ void ugfx_vline(int x, int y, int h, unsigned char color) {
     for (int i = 0; i < h; i++) {
         int cy = y + i;
         if (cy >= 0 && cy < ugfx_height) {
-            framebuffer[cy * ugfx_width + x] = color;
+            fb_write_idx(x, cy, color);
         }
     }
 }
@@ -381,9 +461,20 @@ void ugfx_present(const unsigned char *buf, int bw, int bh) {
     int h = (bh < ugfx_height) ? bh : ugfx_height;
     if (w <= 0 || h <= 0) return;
 
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            framebuffer[y * ugfx_width + x] = buf[y * bw + x];
+    if (ugfx_bpp == 16) {
+        unsigned short *fb16 = (unsigned short *)framebuffer;
+        for (int y = 0; y < h; y++) {
+            int src_off = y * bw;
+            int dst_off = y * ugfx_width;
+            for (int x = 0; x < w; x++) {
+                fb16[dst_off + x] = palette565[buf[src_off + x]];
+            }
+        }
+    } else {
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                framebuffer[y * ugfx_width + x] = buf[y * bw + x];
+            }
         }
     }
 }

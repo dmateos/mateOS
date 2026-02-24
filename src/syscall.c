@@ -27,6 +27,7 @@ static int user_gfx_bga = 0;         // 1 if using BGA, 0 if Mode 13h
 static uint32_t bga_fb_addr = 0;     // Physical/virtual address of BGA LFB
 static uint32_t bga_width = 0;
 static uint32_t bga_height = 0;
+static uint32_t bga_bpp = 0;
 static uint32_t gfx_owner_pid = 0;   // Task ID that owns graphics mode
 
 // Forward declaration for interrupt registration
@@ -235,9 +236,9 @@ static uint32_t sys_do_gfx_init(void) {
 
   // Try BGA mode (QEMU -vga std)
   if (vga_bga_available()) {
-    uint32_t lfb = vga_enter_bga_mode(1024, 768, 8);
+    uint32_t lfb = vga_enter_bga_mode(1024, 768, 16);
     if (lfb) {
-      uint32_t fb_size = 1024 * 768;  // 8bpp = 1 byte per pixel
+      uint32_t fb_size = 1024 * 768 * 2;  // 16bpp RGB565
 
       // Map LFB pages in kernel page directory (for propagation to new processes)
       paging_map_vbe(lfb, fb_size);
@@ -258,9 +259,9 @@ static uint32_t sys_do_gfx_init(void) {
       bga_fb_addr = lfb;
       bga_width = 1024;
       bga_height = 768;
+      bga_bpp = 16;
 
-      // Set up palette via DAC ports
-      vga_init_palette();
+      // In 16bpp the DAC palette is not used for framebuffer pixels.
 
       user_gfx_bga = 1;
       keyboard_buffer_init();
@@ -284,6 +285,7 @@ static uint32_t sys_do_gfx_init(void) {
   keyboard_buffer_enable(1);
   user_gfx_active = 1;
   user_gfx_bga = 0;
+  bga_bpp = 8;
   {
     task_t *cur = task_current();
     gfx_owner_pid = cur ? cur->id : 0;
@@ -308,16 +310,20 @@ static void sys_do_gfx_exit(void) {
   }
   user_gfx_active = 0;
   user_gfx_bga = 0;
+  bga_bpp = 0;
   gfx_owner_pid = 0;
 }
 
-// Return screen dimensions: (width << 16) | height
+// Return packed graphics info:
+//   new format: (bpp << 24) | (width << 12) | height   (width/height are 12-bit)
+//   old userland can still use SYS_GFX_INIT pointer and hardcoded assumptions.
 static uint32_t sys_do_gfx_info(void) {
   if (user_gfx_bga && bga_width && bga_height) {
-    return (bga_width << 16) | bga_height;
+    return ((bga_bpp & 0xFFu) << 24) | ((bga_width & 0xFFFu) << 12) |
+           (bga_height & 0xFFFu);
   }
   // Fallback: Mode 13h dimensions
-  return (320 << 16) | 200;
+  return (8u << 24) | (320u << 12) | 200u;
 }
 
 // Read key from buffer (non-blocking)
