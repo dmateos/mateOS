@@ -57,6 +57,10 @@ typedef struct {
 static wm_slot_t slots[WM_MAX_SLOTS];
 static int focus = 0;
 static int num_slots = 0;
+static char g_kversion[96];
+static char g_info_lines[6][96];
+static int g_info_line_count = 0;
+static unsigned int g_last_info_refresh = 0;
 
 // z_order holds active slot indices from back to front.
 static int z_order[WM_MAX_SLOTS];
@@ -94,6 +98,46 @@ static void wm_strcpy(char *dst, const char *src, int max) {
     int i;
     for (i = 0; i < max - 1 && src[i]; i++) dst[i] = src[i];
     dst[i] = '\0';
+}
+
+static int wm_strlen(const char *s) {
+    int n = 0;
+    while (s && s[n]) n++;
+    return n;
+}
+
+static void wm_append_str(char *dst, int max, const char *src) {
+    int i = wm_strlen(dst);
+    int j = 0;
+    while (i < max - 1 && src && src[j]) dst[i++] = src[j++];
+    dst[i] = '\0';
+}
+
+static void wm_append_u32(char *dst, int max, unsigned int v) {
+    char tmp[16];
+    int n = 0;
+    if (v == 0) {
+        wm_append_str(dst, max, "0");
+        return;
+    }
+    while (v > 0 && n < (int)sizeof(tmp)) {
+        tmp[n++] = (char)('0' + (v % 10u));
+        v /= 10u;
+    }
+    while (n > 0) {
+        char c[2];
+        c[0] = tmp[--n];
+        c[1] = '\0';
+        wm_append_str(dst, max, c);
+    }
+}
+
+static void wm_append_2d(char *dst, int max, unsigned int v) {
+    char c[3];
+    c[0] = (char)('0' + ((v / 10u) % 10u));
+    c[1] = (char)('0' + (v % 10u));
+    c[2] = '\0';
+    wm_append_str(dst, max, c);
 }
 
 static int slot_is_active(int s) {
@@ -276,6 +320,12 @@ static void bb_string(int x, int y, const char *s, unsigned char c) {
     ugfx_buf_string(wm_backbuf, ugfx_width, ugfx_height, x, y, s, c);
 }
 
+static void bb_string_bg(int x, int y, const char *s, unsigned char fg, unsigned char bg) {
+    int len = wm_strlen(s);
+    if (len > 0) bb_rect(x - 2, y - 1, len * 8 + 4, 10, bg);
+    bb_string(x, y, s, fg);
+}
+
 static int hit_rect(int x, int y, int rx, int ry, int rw, int rh) {
     return (x >= rx && x < rx + rw && y >= ry && y < ry + rh);
 }
@@ -338,6 +388,117 @@ static void draw_taskbar(void) {
     bb_rect(ugfx_width - 92, 3, 88, 14, COL_SURFACE_EDGE);
     bb_rect(ugfx_width - 91, 4, 86, 12, COL_TASKBAR_BG);
     bb_string(ugfx_width - 84, 6, "Tab cycle", COL_TASKBAR_MUTED);
+}
+
+static void load_kversion_once(void) {
+    if (g_kversion[0]) return;
+    int fd = open("kversion.mos", O_RDONLY);
+    if (fd < 0) {
+        wm_strcpy(g_kversion, "mateOS", sizeof(g_kversion));
+        return;
+    }
+    int n = fd_read(fd, g_kversion, sizeof(g_kversion) - 1);
+    close(fd);
+    if (n <= 0) {
+        wm_strcpy(g_kversion, "mateOS", sizeof(g_kversion));
+        return;
+    }
+    g_kversion[n] = '\0';
+    for (int i = 0; g_kversion[i]; i++) {
+        if (g_kversion[i] == '\n' || g_kversion[i] == '\r') {
+            g_kversion[i] = '\0';
+            break;
+        }
+    }
+}
+
+static void set_info_line(int idx, const char *text) {
+    if (idx < 0 || idx >= (int)(sizeof(g_info_lines) / sizeof(g_info_lines[0]))) return;
+    wm_strcpy(g_info_lines[idx], text, sizeof(g_info_lines[idx]));
+}
+
+static void build_system_info(void) {
+    load_kversion_once();
+
+    unsigned int ticks = get_ticks();
+    unsigned int secs = ticks / 100u;
+    unsigned int h = secs / 3600u;
+    unsigned int m = (secs / 60u) % 60u;
+    unsigned int s = secs % 60u;
+
+    unsigned int ip_be = 0, mask_be = 0, gw_be = 0;
+    int have_net = (net_get(&ip_be, &mask_be, &gw_be) == 0 && ip_be != 0);
+
+    taskinfo_entry_t tasks[32];
+    int tcount = tasklist(tasks, 32);
+    if (tcount < 0) tcount = 0;
+
+    char line[96];
+    line[0] = '\0';
+    wm_append_str(line, sizeof(line), g_kversion[0] ? g_kversion : "mateOS");
+    set_info_line(0, line);
+
+    line[0] = '\0';
+    wm_append_str(line, sizeof(line), "UP ");
+    wm_append_u32(line, sizeof(line), h);
+    wm_append_str(line, sizeof(line), ":");
+    wm_append_2d(line, sizeof(line), m);
+    wm_append_str(line, sizeof(line), ":");
+    wm_append_2d(line, sizeof(line), s);
+    set_info_line(1, line);
+
+    line[0] = '\0';
+    if (have_net) {
+        wm_append_str(line, sizeof(line), "IP ");
+        wm_append_u32(line, sizeof(line), (ip_be >> 24) & 0xFFu);
+        wm_append_str(line, sizeof(line), ".");
+        wm_append_u32(line, sizeof(line), (ip_be >> 16) & 0xFFu);
+        wm_append_str(line, sizeof(line), ".");
+        wm_append_u32(line, sizeof(line), (ip_be >> 8) & 0xFFu);
+        wm_append_str(line, sizeof(line), ".");
+        wm_append_u32(line, sizeof(line), ip_be & 0xFFu);
+    } else {
+        wm_append_str(line, sizeof(line), "IP (not set)");
+    }
+    set_info_line(2, line);
+
+    line[0] = '\0';
+    wm_append_str(line, sizeof(line), "WIN ");
+    wm_append_u32(line, sizeof(line), (unsigned int)num_slots);
+    wm_append_str(line, sizeof(line), "  TASK ");
+    wm_append_u32(line, sizeof(line), (unsigned int)tcount);
+    set_info_line(3, line);
+
+    line[0] = '\0';
+    wm_append_str(line, sizeof(line), "FOCUS ");
+    if (slot_is_active(focus) && slots[focus].title[0]) {
+        wm_append_str(line, sizeof(line), slots[focus].title);
+    } else {
+        wm_append_str(line, sizeof(line), "(none)");
+    }
+    set_info_line(4, line);
+
+    g_info_line_count = 5;
+    g_last_info_refresh = ticks;
+}
+
+static void draw_system_info_panel(void) {
+    int panel_w = 300;
+    int panel_h = 10 + g_info_line_count * 10;
+    int x = ugfx_width - panel_w - 8;
+    int y = TASKBAR_H + 8;
+    if (x < 0) x = 0;
+
+    bb_rect(x + 2, y + 2, panel_w, panel_h, COL_SHADOW_NEAR);
+    bb_rect(x, y, panel_w, panel_h, COL_SURFACE);
+    bb_rect_outline(x, y, panel_w, panel_h, COL_BORDER_ACT);
+    bb_hline(x + 1, y + 1, panel_w - 2, COL_TASKBAR_STRIP);
+
+    for (int i = 0; i < g_info_line_count; i++) {
+        bb_string_bg(x + 6, y + 4 + i * 10, g_info_lines[i],
+                     (i == 0) ? COL_TASKBAR_TXT : COL_TITLE_TXT_DIM,
+                     COL_SURFACE);
+    }
 }
 
 static void draw_window_shadow(int fx, int fy, int fw, int fh) {
@@ -613,6 +774,7 @@ static void handle_mouse(int mx, int my, unsigned char buttons) {
 static void render_frame(int mx, int my) {
     draw_wallpaper();
     draw_desktop_icons();
+    draw_system_info_panel();
 
     // Back to front
     for (int i = 0; i < z_count; i++) {
@@ -643,6 +805,7 @@ void _start(int argc, char **argv) {
     }
 
     compute_layout();
+    build_system_info();
 
     for (int i = 0; i < WM_MAX_SLOTS; i++) {
         slots[i].wid = -1;
@@ -713,6 +876,10 @@ void _start(int argc, char **argv) {
         tick++;
         if (tick % 20 == 0) {
             discover_windows();
+            need_redraw = 1;
+        }
+        if ((get_ticks() - g_last_info_refresh) >= 100u) {
+            build_system_info();
             need_redraw = 1;
         }
 
