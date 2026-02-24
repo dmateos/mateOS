@@ -200,7 +200,6 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
         paging_map_page(page_dir, page_vaddr, phys,
                         PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
       }
-
       uint32_t copy_start = (page_vaddr > vaddr) ? page_vaddr : vaddr;
       uint32_t copy_end = (page_vaddr + 0x1000 < vaddr + filesz)
                             ? page_vaddr + 0x1000 : vaddr + filesz;
@@ -252,8 +251,20 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     return -1;
   }
 
+  char kfilename[VFS_PATH_MAX];
+  size_t flen = strlen(filename);
+  if (flen >= sizeof(kfilename)) flen = sizeof(kfilename) - 1;
+  memcpy(kfilename, filename, flen);
+  kfilename[flen] = '\0';
+
+  page_directory_t *kernel_dir = paging_get_kernel_dir();
+  paging_switch(kernel_dir);
+
   uint32_t user_end = USER_REGION_START;
-  uint32_t entry = load_elf_into(current->page_dir, filename, NULL, &user_end);
+  uint32_t entry = load_elf_into(current->page_dir, kfilename, NULL, &user_end);
+
+  // Restore current task address space before returning to user/continuing kernel work.
+  paging_switch(current->page_dir);
   if (!entry) return -1;
   current->user_brk_min = user_end;
   current->user_brk = user_end;
@@ -385,6 +396,12 @@ static int sys_do_spawn(const char *filename, const char **argv, int argc) {
     return -1;
   }
 
+  char kfilename[VFS_PATH_MAX];
+  size_t flen = strlen(filename);
+  if (flen >= sizeof(kfilename)) flen = sizeof(kfilename) - 1;
+  memcpy(kfilename, filename, flen);
+  kfilename[flen] = '\0';
+
   // Copy argv strings into kernel buffers (they're in parent's address space
   // which will not be accessible after we switch to the child's page dir).
   const char *kargv[16];
@@ -406,14 +423,19 @@ static int sys_do_spawn(const char *filename, const char **argv, int argc) {
   }
 
   task_t *parent = task_current();
+  page_directory_t *restore_dir = (parent && parent->page_dir) ? parent->page_dir
+                                                               : paging_get_kernel_dir();
+  paging_switch(paging_get_kernel_dir());
+
   task_t *t;
   if (kargc > 0) {
-    t = task_create_user_elf(filename, kargv, kargc);
+    t = task_create_user_elf(kfilename, kargv, kargc);
   } else {
-    t = task_create_user_elf(filename, NULL, 0);
+    t = task_create_user_elf(kfilename, NULL, 0);
   }
+  paging_switch(restore_dir);
   if (!t) {
-    kprintf("[task] spawn fail file=%s err=%d\n", filename, -1);
+    kprintf("[task] spawn fail file=%s err=%d\n", kfilename, -1);
     return -1;
   }
 

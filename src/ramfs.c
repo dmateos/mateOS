@@ -3,6 +3,7 @@
 #include "lib.h"
 #include "task.h"
 #include "arch/i686/paging.h"
+#include "memlayout.h"
 
 static ramfs_file_t files[RAMFS_MAX_FILES];
 static int file_count = 0;
@@ -169,14 +170,24 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
   if (len > avail) len = avail;
 
   uint32_t src_addr = f->data + off;
-  // When reading into a user process buffer, source initrd data and destination
-  // buffer may alias different mappings at the same virtual addresses. Bounce
-  // through a kernel buffer to copy under the correct page directory.
+  // When reading into a user buffer while running on that task's page tables,
+  // source initrd data and destination may alias different physical mappings
+  // at the same virtual addresses. Bounce through a kernel buffer.
+  //
+  // Important: kernel code also uses vfs_read() while a user task is current
+  // (e.g. spawn/ELF loading into PMM-backed temp buffers). Those kernel reads
+  // pass physical pointers that numerically overlap the user VA range, so only
+  // use the bounce path when executing under the current task's user CR3.
   task_t *cur = task_current();
-  if (cur && cur->page_dir) {
+  uint32_t dst = (uint32_t)buf;
+  int dst_in_user_region = (dst >= USER_REGION_START && dst < USER_REGION_END);
+  int on_current_user_cr3 = cur && cur->page_dir &&
+                            get_cr3() == (uint32_t)cur->page_dir;
+  if (dst_in_user_region && on_current_user_cr3) {
     enum { BOUNCE_SZ = 4096 };
     static uint8_t bounce[BOUNCE_SZ];
     uint32_t done = 0;
+    uint32_t restore_cr3 = get_cr3();
     while (done < len) {
       uint32_t chunk = len - done;
       if (chunk > BOUNCE_SZ) chunk = BOUNCE_SZ;
@@ -184,7 +195,7 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
       paging_switch(paging_get_kernel_dir());
       memcpy(bounce, (void *)(src_addr + done), chunk);
 
-      paging_switch(cur->page_dir);
+      paging_switch((page_directory_t *)restore_cr3);
       memcpy((uint8_t *)buf + done, bounce, chunk);
 
       done += chunk;
