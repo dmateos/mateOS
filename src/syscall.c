@@ -103,8 +103,45 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
                        uint32_t *stack_phys_out, uint32_t *user_end_out) {
   void *data = NULL;
   uint32_t size = 0;
-  if (vfs_read_file(filename, &data, &size) < 0) {
+  uint32_t temp_frames_base = 0;
+  uint32_t temp_frames_count = 0;
+
+  // Avoid leaking kernel heap on large/repeated spawns: kmalloc/kfree currently
+  // sits on a bump allocator with no real free. Read ELF into PMM-backed temp
+  // frames that we can explicitly release after loading.
+  vfs_stat_t st;
+  if (vfs_stat(filename, &st) < 0 || st.size == 0) {
     printf("[exec] file not found: %s\n", filename);
+    return 0;
+  }
+
+  temp_frames_count = (st.size + 0xFFFu) / 0x1000u;
+  temp_frames_base = pmm_alloc_frames(temp_frames_count);
+  if (!temp_frames_base) {
+    printf("[exec] temp alloc failed for %s (%d bytes)\n", filename, st.size);
+    return 0;
+  }
+  data = (void *)temp_frames_base;
+  size = st.size;
+
+  vfs_fd_table_t tmp;
+  memset(&tmp, 0, sizeof(tmp));
+  int fd = vfs_open(&tmp, filename, O_RDONLY);
+  if (fd < 0) {
+    printf("[exec] file not found: %s\n", filename);
+    pmm_free_frames(temp_frames_base, temp_frames_count);
+    return 0;
+  }
+  uint32_t total = 0;
+  while (total < size) {
+    int n = vfs_read(&tmp, fd, (uint8_t *)data + total, size - total);
+    if (n <= 0) break;
+    total += (uint32_t)n;
+  }
+  vfs_close(&tmp, fd);
+  if (total < size) {
+    printf("[exec] short read: %s (%d/%d)\n", filename, total, size);
+    pmm_free_frames(temp_frames_base, temp_frames_count);
     return 0;
   }
 
@@ -112,7 +149,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
 
   if (!elf_validate(elf)) {
     printf("[exec] invalid ELF: %s\n", filename);
-    kfree(data);
+    pmm_free_frames(temp_frames_base, temp_frames_count);
     return 0;
   }
 
@@ -150,7 +187,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
         phys = pmm_alloc_frame();
         if (!phys) {
           printf("[exec] out of physical frames\n");
-          kfree(data);
+          pmm_free_frames(temp_frames_base, temp_frames_count);
           return 0;
         }
         memset((void *)phys, 0, 0x1000);
@@ -177,7 +214,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     uint32_t phys = pmm_alloc_frame();
     if (!phys) {
       printf("[exec] failed to allocate stack frame %d/%d\n", (int)(i + 1), (int)USER_STACK_PAGES);
-      kfree(data);
+      pmm_free_frames(temp_frames_base, temp_frames_count);
       return 0;
     }
     memset((void *)phys, 0, 0x1000);
@@ -196,7 +233,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
   }
 
   uint32_t entry = elf->e_entry;
-  kfree(data);
+  pmm_free_frames(temp_frames_base, temp_frames_count);
   return entry;
 }
 
