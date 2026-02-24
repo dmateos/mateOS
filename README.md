@@ -6,9 +6,9 @@ A minimal educational operating system for learning x86 architecture, written in
 
 Inspired by experimenting with a simple OS on the 6502.
 
-![Window manager with terminal, file manager, and task manager](s1.png)
+![Window manager desktop with system info panel](s3.png)
 
-![Running on Proxmox with HTTP server](s2.png)
+![DOOM running in a window under the WM](s4.png)
 
 ## Features
 
@@ -53,6 +53,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Close Button** - X button in title bar sends ESC → 'q' → kill() as graceful shutdown
 - **Desktop Icons** - Clickable TERM, FILES, TASKS icons to launch apps
 - **Taskbar** - Top bar showing "mateOS WM", focused window title, and keyboard hints
+- **Desktop System Info Panel** - Top-right text panel with kernel version, uptime, IP address, window/task counts, and focused window
 - **Mouse Cursor** - Custom arrow cursor with transparency mask
 - **Focus Management** - Tab key cycles focus through z-order, ESC closes focused window
 - **Window Terminal** - `winterm` provides a full shell with stdout redirection and 61x34 char grid
@@ -84,7 +85,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Separate Stacks** - Each user process has independent kernel and user stacks
 
 ### Graphics
-- **Bochs VGA (BGA)** - 1024x768 with 256-color palette via Bochs dispi registers
+- **Bochs VGA (BGA)** - 1024x768x16 (RGB565) via Bochs dispi registers
 - **VGA Mode 13h Fallback** - 320x200 with 256 colors when BGA unavailable
 - **VGA Text Mode** - 80x25 character display with scrolling
 - **Userland Graphics Library** - `ugfx.h` provides pixel drawing, rectangles, text rendering, buffer operations
@@ -97,7 +98,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Mouse Driver** - PS/2 mouse with 3-byte packet assembly, sign-extended deltas, bounds clamping
 - **System Info** - cpuinfo, meminfo, lspci, lsirq, netstats syscalls + virtual .mos files
 - **Userland Shell** - Interactive command-line shell running in Ring 3
-- **DOOM Port** - doomgeneric DOOM engine running in a WM window (320x200, 8bpp)
+- **DOOM Port** - doomgeneric DOOM engine running in a WM window (640x400 build, indexed-color window buffer composited by the WM)
 - **Test Suite** - 23-test userland test suite covering syscalls, memory, process isolation, VFS, argv
 
 ## Building
@@ -139,6 +140,7 @@ make run NET=1 HTTP=1             # Networking + port forward 8080->80
 make run FAT16=1                  # Attach FAT16 disk image
 make run GFX=1 NET=1 HTTP=1      # Graphics + networking + HTTP
 make cc-smoke                     # Headless compiler smoke test
+make doom-smoke                   # Headless DOOM startup smoke test
 ```
 
 Flags can be combined freely:
