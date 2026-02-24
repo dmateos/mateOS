@@ -1,5 +1,6 @@
 #include "doomgeneric.h"
 #include "doomkeys.h"
+#include "i_video.h"
 #include <string.h>
 
 typedef unsigned char uint8_t;
@@ -11,6 +12,11 @@ extern pixel_t* DG_ScreenBuffer;
 static int g_wid = -1;
 static int g_headless = 0;
 static uint8_t g_fb8[DOOMGENERIC_RESX * DOOMGENERIC_RESY];
+static uint8_t g_fb8_present[DOOMGENERIC_RESX * DOOMGENERIC_RESY];
+static uint8_t g_doom_to_wm[256];
+static uint8_t g_wm_r[256], g_wm_g[256], g_wm_b[256];
+static int g_wm_palette_init = 0;
+static int g_doom_palette_map_init = 0;
 static int g_keyq[KEYQ_CAP];
 static int g_qhead = 0;
 static int g_qtail = 0;
@@ -116,6 +122,69 @@ static int map_key(int k) {
     return 0;
 }
 
+static void init_wm_palette(void) {
+    if (g_wm_palette_init) return;
+
+    static const uint8_t cga_palette[16][3] = {
+        { 0,  0,  0}, { 0,  0, 42}, { 0, 42,  0}, { 0, 42, 42},
+        {42,  0,  0}, {42,  0, 42}, {42, 21,  0}, {42, 42, 42},
+        {21, 21, 21}, {21, 21, 63}, {21, 63, 21}, {21, 63, 63},
+        {63, 21, 21}, {63, 21, 63}, {63, 63, 21}, {63, 63, 63},
+    };
+
+    for (int i = 0; i < 16; i++) {
+        g_wm_r[i] = (uint8_t)((unsigned)cga_palette[i][0] * 255u / 63u);
+        g_wm_g[i] = (uint8_t)((unsigned)cga_palette[i][1] * 255u / 63u);
+        g_wm_b[i] = (uint8_t)((unsigned)cga_palette[i][2] * 255u / 63u);
+    }
+
+    int idx = 16;
+    for (int r = 0; r < 6; r++) {
+        for (int g = 0; g < 6; g++) {
+            for (int b = 0; b < 6; b++) {
+                g_wm_r[idx] = (uint8_t)(r * 255 / 5);
+                g_wm_g[idx] = (uint8_t)(g * 255 / 5);
+                g_wm_b[idx] = (uint8_t)(b * 255 / 5);
+                idx++;
+            }
+        }
+    }
+
+    for (int i = 0; i < 24; i++) {
+        uint8_t v = (uint8_t)(i * 255 / 23);
+        g_wm_r[232 + i] = v;
+        g_wm_g[232 + i] = v;
+        g_wm_b[232 + i] = v;
+    }
+
+    g_wm_palette_init = 1;
+}
+
+static void refresh_doom_palette_map(void) {
+    init_wm_palette();
+    for (int i = 0; i < 256; i++) {
+        int best = 0;
+        unsigned best_diff = ~0u;
+        unsigned dr = colors[i].r;
+        unsigned dg = colors[i].g;
+        unsigned db = colors[i].b;
+        for (int j = 0; j < 256; j++) {
+            int rr = (int)dr - (int)g_wm_r[j];
+            int gg = (int)dg - (int)g_wm_g[j];
+            int bb = (int)db - (int)g_wm_b[j];
+            unsigned diff = (unsigned)(rr * rr + gg * gg + bb * bb);
+            if (diff < best_diff) {
+                best_diff = diff;
+                best = j;
+                if (diff == 0) break;
+            }
+        }
+        g_doom_to_wm[i] = (uint8_t)best;
+    }
+    g_doom_palette_map_init = 1;
+    palette_changed = false;
+}
+
 void DG_DebugMark(int stage) {
     (void)stage;
 }
@@ -159,7 +228,14 @@ void DG_DrawFrame(void) {
         detached = 1;
     }
 
-    int wr = k_win_write(g_wid, g_fb8, (unsigned int)pixels);
+    if (!g_doom_palette_map_init || palette_changed) {
+        refresh_doom_palette_map();
+    }
+    for (int i = 0; i < pixels; i++) {
+        g_fb8_present[i] = g_doom_to_wm[g_fb8[i]];
+    }
+
+    int wr = k_win_write(g_wid, g_fb8_present, (unsigned int)pixels);
     if (dbg <= 5u || (dbg % 200u) == 0u) {
         k_write("[doom] frame=", 13);
         k_write_num((int)dbg);
