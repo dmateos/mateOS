@@ -28,12 +28,17 @@ static char os_page[32768];
 
 static int send_all(int client, const char *buf, int len) {
     int sent = 0;
+    int retries = 0;
     while (sent < len) {
         int n = sock_send(client, buf + sent, (unsigned int)(len - sent));
         if (n > 0) {
             sent += n;
+            retries = 0;
             continue;
         }
+        if (n < 0) return -1;  // error — stop immediately
+        // n == 0: would-block, retry with a limit to avoid infinite loop
+        if (++retries > 500) return -1;
         yield();
     }
     return 0;

@@ -178,6 +178,14 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     return 0;
   }
 
+  // Validate program header table falls within the file
+  uint32_t ph_end = elf->e_phoff + (uint32_t)elf->e_phnum * sizeof(elf32_phdr_t);
+  if (elf->e_phoff >= size || ph_end > size || ph_end < elf->e_phoff) {
+    printf("[exec] ELF phdr table out of bounds: %s\n", filename);
+    pmm_free_frames(temp_frames_base, temp_frames_count);
+    return 0;
+  }
+
   // Load program segments into per-process physical frames
   elf32_phdr_t *phdr = (elf32_phdr_t *)((uint8_t *)elf + elf->e_phoff);
   uint32_t user_end = USER_REGION_START;
@@ -189,6 +197,21 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     uint32_t memsz = phdr[i].p_memsz;
     uint32_t filesz = phdr[i].p_filesz;
     uint32_t offset = phdr[i].p_offset;
+
+    // Validate segment data falls within the ELF file
+    if (offset > size || filesz > size - offset) {
+      printf("[exec] ELF segment %d: offset/filesz out of bounds\n", i);
+      pmm_free_frames(temp_frames_base, temp_frames_count);
+      return 0;
+    }
+    // Validate segment virtual address falls within user region
+    if (vaddr < USER_REGION_START || vaddr + memsz < vaddr ||
+        vaddr + memsz > USER_STACK_BASE_VADDR) {
+      printf("[exec] ELF segment %d: vaddr 0x%x+0x%x outside user region\n",
+             i, vaddr, memsz);
+      pmm_free_frames(temp_frames_base, temp_frames_count);
+      return 0;
+    }
 
     uint8_t *src = (uint8_t *)elf + offset;
 
@@ -222,8 +245,12 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
           return 0;
         }
         memset((void *)phys, 0, 0x1000);
-        paging_map_page(page_dir, page_vaddr, phys,
-                        PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+        if (paging_map_page(page_dir, page_vaddr, phys,
+                            PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
+          printf("[exec] failed to map page 0x%x\n", page_vaddr);
+          pmm_free_frames(temp_frames_base, temp_frames_count);
+          return 0;
+        }
       }
       uint32_t copy_start = (page_vaddr > vaddr) ? page_vaddr : vaddr;
       uint32_t copy_end = (page_vaddr + 0x1000 < vaddr + filesz)
@@ -248,8 +275,12 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
       return 0;
     }
     memset((void *)phys, 0, 0x1000);
-    paging_map_page(page_dir, stack_base + (i * 0x1000u), phys,
-                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+    if (paging_map_page(page_dir, stack_base + (i * 0x1000u), phys,
+                        PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
+      printf("[exec] failed to map stack page %d\n", (int)i);
+      pmm_free_frames(temp_frames_base, temp_frames_count);
+      return 0;
+    }
     if (i == USER_STACK_PAGES - 1) {
       stack_phys_top = phys;
     }
@@ -588,8 +619,11 @@ static uint32_t sys_do_sbrk(int32_t increment) {
     uint32_t phys = pmm_alloc_frame();
     if (!phys) return (uint32_t)-1;
     memset((void *)phys, 0, 0x1000u);
-    paging_map_page(current->page_dir, va, phys,
-                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+    if (paging_map_page(current->page_dir, va, phys,
+                        PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
+      pmm_free_frame(phys);
+      return (uint32_t)-1;
+    }
   }
 
   current->user_brk = new_brk;

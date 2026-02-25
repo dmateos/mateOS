@@ -184,11 +184,16 @@ static int fat16_alloc_cluster(uint16_t *out_cluster) {
 
 static int fat16_free_chain(uint16_t first) {
     uint16_t c = first;
-    while (c >= 2 && c < 0xFFF8) {
+    // Limit iterations to total cluster count to prevent infinite loops
+    // on corrupt FAT chains with cycles (e.g. A->B->C->A).
+    uint32_t max_iter = g_fat.cluster_count + 2;
+    uint32_t iter = 0;
+    while (c >= 2 && c < 0xFFF8 && iter < max_iter) {
         uint16_t next = fat16_get_entry(c);
         if (fat16_set_entry(c, 0x0000) < 0) return -1;
         if (next == c) break;
         c = next;
+        iter++;
     }
     return 0;
 }
@@ -658,7 +663,13 @@ static int fat16_vfs_write(int handle, const void *buf, uint32_t len) {
     }
 
     if (done > 0) {
-        if (fat16_update_dirent(f) < 0) return -1;
+        // Update directory entry with new file size. If this fails, the data
+        // is on disk but the metadata is stale — log but still report bytes
+        // written so the caller knows data reached the disk.
+        if (fat16_update_dirent(f) < 0) {
+            printf("[fat16] warning: dirent update failed after %d byte write\n",
+                   (int)done);
+        }
     }
 
     return (int)done;

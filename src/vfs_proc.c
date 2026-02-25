@@ -325,18 +325,30 @@ static uint32_t vgen_version(char *dst, uint32_t cap) {
     return len;
 }
 
+// vgen_buf is static (shared), so disable interrupts to prevent preemption
+// between gen() and memcpy — otherwise a concurrent .mos read overwrites it.
 static int vfile_read_from_generated(vgen_fn_t gen, uint32_t offset, void *buf, uint32_t len) {
     if (!buf || len == 0) return 0;
+    uint32_t eflags;
+    __asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags));
     uint32_t total = gen(vgen_buf, sizeof(vgen_buf));
-    if (offset >= total) return 0;
+    if (offset >= total) {
+        __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
+        return 0;
+    }
     uint32_t remaining = total - offset;
     if (len > remaining) len = remaining;
     memcpy(buf, vgen_buf + offset, len);
+    __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
     return (int)len;
 }
 
 static uint32_t vfile_size_from_generated(vgen_fn_t gen) {
-    return gen(vgen_buf, sizeof(vgen_buf));
+    uint32_t eflags;
+    __asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags));
+    uint32_t sz = gen(vgen_buf, sizeof(vgen_buf));
+    __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
+    return sz;
 }
 
 static uint32_t vfile_kdebug_size(void) { return klog_snapshot_size(); }

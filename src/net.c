@@ -47,9 +47,15 @@ uint32_t sys_now(void) {
 // sys_arch_protect/unprotect defined inline in lwipopts.h
 
 // ---- lwIP netif TX callback ----
+// lwIP pbufs may be chained (p->next); we must flatten into a contiguous
+// buffer before handing to the NIC driver.
+static uint8_t tx_buf[1536];  // Max Ethernet frame size
 static err_t net_linkoutput(struct netif *netif __attribute__((unused)),
                             struct pbuf *p) {
-  rtl8139_send((const uint8_t *)p->payload, (uint16_t)p->tot_len);
+  uint16_t len = p->tot_len;
+  if (len > sizeof(tx_buf)) len = sizeof(tx_buf);
+  pbuf_copy_partial(p, tx_buf, len, 0);
+  rtl8139_send(tx_buf, len);
   return ERR_OK;
 }
 
@@ -68,6 +74,7 @@ static err_t net_netif_init(struct netif *netif) {
 
 // ---- ICMP ping via lwIP raw API ----
 static volatile int ping_reply_received = 0;
+static volatile int ping_in_progress = 0;  // serialize concurrent pings
 
 static uint8_t ping_recv_cb(void *arg __attribute__((unused)),
                             struct raw_pcb *pcb __attribute__((unused)),
@@ -153,6 +160,9 @@ void net_poll(void) {
 
 int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
   if (!lwip_ready) return -1;
+  // Serialize concurrent pings — global ping_reply_received flag is shared.
+  if (ping_in_progress) return -1;
+  ping_in_progress = 1;
 
   cpu_enable_interrupts();
 
@@ -208,12 +218,14 @@ int net_ping(uint32_t ip_be, uint32_t timeout_ms) {
     net_poll();
     if ((get_tick_count() - start) > timeout_ticks) {
       raw_remove(pcb);
+      ping_in_progress = 0;
       return -1;
     }
     cpu_halt();
   }
 
   raw_remove(pcb);
+  ping_in_progress = 0;
   return 0;
 }
 
@@ -329,17 +341,23 @@ static err_t sock_recv_cb(void *arg, struct tcp_pcb *tpcb,
     return ERR_OK;
   }
 
-  // Copy pbuf chain into rx ring buffer
+  // Copy pbuf chain into rx ring buffer, tracking actual bytes consumed
+  // so we only acknowledge what was actually stored (not dropped data).
+  uint16_t total_pushed = 0;
   struct pbuf *q;
   for (q = p; q != NULL; q = q->next) {
     uint16_t copy_len = q->len;
     uint8_t *src = (uint8_t *)q->payload;
     for (uint16_t i = 0; i < copy_len; i++) {
-      if (kring_u8_push(&s->rx_ring, src[i]) < 0) break;
+      if (kring_u8_push(&s->rx_ring, src[i]) < 0) goto rx_done;
+      total_pushed++;
     }
   }
+rx_done:
 
-  tcp_recved(tpcb, p->tot_len);
+  // Only acknowledge bytes we actually stored; lwIP will retransmit the rest.
+  if (total_pushed > 0)
+    tcp_recved(tpcb, total_pushed);
   pbuf_free(p);
   return ERR_OK;
 }

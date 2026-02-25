@@ -199,9 +199,10 @@ page_directory_t *paging_create_address_space(void) {
   return new_dir;
 }
 
-// Map a virtual page to a physical frame in a specific page directory
-void paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
-                     uint32_t physical_addr, uint32_t flags) {
+// Map a virtual page to a physical frame in a specific page directory.
+// Returns 0 on success, -1 on OOM (page table allocation failed).
+int paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
+                    uint32_t physical_addr, uint32_t flags) {
   uint32_t dir_idx = virtual_addr >> 22;           // Top 10 bits
   uint32_t table_idx = (virtual_addr >> 12) & 0x3FF;  // Next 10 bits
 
@@ -211,7 +212,7 @@ void paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
     uint32_t pt_phys = pmm_alloc_frame();
     if (!pt_phys) {
       printf("[paging] failed to allocate page table\n");
-      return;
+      return -1;
     }
     memset((void *)pt_phys, 0, sizeof(page_table_t));
     page_dir->tables[dir_idx] = pt_phys | PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
@@ -224,7 +225,7 @@ void paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
       uint32_t new_pt = pmm_alloc_frame();
       if (!new_pt) {
         printf("[paging] failed to allocate COW page table for dir %d\n", dir_idx);
-        return;
+        return -1;
       }
       memcpy((void *)new_pt, (void *)kernel_pt, sizeof(page_table_t));
       page_dir->tables[dir_idx] = new_pt | PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
@@ -237,6 +238,7 @@ void paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
 
   // Invalidate TLB for this page
   __asm__ volatile("invlpg (%0)" : : "r"(virtual_addr) : "memory");
+  return 0;
 }
 
 // Unmap a virtual page

@@ -64,6 +64,11 @@ void pmm_free_frame(uint32_t physical_addr) {
   if (physical_addr < PMM_START || physical_addr >= PMM_END) return;
   if (physical_addr & (PMM_FRAME_SIZE - 1)) return;  // not aligned
   uint32_t idx = frame_index(physical_addr);
+  if (!bitmap_test(idx)) {
+    printf("[pmm] double-free detected at 0x%x (frame %d)\n",
+           physical_addr, idx);
+    return;
+  }
   bitmap_clear(idx);
 }
 

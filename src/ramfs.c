@@ -188,6 +188,11 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
     static uint8_t bounce[BOUNCE_SZ];
     uint32_t done = 0;
     uint32_t restore_cr3 = get_cr3();
+    // Disable interrupts during the bounce copy to prevent preemption —
+    // the static bounce buffer is shared and would be corrupted if another
+    // task's ramfs_vfs_read ran between the two memcpy calls.
+    uint32_t eflags;
+    __asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags));
     while (done < len) {
       uint32_t chunk = len - done;
       if (chunk > BOUNCE_SZ) chunk = BOUNCE_SZ;
@@ -200,6 +205,8 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
 
       done += chunk;
     }
+    // Restore interrupt flag
+    __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
   } else {
     memcpy(buf, (void *)src_addr, len);
   }

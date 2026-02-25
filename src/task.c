@@ -352,17 +352,22 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
 
   // Allocate per-task file descriptor table
   task->fd_table = (vfs_fd_table_t *)kmalloc(sizeof(vfs_fd_table_t));
-  if (task->fd_table) {
-    memset(task->fd_table, 0, sizeof(vfs_fd_table_t));
-    // Reserve fd 0,1,2 for stdin/stdout/stderr (console-backed)
-    // fs_id=-1 signals these are console fds, not VFS-backed
-    for (int i = 0; i < 3; i++) {
-      task->fd_table->fds[i].in_use = 1;
-      task->fd_table->fds[i].fs_id = -1;
-      task->fd_table->fds[i].fs_handle = i;
-      // fd 0=stdin(read), fd 1=stdout(write), fd 2=stderr(write)
-      task->fd_table->fds[i].open_flags = (i == 0) ? O_RDONLY : O_WRONLY;
-    }
+  if (!task->fd_table) {
+    kprintf("[task] failed to allocate fd_table for pid=%d\n", task->id);
+    kfree(kernel_stack);
+    paging_destroy_address_space(page_dir);
+    task->state = TASK_TERMINATED;
+    return NULL;
+  }
+  memset(task->fd_table, 0, sizeof(vfs_fd_table_t));
+  // Reserve fd 0,1,2 for stdin/stdout/stderr (console-backed)
+  // fs_id=-1 signals these are console fds, not VFS-backed
+  for (int i = 0; i < 3; i++) {
+    task->fd_table->fds[i].in_use = 1;
+    task->fd_table->fds[i].fs_id = -1;
+    task->fd_table->fds[i].fs_handle = i;
+    // fd 0=stdin(read), fd 1=stdout(write), fd 2=stderr(write)
+    task->fd_table->fds[i].open_flags = (i == 0) ? O_RDONLY : O_WRONLY;
   }
 
   // Add to circular task list (skip if reusing — already linked)
@@ -485,10 +490,19 @@ static void task_terminate(task_t *task, int code) {
   }
 
   // Free user address-space resources from kernel address space.
+  // Save caller's CR3 so we can restore it after destroying the target's
+  // address space.  When killing a *different* task from userland, the caller
+  // still needs its own page directory active when the syscall returns.
+  uint32_t saved_cr3 = get_cr3();
   paging_switch(paging_get_kernel_dir());
   if (task->page_dir) {
     paging_destroy_address_space(task->page_dir);
     task->page_dir = NULL;
+  }
+  // Restore caller's CR3 (unless the terminated task *is* the current task,
+  // in which case its page_dir was just destroyed — keep kernel CR3).
+  if (task != current_task) {
+    paging_switch((page_directory_t *)saved_cr3);
   }
 
   task->stack = NULL;

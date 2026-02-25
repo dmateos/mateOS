@@ -303,6 +303,7 @@ void *malloc(size_t n) {
 }
 
 void *calloc(size_t n, size_t sz) {
+    if (n && sz > (size_t)-1 / n) return NULL;  // overflow check
     size_t total = n * sz;
     void *p = malloc(total);
     if (p) memset(p, 0, total);
