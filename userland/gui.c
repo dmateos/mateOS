@@ -320,6 +320,28 @@ static void bb_string(int x, int y, const char *s, unsigned char c) {
     ugfx_buf_string(wm_backbuf, ugfx_width, ugfx_height, x, y, s, c);
 }
 
+static void bb_string_fit(int x, int y, int max_w, const char *s, unsigned char c) {
+    if (!s || max_w <= 0) return;
+    int max_chars = max_w / 8;
+    if (max_chars <= 0) return;
+    int len = wm_strlen(s);
+    if (len <= max_chars) {
+        bb_string(x, y, s, c);
+        return;
+    }
+    if (max_chars <= 3) return;
+    char tmp[64];
+    int keep = max_chars - 3;
+    if (keep > (int)sizeof(tmp) - 4) keep = (int)sizeof(tmp) - 4;
+    int i;
+    for (i = 0; i < keep && s[i]; i++) tmp[i] = s[i];
+    tmp[i++] = '.';
+    tmp[i++] = '.';
+    tmp[i++] = '.';
+    tmp[i] = '\0';
+    bb_string(x, y, tmp, c);
+}
+
 static void bb_string_bg(int x, int y, const char *s, unsigned char fg, unsigned char bg) {
     int len = wm_strlen(s);
     if (len > 0) bb_rect(x - 2, y - 1, len * 8 + 4, 10, bg);
@@ -345,14 +367,48 @@ static void launch_tasks(void) {
     (void)pid;
 }
 
+static void bb_draw_bitmap16(int x, int y, const unsigned short *rows, unsigned char fg, int scale) {
+    if (scale < 1) scale = 1;
+    for (int ry = 0; ry < 16; ry++) {
+        unsigned short bits = rows[ry];
+        for (int rx = 0; rx < 16; rx++) {
+            if (bits & (1u << (15 - rx))) {
+                bb_rect(x + rx * scale, y + ry * scale, scale, scale, fg);
+            }
+        }
+    }
+}
+
+static const unsigned short icon_term_bits[16] = {
+    0x0000, 0x7FFE, 0x4002, 0x5FF2, 0x500A, 0x57C2, 0x5002, 0x53F2,
+    0x5202, 0x5002, 0x5FFC, 0x4002, 0x7FFE, 0x0000, 0x0000, 0x0000
+};
+static const unsigned short icon_folder_bits[16] = {
+    0x0000, 0x0FC0, 0x1FF8, 0x3C1C, 0x3FFE, 0x7FFE, 0x6006, 0x6006,
+    0x6006, 0x6006, 0x6006, 0x7FFE, 0x3FFC, 0x0000, 0x0000, 0x0000
+};
+static const unsigned short icon_tasks_bits[16] = {
+    0x0000, 0x7FFE, 0x4002, 0x5A5A, 0x5A5A, 0x4002, 0x7FFE, 0x0000,
+    0x318C, 0x318C, 0x318C, 0x318C, 0x7FFE, 0x0000, 0x0000, 0x0000
+};
+
 static void draw_desktop_icon(int x, int y, unsigned char body, const char *label) {
-    bb_rect(x + 7, y + 1, 24, 20, COL_SHADOW_NEAR);
-    bb_rect(x + 6, y, 24, 20, body);
-    bb_rect_outline(x + 6, y, 24, 20, 15);
-    bb_rect(x + 22, y, 8, 6, 15);
-    bb_hline(x + 8, y + 3, 12, 14);
-    bb_rect(x - 1, y + 24, 34, 10, 0);
-    bb_string(x, y + 26, label, 15);
+    const unsigned short *glyph = icon_term_bits;
+    if (label && label[0] == 'F') glyph = icon_folder_bits;
+    if (label && label[0] == 'T' && label[1] == 'A') glyph = icon_tasks_bits;
+
+    bb_rect(x + 3, y + 3, 32, 28, COL_SHADOW_NEAR);
+    bb_rect(x + 1, y + 1, 32, 28, COL_SURFACE_EDGE);
+    bb_rect(x, y, 32, 28, COL_SURFACE);
+    bb_rect_outline(x, y, 32, 28, COL_BORDER_ACT);
+    bb_rect(x + 2, y + 2, 28, 24, body);
+    bb_draw_bitmap16(x + 7, y + 6, glyph, 255, 1);
+    int llen = wm_strlen(label);
+    int label_w = llen * 8;
+    int tx = x + (32 - label_w) / 2;
+    if (tx < x - 4) tx = x - 4;
+    bb_rect(x - 4, y + 31, 44, 11, COL_DESKTOP_A);
+    bb_string(tx, y + 33, label, 255);
 }
 
 static void draw_desktop_icons(void) {
@@ -366,22 +422,27 @@ static void draw_wallpaper(void) {
 }
 
 static void draw_taskbar(void) {
+    const char *wm_label = "mateOS WM";
+    int wm_label_w = wm_strlen(wm_label) * 8;
+    int wm_badge_w = wm_label_w + 12;
+    if (wm_badge_w < 76) wm_badge_w = 76;
+
     bb_rect(0, 0, ugfx_width, TASKBAR_H, COL_TASKBAR_BG);
     bb_hline(0, 0, ugfx_width, COL_BORDER_ACT);
     bb_hline(0, TASKBAR_H - 2, ugfx_width, COL_TASKBAR_STRIP);
     bb_hline(0, TASKBAR_H - 1, ugfx_width, COL_BORDER_ACT);
 
-    bb_rect(4, 3, 70, 14, COL_TASKBAR_STRIP);
-    bb_rect_outline(4, 3, 70, 14, COL_BORDER_ACT);
-    bb_string(8, 6, "mateOS WM", COL_TASKBAR_TXT);
+    bb_rect(4, 3, wm_badge_w, 14, COL_TASKBAR_STRIP);
+    bb_rect_outline(4, 3, wm_badge_w, 14, COL_BORDER_ACT);
+    bb_string(8, 6, wm_label, COL_TASKBAR_TXT);
 
     if (slot_is_active(focus)) {
-        int pill_x = 88;
+        int pill_x = 4 + wm_badge_w + 10;
         int pill_w = ugfx_width - pill_x - 96;
         if (pill_w > 40) {
             bb_rect(pill_x, 3, pill_w, 14, COL_SURFACE_EDGE);
             bb_rect(pill_x + 1, 4, pill_w - 2, 12, COL_SURFACE);
-            bb_string(pill_x + 4, 6, slots[focus].title, COL_TITLE_TXT_DIM);
+            bb_string_fit(pill_x + 4, 6, pill_w - 8, slots[focus].title, COL_TITLE_TXT_DIM);
         }
     }
 
@@ -527,7 +588,11 @@ static void draw_window_frame(int slot, int is_focused) {
                     fh - TITLE_BAR_H - 2 * BORDER, COL_SURFACE_EDGE);
 
     if (slot_is_active(slot)) {
-        bb_string(fx + BORDER + 4, fy + BORDER + 3, slots[slot].title, COL_TITLE_TXT);
+        int title_x = fx + BORDER + 4;
+        int close_left = fx + fw - BORDER - CLOSE_W - 2;
+        int title_max_w = close_left - 4 - title_x;
+        if (title_max_w < 0) title_max_w = 0;
+        bb_string_fit(title_x, fy + BORDER + 3, title_max_w, slots[slot].title, COL_TITLE_TXT);
         if (is_focused) {
             int tlen = 0;
             while (slots[slot].title[tlen]) tlen++;

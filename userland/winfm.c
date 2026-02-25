@@ -19,18 +19,22 @@
 #define ICON_H 24
 #define ICON_TXT_Y 34
 
-// Palette choices tuned for a retro Windows 3.x vibe.
-#define COL_BG         7
-#define COL_PANEL      8
-#define COL_LIGHT      15
-#define COL_DARK       0
-#define COL_TITLE      1
-#define COL_TITLE_TXT  15
-#define COL_ICON       3
-#define COL_TEXT       0
-#define COL_SEL_BG     9
-#define COL_SEL_TXT    15
-#define COL_STATUS     6
+// 16-bit desktop path still uses indexed colors in window buffers; choose richer palette entries.
+#define COL_BG         237
+#define COL_PANEL      239
+#define COL_PANEL_ALT  242
+#define COL_LIGHT      254
+#define COL_DARK       233
+#define COL_TITLE      75
+#define COL_TITLE_BAR2 117
+#define COL_TITLE_TXT  255
+#define COL_ICON       81
+#define COL_TEXT       252
+#define COL_MUTED      247
+#define COL_SEL_BG     31
+#define COL_SEL_TXT    255
+#define COL_STATUS     236
+#define COL_STATUS_TXT 250
 
 static unsigned char buf[W * H];
 static char files[MAX_FILES][NAME_MAX];
@@ -168,21 +172,73 @@ static void draw_bevel(int x, int y, int w, int h) {
     }
 }
 
+static void buf_vline(int x, int y, int h, unsigned char c) {
+    for (int i = 0; i < h; i++) ugfx_buf_pixel(buf, W, H, x, y + i, c);
+}
+
+static void draw_bitmap16(int x, int y, const unsigned short *rows, unsigned char fg) {
+    for (int ry = 0; ry < 16; ry++) {
+        unsigned short bits = rows[ry];
+        for (int rx = 0; rx < 16; rx++) {
+            if (bits & (1u << (15 - rx))) {
+                ugfx_buf_pixel(buf, W, H, x + rx, y + ry, fg);
+            }
+        }
+    }
+}
+
+static const unsigned short glyph_file[16] = {
+    0x0FF0, 0x1FF8, 0x3C1C, 0x380C, 0x300C, 0x3FFC, 0x300C, 0x3FFC,
+    0x300C, 0x3FFC, 0x300C, 0x300C, 0x3FFC, 0x0000, 0x0000, 0x0000
+};
+static const unsigned short glyph_folder[16] = {
+    0x07E0, 0x0FF8, 0x1C1C, 0x1FFE, 0x3FFE, 0x3006, 0x3006, 0x3006,
+    0x3006, 0x3006, 0x3006, 0x3FFE, 0x1FFC, 0x0000, 0x0000, 0x0000
+};
+static const unsigned short glyph_exec[16] = {
+    0x7FFE, 0x4002, 0x5FFA, 0x5A1A, 0x5A1A, 0x5FFA, 0x4002, 0x7FFE,
+    0x0810, 0x0C30, 0x0E70, 0x0C30, 0x0810, 0x0000, 0x0000, 0x0000
+};
+static const unsigned short glyph_graph[16] = {
+    0x7FFE, 0x4002, 0x5FF2, 0x500A, 0x57C2, 0x5002, 0x53F2, 0x5202,
+    0x5002, 0x5FFC, 0x4002, 0x7FFE, 0x0000, 0x0000, 0x0000, 0x0000
+};
+static const unsigned short glyph_chip[16] = {
+    0x0810, 0x1FF8, 0x3FFC, 0x2424, 0x67E6, 0x67E6, 0x67E6, 0x67E6,
+    0x67E6, 0x67E6, 0x2424, 0x3FFC, 0x1FF8, 0x0810, 0x0000, 0x0000
+};
+
+static const unsigned short *icon_bitmap_for_name(const char *name) {
+    if (str_ends_with(name, ".elf")) return glyph_exec;
+    if (str_ends_with(name, ".wlf")) return glyph_graph;
+    if (str_ends_with(name, ".mos")) return glyph_chip;
+    return glyph_file;
+}
+
 static void draw_file_icon(int x, int y, int selected_cell, const char *name) {
     if (selected_cell) {
         ugfx_buf_rect(buf, W, H, x + 2, y + 2, CELL_W - 4, CELL_H - 4, COL_SEL_BG);
+        ugfx_buf_hline(buf, W, H, x + 2, y + 2, CELL_W - 4, COL_TITLE_BAR2);
+        ugfx_buf_hline(buf, W, H, x + 2, y + CELL_H - 3, CELL_W - 4, 24);
+    } else {
+        ugfx_buf_rect(buf, W, H, x + 2, y + 2, CELL_W - 4, CELL_H - 4, COL_PANEL);
     }
 
-    int ix = x + (CELL_W - ICON_W) / 2;
-    int iy = y + 6;
-    ugfx_buf_rect(buf, W, H, ix, iy, ICON_W, ICON_H, icon_color_for_name(name));
-    ugfx_buf_hline(buf, W, H, ix, iy, ICON_W, COL_LIGHT);
-    ugfx_buf_hline(buf, W, H, ix, iy + ICON_H - 1, ICON_W, COL_DARK);
-    for (int i = 0; i < ICON_H; i++) {
-        ugfx_buf_pixel(buf, W, H, ix, iy + i, COL_LIGHT);
-        ugfx_buf_pixel(buf, W, H, ix + ICON_W - 1, iy + i, COL_DARK);
+    int ix = x + (CELL_W - 24) / 2;
+    int iy = y + 7;
+    unsigned char icon_fill = icon_color_for_name(name);
+    ugfx_buf_rect(buf, W, H, ix + 1, iy + 1, 24, 18, selected_cell ? 233 : COL_DARK);
+    ugfx_buf_rect(buf, W, H, ix, iy, 24, 18, icon_fill);
+    ugfx_buf_rect(buf, W, H, ix + 1, iy + 1, 22, 16, selected_cell ? COL_SEL_BG : COL_PANEL_ALT);
+    ugfx_buf_hline(buf, W, H, ix, iy, 24, COL_LIGHT);
+    ugfx_buf_hline(buf, W, H, ix, iy + 17, 24, COL_DARK);
+    buf_vline(ix, iy, 18, COL_LIGHT);
+    buf_vline(ix + 23, iy, 18, COL_DARK);
+    if (str_ends_with(name, ".dir") || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        draw_bitmap16(ix + 4, iy + 1, glyph_folder, icon_fill);
+    } else {
+        draw_bitmap16(ix + 4, iy + 1, icon_bitmap_for_name(name), icon_fill);
     }
-    ugfx_buf_rect(buf, W, H, ix + ICON_W - 8, iy, 8, 6, COL_LIGHT);
 
     char shortn[11];
     int nlen = strlen(name);
@@ -258,7 +314,7 @@ static void draw_scrollbar(int cols, int rows) {
     int track_h = H - TOPBAR_H - STATUS_H - 10;
     if (track_h < 20) return;
 
-    ugfx_buf_rect(buf, W, H, track_x, track_y, 6, track_h, COL_PANEL);
+    ugfx_buf_rect(buf, W, H, track_x, track_y, 6, track_h, COL_PANEL_ALT);
     ugfx_buf_hline(buf, W, H, track_x, track_y, 6, COL_LIGHT);
     ugfx_buf_hline(buf, W, H, track_x, track_y + track_h - 1, 6, COL_DARK);
 
@@ -270,12 +326,14 @@ static void draw_scrollbar(int cols, int rows) {
         thumb_y = track_y + ((track_h - thumb_h) * view_first) / max_first;
     }
     ugfx_buf_rect(buf, W, H, track_x + 1, thumb_y, 4, thumb_h, COL_SEL_BG);
+    ugfx_buf_hline(buf, W, H, track_x + 1, thumb_y, 4, COL_TITLE_BAR2);
 }
 
 static void redraw(void) {
     ugfx_buf_clear(buf, W, H, COL_BG);
 
     ugfx_buf_rect(buf, W, H, 0, 0, W, TOPBAR_H, COL_TITLE);
+    ugfx_buf_hline(buf, W, H, 0, 1, W, COL_TITLE_BAR2);
     ugfx_buf_string(buf, W, H, 6, 4, "Program Manager - File Manager", COL_TITLE_TXT);
 
     draw_bevel(4, TOPBAR_H + 2, W - 8, H - TOPBAR_H - STATUS_H - 6);
@@ -284,7 +342,7 @@ static void redraw(void) {
     grid_dims(&cols, &rows, &page);
 
     int area_x = PAD_X;
-    int area_y = TOPBAR_H + PAD_Y + 4;
+    int area_y = TOPBAR_H + PAD_Y + 2;
     int shown = 0;
     int max_i = view_first + page;
     if (max_i > file_count) max_i = file_count;
@@ -302,7 +360,8 @@ static void redraw(void) {
     draw_scrollbar(cols, rows);
 
     ugfx_buf_rect(buf, W, H, 0, H - STATUS_H, W, STATUS_H, COL_STATUS);
-    ugfx_buf_string(buf, W, H, 4, H - STATUS_H + 3, status, COL_TEXT);
+    ugfx_buf_hline(buf, W, H, 0, H - STATUS_H, W, COL_PANEL_ALT);
+    ugfx_buf_string(buf, W, H, 4, H - STATUS_H + 3, status, COL_STATUS_TXT);
 
     char info[32];
     int p = 0;
@@ -324,7 +383,7 @@ static void redraw(void) {
     }
     info[p++] = ']';
     info[p] = '\0';
-    ugfx_buf_string(buf, W, H, W - (p * 8) - 4, H - STATUS_H + 3, info, COL_TEXT);
+    ugfx_buf_string(buf, W, H, W - (p * 8) - 4, H - STATUS_H + 3, info, COL_MUTED);
 }
 
 static void move_selection(int delta) {
