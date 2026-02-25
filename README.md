@@ -100,7 +100,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **System Info** - cpuinfo, meminfo, lspci, lsirq, netstats syscalls + virtual .mos files
 - **Userland Shell** - Interactive command-line shell running in Ring 3
 - **DOOM Port** - doomgeneric DOOM engine running in a WM window (640x400 build, indexed-color window buffer composited by the WM)
-- **Test Suite** - 23-test userland test suite covering syscalls, memory, process isolation, VFS, argv
+- **Test Suite** - 33-test userland test suite covering syscalls, memory, process isolation, VFS, argv, security validation
 
 ## Building
 
@@ -203,7 +203,7 @@ These are separate ELF binaries invoked by name:
 - `ifconfig [ip mask gw]` - Show or set network configuration
 - `shutdown` - Power off (ACPI)
 - `hello` - Hello world demo
-- `test` - Run 23-test suite
+- `test` - Run 33-test suite
 - `cctest` - Compiler smoke test (`cc test2.c` + `cc test.c` + run outputs; requires FAT16 test files)
 - `gui` - Start window manager (launches winterm + file manager)
 - `winterm` - Terminal emulator (inside WM) `.wlf`
@@ -227,7 +227,7 @@ Append `&` to run in background (for manual service testing): `httpd &`
 $ test
 ```
 
-23 tests covering:
+33 tests covering:
 1. Basic syscalls (write, yield)
 2. String operations
 3. Math (addition, multiplication, division, modulo)
@@ -251,6 +251,16 @@ $ test
 21. VFS file I/O (open, read, seek, close, stat, ELF magic check)
 22. spawn_argv syscall (pass arguments to child)
 23. write edge cases (len=0, NULL buffer, fd=2)
+24. Syscall pointer validation (NULL, kernel-range rejection for open/fread)
+25. fd_write pointer validation (NULL, kernel-range, valid buffer)
+26. stat edge cases (nonexistent file, NULL path, valid file fields)
+27. sbrk heap allocation (allocate, write/read pattern, break advances)
+28. kill syscall (nonexistent PID, spawn+kill child)
+29. getticks monotonicity (non-decreasing, non-zero)
+30. File descriptor limits (exhaust fds, close all, reopen)
+31. VFS seek edge cases (SEEK_CUR, SEEK_SET, SEEK_END, read at EOF)
+32. Invalid fd operations (negative fd, out-of-range, double close)
+33. tasklist pointer validation (NULL, kernel-range rejection)
 
 ## FAT16 Filesystem
 
@@ -434,7 +444,7 @@ User-space programs:
 - `shell.c` - Interactive shell with background job support and auto `.elf` fallback to `.wlf`
 - `init.c` - Minimal userland init daemon (starts `httpd`, launches/respawns `shell`)
 - `hello.c` - Hello world test program
-- `test.c` - Comprehensive test suite (23 tests)
+- `test.c` - Comprehensive test suite (33 tests)
 - `gui.c` - Window manager (compositing, drag, z-order, close buttons, desktop icons, mouse cursor)
 - `winterm.c` - Terminal emulator (61x34 chars, stdout redirect, argv passing) → `.wlf`
 - `winhello.c` - Window hello world demo → `.wlf`

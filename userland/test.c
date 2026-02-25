@@ -822,6 +822,508 @@ static int test_write_edges(void) {
 }
 
 // ============================================================
+// Test 24: Syscall pointer validation (NULL rejection)
+// ============================================================
+static int test_ptr_validation(void) {
+    print("TEST 24: Syscall pointer validation\n");
+
+    // open(NULL) should return -1
+    int ret = open((const char *)0, 0);
+    if (ret != -1) {
+        print("  FAILED: open(NULL) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - open(NULL): rejected OK\n");
+
+    // fd_read with NULL buffer should return -1
+    int fd = open("hello.elf", 0);
+    if (fd >= 0) {
+        ret = fd_read(fd, (void *)0, 64);
+        if (ret != -1) {
+            print("  FAILED: fd_read(NULL) returned ");
+            print_num(ret);
+            print(" (expected -1)\n");
+            close(fd);
+            return 0;
+        }
+        print("  - fd_read(NULL buf): rejected OK\n");
+
+        // fd_read with kernel-range pointer should return -1
+        ret = fd_read(fd, (void *)0x100000, 64);
+        if (ret != -1) {
+            print("  FAILED: fd_read(kernel ptr) returned ");
+            print_num(ret);
+            print(" (expected -1)\n");
+            close(fd);
+            return 0;
+        }
+        print("  - fd_read(kernel ptr): rejected OK\n");
+
+        close(fd);
+    }
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 25: fd_write pointer validation
+// ============================================================
+static int test_fwrite_validation(void) {
+    print("TEST 25: fd_write pointer validation\n");
+
+    // fd_write with NULL buffer should return -1
+    int ret = fd_write(1, (const void *)0, 10);
+    if (ret != -1) {
+        print("  FAILED: fd_write(NULL) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - fd_write(NULL buf): rejected OK\n");
+
+    // fd_write with kernel-range pointer should return -1
+    ret = fd_write(1, (const void *)0x200000, 10);
+    if (ret != -1) {
+        print("  FAILED: fd_write(kernel ptr) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - fd_write(kernel ptr): rejected OK\n");
+
+    // fd_write with valid user buffer should work (console fd)
+    char msg[] = "X";
+    ret = fd_write(1, msg, 1);
+    print("\n");
+    if (ret != 1) {
+        print("  FAILED: fd_write(valid) returned ");
+        print_num(ret);
+        print(" (expected 1)\n");
+        return 0;
+    }
+    print("  - fd_write(valid buf): OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 26: stat syscall edge cases
+// ============================================================
+static int test_stat_edges(void) {
+    print("TEST 26: stat edge cases\n");
+
+    // stat on nonexistent file should return -1
+    stat_t st;
+    int ret = stat("nosuchfile.xyz", &st);
+    if (ret != -1) {
+        print("  FAILED: stat(nonexistent) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - stat(nonexistent): -1 OK\n");
+
+    // stat on NULL path should return -1
+    ret = stat((const char *)0, &st);
+    if (ret != -1) {
+        print("  FAILED: stat(NULL) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - stat(NULL path): -1 OK\n");
+
+    // stat on valid file should return 0 with sane fields
+    ret = stat("shell.elf", &st);
+    if (ret != 0) {
+        print("  FAILED: stat(shell.elf) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    if (st.size == 0) {
+        print("  FAILED: shell.elf size is 0\n");
+        return 0;
+    }
+    if (st.type != 0) {
+        print("  FAILED: shell.elf type not 0 (file)\n");
+        return 0;
+    }
+    print("  - stat(shell.elf): size=");
+    print_num(st.size);
+    print(" type=0 OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 27: sbrk / heap allocation
+// ============================================================
+static int test_sbrk(void) {
+    print("TEST 27: sbrk heap allocation\n");
+
+    // Get current break
+    void *base = sbrk(0);
+    if (base == (void *)-1) {
+        print("  FAILED: sbrk(0) returned -1\n");
+        return 0;
+    }
+    print("  - initial brk: ");
+    print_hex((unsigned int)base);
+    print("\n");
+
+    // Allocate 256 bytes
+    void *p = sbrk(256);
+    if (p == (void *)-1) {
+        print("  FAILED: sbrk(256) returned -1\n");
+        return 0;
+    }
+    print("  - sbrk(256) returned: ");
+    print_hex((unsigned int)p);
+    print("\n");
+
+    // Write a pattern to the allocated memory
+    unsigned char *buf = (unsigned char *)p;
+    for (int i = 0; i < 256; i++) {
+        buf[i] = (unsigned char)(i ^ 0xA5);
+    }
+    // Read back and verify
+    for (int i = 0; i < 256; i++) {
+        if (buf[i] != (unsigned char)(i ^ 0xA5)) {
+            print("  FAILED: heap corruption at offset ");
+            print_num(i);
+            print("\n");
+            return 0;
+        }
+    }
+    print("  - write/read 256 bytes: OK\n");
+
+    // New break should be higher
+    void *new_base = sbrk(0);
+    if ((unsigned int)new_base <= (unsigned int)p) {
+        print("  FAILED: break did not advance\n");
+        return 0;
+    }
+    print("  - new brk: ");
+    print_hex((unsigned int)new_base);
+    print(" OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 28: kill syscall
+// ============================================================
+static int test_kill(void) {
+    print("TEST 28: kill syscall\n");
+
+    // Kill nonexistent PID should return -1
+    int ret = kill(9999);
+    if (ret != -1) {
+        print("  FAILED: kill(9999) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - kill(nonexistent): -1 OK\n");
+
+    // Spawn a child, then kill it
+    int child = spawn("burn.elf");
+    if (child < 0) {
+        // burn.elf may not exist; try hello.elf with a sleep-based approach
+        print("  SKIP: burn.elf not available\n");
+    } else {
+        // Give child a chance to start
+        yield();
+        ret = kill(child);
+        if (ret != 0) {
+            print("  FAILED: kill(child) returned ");
+            print_num(ret);
+            print("\n");
+            return 0;
+        }
+        // Wait should return a negative exit code (killed)
+        int code = wait(child);
+        print("  - killed child exit code: ");
+        print_num(code);
+        print("\n");
+        print("  - kill(child): OK\n");
+    }
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 29: getticks monotonicity
+// ============================================================
+static int test_getticks(void) {
+    print("TEST 29: getticks monotonicity\n");
+
+    unsigned int t1 = get_ticks();
+    yield();  // let at least one tick pass
+    unsigned int t2 = get_ticks();
+
+    print("  - t1=");
+    print_num(t1);
+    print(" t2=");
+    print_num(t2);
+    print("\n");
+
+    if (t2 < t1) {
+        print("  FAILED: ticks went backwards\n");
+        return 0;
+    }
+    print("  - monotonic: OK\n");
+
+    // Verify ticks are non-zero (system has been running)
+    if (t1 == 0 && t2 == 0) {
+        print("  FAILED: ticks stuck at 0\n");
+        return 0;
+    }
+    print("  - non-zero: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 30: File descriptor limits
+// ============================================================
+static int test_fd_limits(void) {
+    print("TEST 30: File descriptor limits\n");
+
+    // Open files until we hit the limit (fds 0-2 reserved, max 16 total = 13 available)
+    int fds[16];
+    int count = 0;
+    for (int i = 0; i < 16; i++) {
+        fds[i] = open("hello.elf", 0);
+        if (fds[i] < 0) break;
+        count++;
+    }
+    print("  - opened ");
+    print_num(count);
+    print(" fds before exhaustion\n");
+
+    if (count == 0) {
+        print("  FAILED: couldn't open any files\n");
+        return 0;
+    }
+    if (count >= 16) {
+        print("  FAILED: no fd limit enforced\n");
+        // Close them all
+        for (int i = 0; i < count; i++) close(fds[i]);
+        return 0;
+    }
+
+    // Close all opened fds
+    for (int i = 0; i < count; i++) {
+        int ret = close(fds[i]);
+        if (ret != 0) {
+            print("  FAILED: close(fd=");
+            print_num(fds[i]);
+            print(") returned ");
+            print_num(ret);
+            print("\n");
+            return 0;
+        }
+    }
+    print("  - all fds closed: OK\n");
+
+    // After closing, we should be able to open again
+    int fd = open("hello.elf", 0);
+    if (fd < 0) {
+        print("  FAILED: can't open after closing all\n");
+        return 0;
+    }
+    close(fd);
+    print("  - reopen after close: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 31: VFS seek edge cases
+// ============================================================
+static int test_seek_edges(void) {
+    print("TEST 31: VFS seek edge cases\n");
+
+    int fd = open("hello.elf", 0);
+    if (fd < 0) {
+        print("  FAILED: couldn't open hello.elf\n");
+        return 0;
+    }
+
+    // Read 4 bytes to advance position
+    unsigned char tmp[4];
+    fd_read(fd, tmp, 4);
+
+    // SEEK_CUR with 0 should return current position (4)
+    int pos = seek(fd, 0, SEEK_CUR);
+    if (pos != 4) {
+        print("  FAILED: SEEK_CUR(0) returned ");
+        print_num(pos);
+        print(" (expected 4)\n");
+        close(fd);
+        return 0;
+    }
+    print("  - SEEK_CUR(0) = 4: OK\n");
+
+    // SEEK_SET to 0 should return 0
+    pos = seek(fd, 0, SEEK_SET);
+    if (pos != 0) {
+        print("  FAILED: SEEK_SET(0) returned ");
+        print_num(pos);
+        print("\n");
+        close(fd);
+        return 0;
+    }
+    print("  - SEEK_SET(0) = 0: OK\n");
+
+    // SEEK_END to 0 should return file size
+    stat_t st;
+    stat("hello.elf", &st);
+    pos = seek(fd, 0, SEEK_END);
+    if (pos != (int)st.size) {
+        print("  FAILED: SEEK_END(0) returned ");
+        print_num(pos);
+        print(" expected ");
+        print_num(st.size);
+        print("\n");
+        close(fd);
+        return 0;
+    }
+    print("  - SEEK_END(0) = ");
+    print_num(pos);
+    print(": OK\n");
+
+    // Read at EOF should return 0
+    int n = fd_read(fd, tmp, 4);
+    if (n != 0) {
+        print("  FAILED: read at EOF returned ");
+        print_num(n);
+        print(" (expected 0)\n");
+        close(fd);
+        return 0;
+    }
+    print("  - read at EOF = 0: OK\n");
+
+    close(fd);
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 32: close/seek/read on invalid fd
+// ============================================================
+static int test_invalid_fd(void) {
+    print("TEST 32: Invalid fd operations\n");
+
+    // Operations on negative fd
+    int ret = close(-1);
+    if (ret != -1) {
+        print("  FAILED: close(-1) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - close(-1): -1 OK\n");
+
+    // Operations on fd beyond range
+    ret = close(99);
+    if (ret != -1) {
+        print("  FAILED: close(99) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - close(99): -1 OK\n");
+
+    // Read from invalid fd
+    unsigned char buf[4];
+    ret = fd_read(99, buf, 4);
+    if (ret != -1) {
+        print("  FAILED: fd_read(99) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - fd_read(99): -1 OK\n");
+
+    // Seek on invalid fd
+    ret = seek(99, 0, SEEK_SET);
+    if (ret != -1) {
+        print("  FAILED: seek(99) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - seek(99): -1 OK\n");
+
+    // Double close: open a file, close it, close again
+    int fd = open("hello.elf", 0);
+    if (fd >= 0) {
+        close(fd);
+        ret = close(fd);
+        if (ret != -1) {
+            print("  FAILED: double close returned ");
+            print_num(ret);
+            print("\n");
+            return 0;
+        }
+        print("  - double close: -1 OK\n");
+    }
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 33: tasklist pointer validation
+// ============================================================
+static int test_tasklist_validation(void) {
+    print("TEST 33: tasklist pointer validation\n");
+
+    // tasklist with NULL buffer should return -1
+    int ret = tasklist((taskinfo_entry_t *)0, 16);
+    if (ret != -1) {
+        print("  FAILED: tasklist(NULL) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - tasklist(NULL, 16): rejected OK\n");
+
+    // tasklist with kernel-range pointer should return -1
+    ret = tasklist((taskinfo_entry_t *)0x100000, 4);
+    if (ret != -1) {
+        print("  FAILED: tasklist(kernel ptr) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - tasklist(kernel ptr): rejected OK\n");
+
+    // tasklist with count=0 should be harmless (returns 0)
+    taskinfo_entry_t dummy;
+    ret = tasklist(&dummy, 0);
+    // count=0 bypasses validation, function just returns 0
+    print("  - tasklist(buf, 0) = ");
+    print_num(ret);
+    print(": OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
@@ -831,7 +1333,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 23;
+    int total = 33;
 
     // Run all tests
     if (test_syscalls())         passed++;  // 1
@@ -857,6 +1359,16 @@ void _start(int argc, char **argv) {
     if (test_vfs_io())           passed++;  // 21
     if (test_spawn_argv())       passed++;  // 22
     if (test_write_edges())      passed++;  // 23
+    if (test_ptr_validation())   passed++;  // 24
+    if (test_fwrite_validation()) passed++; // 25
+    if (test_stat_edges())       passed++;  // 26
+    if (test_sbrk())             passed++;  // 27
+    if (test_kill())             passed++;  // 28
+    if (test_getticks())         passed++;  // 29
+    if (test_fd_limits())        passed++;  // 30
+    if (test_seek_edges())       passed++;  // 31
+    if (test_invalid_fd())       passed++;  // 32
+    if (test_tasklist_validation()) passed++; // 33
 
     print("========================================\n");
     print("  Results: ");

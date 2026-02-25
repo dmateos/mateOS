@@ -21,6 +21,31 @@
 #include "arch/i686/mouse.h"
 #include "memlayout.h"
 
+// ---- User pointer validation helpers ----
+// Validate that a user-supplied buffer [ptr, ptr+size) falls entirely within
+// the user-accessible address range. Returns 1 if valid, 0 if not.
+static inline int validate_user_ptr(uint32_t ptr, uint32_t size) {
+  if (ptr == 0) return 0;                       // NULL pointer
+  if (ptr < USER_REGION_START) return 0;         // below user region
+  if (size > USER_REGION_END - USER_REGION_START) return 0;  // impossibly large
+  if (ptr + size < ptr) return 0;                // overflow
+  if (ptr + size > USER_REGION_END) return 0;    // exceeds user region
+  return 1;
+}
+
+// Validate a null-terminated string pointer. Walks until NUL or bounds exceeded.
+// Returns 1 if a NUL terminator is found within the user region, 0 otherwise.
+static inline int validate_user_string(uint32_t ptr) {
+  if (ptr == 0) return 0;
+  if (ptr < USER_REGION_START || ptr >= USER_REGION_END) return 0;
+  const char *s = (const char *)ptr;
+  uint32_t max_len = USER_REGION_END - ptr;
+  for (uint32_t i = 0; i < max_len; i++) {
+    if (s[i] == '\0') return 1;
+  }
+  return 0;  // no NUL found within bounds
+}
+
 // Track whether a user program is in graphics mode
 static int user_gfx_active = 0;
 static int user_gfx_bga = 0;         // 1 if using BGA, 0 if Mode 13h
@@ -229,6 +254,11 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
       stack_phys_top = phys;
     }
   }
+
+  // The page at USER_STACK_GUARD_VADDR (one page below the stack) is
+  // intentionally left unmapped. If a user program overflows its stack,
+  // it will hit this unmapped page and trigger a page fault, which the
+  // exception handler reports as "stack overflow" before killing the task.
 
   if (stack_phys_out) {
     *stack_phys_out = stack_phys_top;
@@ -650,6 +680,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_WIN_WRITE: {
+      if (!validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       task_t *cur = task_current();
       return cur ? (uint32_t)window_write((int)ebx, cur->id,
                                           (const uint8_t *)ecx, edx)
@@ -657,6 +688,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_WIN_READ:
+      if (!validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       return (uint32_t)window_read((int)ebx, (uint8_t *)ecx, edx);
 
     case SYS_WIN_GETKEY: {
@@ -669,12 +701,16 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return (uint32_t)window_sendkey((int)ebx, (uint8_t)ecx);
 
     case SYS_WIN_LIST:
+      if (ecx > 0 && !validate_user_ptr(ebx, (uint32_t)ecx * sizeof(win_info_t)))
+        return (uint32_t)-1;
       return (uint32_t)window_list((win_info_t *)ebx, (int)ecx);
 
     case SYS_GFX_INFO:
       return sys_do_gfx_info();
 
     case SYS_TASKLIST:
+      if (ecx > 0 && !validate_user_ptr(ebx, (uint32_t)ecx * sizeof(taskinfo_entry_t)))
+        return (uint32_t)-1;
       return (uint32_t)task_list_info((void *)ebx, (int)ecx);
 
     case SYS_WAIT_NB:
@@ -716,15 +752,18 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return (uint32_t)net_sock_accept((int)ebx);
 
     case SYS_SOCK_SEND:
+      if (!validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       return (uint32_t)net_sock_send((int)ebx, (const void *)ecx, edx);
 
     case SYS_SOCK_RECV:
+      if (!validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       return (uint32_t)net_sock_recv((int)ebx, (void *)ecx, edx);
 
     case SYS_SOCK_CLOSE:
       return (uint32_t)net_sock_close((int)ebx);
 
     case SYS_WIN_READ_TEXT: {
+      if (edx > 0 && !validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       task_t *cur = task_current();
       return cur ? (uint32_t)window_read_text((int)ebx, cur->id,
                                               (char *)ecx, (int)edx)
@@ -747,6 +786,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_OPEN: {
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
       task_t *cur = task_current();
       if (!cur || !cur->fd_table) return (uint32_t)-1;
       char opath[VFS_PATH_MAX];
@@ -755,12 +795,14 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_FREAD: {
+      if (!validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       task_t *cur = task_current();
       if (!cur || !cur->fd_table) return (uint32_t)-1;
       return (uint32_t)vfs_read(cur->fd_table, (int)ebx, (void *)ecx, edx);
     }
 
     case SYS_FWRITE: {
+      if (!validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       task_t *cur = task_current();
       if (!cur || !cur->fd_table) return (uint32_t)-1;
       int fwfd = (int)ebx;

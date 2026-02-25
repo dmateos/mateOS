@@ -1,6 +1,7 @@
 #include "interrupts.h"
 #include "../../lib.h"
 #include "../../task.h"
+#include "../../memlayout.h"
 #include "io.h"
 #include "util.h"
 
@@ -214,6 +215,12 @@ void idt_exception_handler(uint32_t number, uint32_t noerror, uint32_t fault_eip
     if (noerror & 0x2) printf("write "); else printf("read ");
     if (noerror & 0x4) printf("user"); else printf("supervisor");
     printf(")\n");
+    // Detect stack overflow: fault in the guard page just below the user stack
+    if (fault_addr >= USER_STACK_GUARD_VADDR &&
+        fault_addr < USER_STACK_BASE_VADDR) {
+      printf("[kernel] stack overflow detected (guard page hit at 0x%x)\n",
+             fault_addr);
+    }
     break;
   }
   case 0x03:
