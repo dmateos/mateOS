@@ -360,6 +360,8 @@ task_t *task_create_user_elf(const char *filename, const char **argv, int argc) 
       task->fd_table->fds[i].in_use = 1;
       task->fd_table->fds[i].fs_id = -1;
       task->fd_table->fds[i].fs_handle = i;
+      // fd 0=stdin(read), fd 1=stdout(write), fd 2=stderr(write)
+      task->fd_table->fds[i].open_flags = (i == 0) ? O_RDONLY : O_WRONLY;
     }
   }
 

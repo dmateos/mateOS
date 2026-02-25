@@ -198,6 +198,7 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
         fdt->fds[fd].in_use = 1;
         fdt->fds[fd].fs_id = vfs_virtual_fs_id_from_index(vfi);
         fdt->fds[fd].fs_handle = 0;
+        fdt->fds[fd].open_flags = flags;
         vfs_copy_path(fdt->fds[fd].debug_path, path);
         return fd;
     }
@@ -209,6 +210,7 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
             fdt->fds[fd].in_use = 1;
             fdt->fds[fd].fs_id = fs;
             fdt->fds[fd].fs_handle = handle;
+            fdt->fds[fd].open_flags = flags;
             vfs_copy_path(fdt->fds[fd].debug_path, path);
             return fd;
         }
@@ -220,6 +222,10 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
 int vfs_read(vfs_fd_table_t *fdt, int fd, void *buf, uint32_t len) {
     if (!fdt || fd < 0 || fd >= VFS_MAX_FDS_PER_TASK) return -1;
     if (!fdt->fds[fd].in_use) return -1;
+
+    // Reject reads on write-only fds
+    int access = fdt->fds[fd].open_flags & 0x3;
+    if (access == O_WRONLY) return -1;
 
     int fs = fdt->fds[fd].fs_id;
     if (fs < 0 && fs > VFS_VIRT_BASE_ID) return -1; // console fd, not VFS-backed
@@ -244,6 +250,10 @@ int vfs_read(vfs_fd_table_t *fdt, int fd, void *buf, uint32_t len) {
 int vfs_write(vfs_fd_table_t *fdt, int fd, const void *buf, uint32_t len) {
     if (!fdt || fd < 0 || fd >= VFS_MAX_FDS_PER_TASK) return -1;
     if (!fdt->fds[fd].in_use) return -1;
+
+    // Reject writes on read-only fds
+    int access = fdt->fds[fd].open_flags & 0x3;
+    if (access == O_RDONLY) return -1;
 
     int fs = fdt->fds[fd].fs_id;
     if (fs < 0 && fs > VFS_VIRT_BASE_ID) return -1; // console fd, not VFS-backed
@@ -279,6 +289,7 @@ int vfs_close(vfs_fd_table_t *fdt, int fd) {
     fdt->fds[fd].in_use = 0;
     fdt->fds[fd].fs_id = 0;
     fdt->fds[fd].fs_handle = 0;
+    fdt->fds[fd].open_flags = 0;
     fdt->fds[fd].debug_path[0] = '\0';
     return ret;
 }

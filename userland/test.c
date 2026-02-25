@@ -1524,6 +1524,69 @@ static int test_path_validation(void) {
 }
 
 // ============================================================
+// Test 39: VFS open mode enforcement
+// ============================================================
+static int test_vfs_mode(void) {
+    print("TEST 39: VFS open mode enforcement\n");
+
+    // Open a file read-only
+    int fd = open("hello.elf", O_RDONLY);
+    if (fd < 0) {
+        print("  FAILED: open(hello.elf, RDONLY) failed\n");
+        return 0;
+    }
+
+    // Read should succeed
+    unsigned char buf[4];
+    int n = fd_read(fd, buf, 4);
+    if (n != 4) {
+        print("  FAILED: read on RDONLY fd returned ");
+        print_num(n);
+        print("\n");
+        close(fd);
+        return 0;
+    }
+    print("  - read on RDONLY fd: OK\n");
+
+    // Write to read-only fd should fail
+    int ret = fd_write(fd, "X", 1);
+    if (ret != -1) {
+        print("  FAILED: write on RDONLY fd returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        close(fd);
+        return 0;
+    }
+    print("  - write on RDONLY fd: rejected OK\n");
+
+    close(fd);
+
+    // Console fd 1 (stdout) is write-only, read should fail
+    n = fd_read(1, buf, 4);
+    if (n != -1) {
+        print("  FAILED: read on stdout returned ");
+        print_num(n);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - read on stdout (WRONLY): rejected OK\n");
+
+    // Console fd 1 (stdout) write should succeed
+    ret = fd_write(1, "Y", 1);
+    print("\n");
+    if (ret != 1) {
+        print("  FAILED: write on stdout returned ");
+        print_num(ret);
+        print(" (expected 1)\n");
+        return 0;
+    }
+    print("  - write on stdout (WRONLY): OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
@@ -1533,7 +1596,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 38;
+    int total = 39;
 
     // Run all tests
     if (test_syscalls())         passed++;  // 1
@@ -1574,6 +1637,7 @@ void _start(int argc, char **argv) {
     if (test_readdir_ptr_validation()) passed++; // 36
     if (test_getcwd_validation()) passed++;    // 37
     if (test_path_validation())   passed++;    // 38
+    if (test_vfs_mode())          passed++;    // 39
 
     print("========================================\n");
     print("  Results: ");

@@ -49,6 +49,7 @@ typedef struct {
     int in_use;
     int fs_id;
     int fs_handle;
+    int open_flags;   // O_RDONLY / O_WRONLY / O_RDWR (access mode from open())
     char debug_path[VFS_PATH_MAX];
 } vfs_fd_t;
 

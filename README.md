@@ -73,15 +73,15 @@ Inspired by experimenting with a simple OS on the 6502.
 
 ### User Mode Support
 - **TSS (Task State Segment)** - Kernel stack switching on ring transitions
-- **51 Syscalls** via int 0x80:
+- **52 Syscalls** via int 0x80:
   - **Process:** write, exit, yield, exec, spawn, wait, wait_nb, getpid, tasklist, shutdown, sleep_ms, detach, kill, getticks
   - **Graphics:** gfx_init, gfx_exit, gfx_info, getmouse
   - **Keyboard:** getkey
-  - **Filesystem:** readdir, open, fread, fwrite, close, seek, stat, unlink
+  - **Filesystem:** readdir, open, fread, fwrite, close, seek, stat, unlink, mkdir, rmdir, chdir, getcwd
   - **Window Manager:** win_create, win_destroy, win_write, win_read, win_getkey, win_sendkey, win_list, win_read_text, win_set_stdout
   - **Networking:** net_ping, net_cfg, net_get, sock_listen, sock_accept, sock_send, sock_recv, sock_close, netstats
   - **Memory:** sbrk
-  - **System Info:** lspci, lsirq, meminfo, cpuinfo
+  - **Debug:** debug_exit
 - **Memory Isolation** - User pages marked non-supervisor, kernel pages protected
 - **Separate Stacks** - Each user process has independent kernel and user stacks
 
@@ -100,7 +100,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **System Info** - cpuinfo, meminfo, lspci, lsirq, netstats syscalls + virtual .mos files
 - **Userland Shell** - Interactive command-line shell running in Ring 3
 - **DOOM Port** - doomgeneric DOOM engine running in a WM window (640x400 build, indexed-color window buffer composited by the WM)
-- **Test Suite** - 38-test userland test suite covering syscalls, memory, process isolation, VFS, argv, security validation
+- **Test Suite** - 39-test userland test suite covering syscalls, memory, process isolation, VFS, argv, security validation
 
 ## Building
 
@@ -203,7 +203,7 @@ These are separate ELF binaries invoked by name:
 - `ifconfig [ip mask gw]` - Show or set network configuration
 - `shutdown` - Power off (ACPI)
 - `hello` - Hello world demo
-- `test` - Run 38-test suite
+- `test` - Run 39-test suite
 - `cctest` - Compiler smoke test (`cc test2.c` + `cc test.c` + run outputs; requires FAT16 test files)
 - `gui` - Start window manager (launches winterm + file manager)
 - `winterm` - Terminal emulator (inside WM) `.wlf`
@@ -227,7 +227,7 @@ Append `&` to run in background (for manual service testing): `httpd &`
 $ test
 ```
 
-38 tests covering:
+39 tests covering:
 1. Basic syscalls (write, yield)
 2. String operations
 3. Math (addition, multiplication, division, modulo)
@@ -266,6 +266,7 @@ $ test
 36. readdir() pointer validation (NULL, kernel-range buffer rejection)
 37. getcwd() pointer validation (NULL, kernel-range, valid buffer)
 38. Path syscall validation (unlink/mkdir/rmdir/chdir NULL and kernel-range)
+39. VFS open mode enforcement (write rejected on RDONLY fd, read rejected on WRONLY fd)
 
 ## FAT16 Filesystem
 
@@ -337,7 +338,7 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 
 ## Syscall Reference
 
-50 syscalls via int 0x80 (eax=syscall#, ebx/ecx/edx=args, return in eax):
+52 syscalls via int 0x80 (eax=syscall#, ebx/ecx/edx=args, return in eax):
 
 | # | Name | Signature | Description |
 |---|------|-----------|-------------|
@@ -386,8 +387,13 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 | 43 | SYS_UNLINK | unlink(path) | Delete file |
 | 44 | SYS_KILL | kill(pid) | Terminate task by PID |
 | 45 | SYS_GETTICKS | getticks() | Get timer ticks (100Hz) |
+| 46 | SYS_MKDIR | mkdir(path) | Create directory |
+| 47 | SYS_CHDIR | chdir(path) | Change working directory |
+| 48 | SYS_GETCWD | getcwd(buf, size) | Get working directory |
+| 49 | SYS_RMDIR | rmdir(path) | Remove directory |
 | 50 | SYS_NETSTATS | netstats(&rx, &tx) | Get network packet counts |
 | 51 | SYS_SBRK | sbrk(increment) | Move program break (user heap) |
+| 52 | SYS_DEBUG_EXIT | debug_exit(code) | Write code to QEMU debug port |
 
 ## Project Structure
 
@@ -395,7 +401,7 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 Main kernel source files:
 - `kernel.c` - Kernel entry point and initialization
 - `task.c/h` - Task management, scheduler, per-process CR3 switching
-- `syscall.c/h` - System call dispatcher and handlers (IDs 46-49 retired)
+- `syscall.c/h` - System call dispatcher and handlers (52 syscalls, IDs 1-52)
 - `pmm.c/h` - Physical memory manager (bitmap frame allocator)
 - `elf.c/h` - ELF32 binary loader
 - `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
