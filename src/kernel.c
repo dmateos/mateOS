@@ -179,7 +179,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
   keyboard_buffer_init();
   keyboard_buffer_enable(1);
 
-  const char *boot_prog = "shell.elf";
+  const char *boot_prog = "init.elf";
   char autorun_name[64];
   char autorun_prog[72];
   if (cmdline_get_value(cmdline, "autorun", autorun_name, sizeof(autorun_name))) {

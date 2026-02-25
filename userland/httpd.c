@@ -16,7 +16,11 @@ static const char *not_found_response =
     "Content-Type: text/html\r\n"
     "Connection: close\r\n"
     "\r\n"
-    "<html><body><h1>404 Not Found</h1><p>Try /index.htm or /os</p></body></html>\n";
+    "<!doctype html><html><head><meta charset=\"utf-8\">"
+    "<title>404 Not Found</title>"
+    "<style>body{font-family:monospace;background:#111827;color:#e5e7eb;padding:24px}"
+    "a{color:#93c5fd}</style></head><body><h1>404 Not Found</h1>"
+    "<p>Try <a href=\"/\">/</a> or <a href=\"/index.htm\">/index.htm</a></p></body></html>\n";
 
 static char file_body[8192];
 static char os_log[12288];
@@ -63,12 +67,18 @@ static int parse_route(const char *req, int req_len) {
 
     int path_len = path_end - path_start;
     if (path_len == 1 && req[path_start] == '/') {
-        return ROUTE_INDEX;
+        return ROUTE_OS;
+    }
+    if (path_len > 1 && req[path_start] == '/' && req[path_start + 1] == '?') {
+        return ROUTE_OS;
     }
     if (path_len == 10 && strncmp(req + path_start, "/index.htm", 10) == 0) {
         return ROUTE_INDEX;
     }
     if (path_len == 3 && strncmp(req + path_start, "/os", 3) == 0) {
+        return ROUTE_OS;
+    }
+    if (path_len == 4 && strncmp(req + path_start, "/os/", 4) == 0) {
         return ROUTE_OS;
     }
     if (path_len > 3 && strncmp(req + path_start, "/os?", 4) == 0) {
@@ -146,9 +156,14 @@ static int append_escaped(char *dst, int cap, int *len, const char *src, int src
 }
 
 static int append_section(int *out_len, const char *title, const char *path) {
-    if (append_cstr(os_page, sizeof(os_page), out_len, "<h2>") < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len,
+                    "<section class=\"card\"><div class=\"cardhead\"><h2>") < 0) return -1;
     if (append_cstr(os_page, sizeof(os_page), out_len, title) < 0) return -1;
-    if (append_cstr(os_page, sizeof(os_page), out_len, "</h2><pre>") < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len,
+                    "</h2><span class=\"path\">") < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len, path) < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len,
+                    "</span></div><pre>") < 0) return -1;
 
     int n = read_file(path, os_log, sizeof(os_log));
     if (n > 0) {
@@ -156,18 +171,43 @@ static int append_section(int *out_len, const char *title, const char *path) {
     } else {
         if (append_cstr(os_page, sizeof(os_page), out_len, "(unavailable)") < 0) return -1;
     }
-    if (append_cstr(os_page, sizeof(os_page), out_len, "</pre>") < 0) return -1;
+    if (append_cstr(os_page, sizeof(os_page), out_len, "</pre></section>") < 0) return -1;
     return 0;
 }
 
 static int serve_os_page(int client) {
     int out_len = 0;
     if (append_cstr(os_page, sizeof(os_page), &out_len,
-                    "<html><head><title>mateOS /os</title></head><body>") < 0) {
+                    "<!doctype html><html><head><meta charset=\"utf-8\">"
+                    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                    "<title>mateOS /os</title>"
+                    "<style>"
+                    "body{margin:0;font-family:monospace;background:#0b1220;color:#dbe4f0}"
+                    ".wrap{max-width:1100px;margin:0 auto;padding:20px}"
+                    ".hero{background:#111a2d;border:1px solid #263247;border-radius:12px;padding:16px 18px;"
+                    "box-shadow:0 8px 24px rgba(0,0,0,.25)}"
+                    ".hero h1{margin:0 0 6px 0;font-size:22px;color:#f8fafc}"
+                    ".muted{color:#9fb0c6;margin:0}"
+                    ".links{margin-top:10px}"
+                    ".links a{display:inline-block;margin-right:8px;padding:4px 8px;border-radius:7px;"
+                    "background:#1a2740;border:1px solid #314566;color:#c7dcff;text-decoration:none}"
+                    ".grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:14px}"
+                    ".card{background:#111a2d;border:1px solid #263247;border-radius:12px;overflow:hidden}"
+                    ".cardhead{display:flex;justify-content:space-between;align-items:center;"
+                    "padding:10px 12px;background:#0f1728;border-bottom:1px solid #263247;gap:10px}"
+                    ".card h2{margin:0;font-size:14px;color:#e6eefb}"
+                    ".path{font-size:11px;color:#8fa3be}"
+                    "pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-word;"
+                    "color:#dbe4f0;background:#111a2d;max-height:280px;overflow:auto}"
+                    "@media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}"
+                    "</style></head><body><div class=\"wrap\">") < 0) {
         return -1;
     }
     if (append_cstr(os_page, sizeof(os_page), &out_len,
-                    "<h1>mateOS /os</h1><p>virtual kernel files</p>") < 0) {
+                    "<div class=\"hero\"><h1>mateOS system status</h1>"
+                    "<p class=\"muted\">Virtual kernel files exposed over httpd</p>"
+                    "<div class=\"links\"><a href=\"/\">/</a><a href=\"/index.htm\">index.htm</a>"
+                    "<a href=\"/os\">legacy /os</a></div></div><div class=\"grid\">") < 0) {
         return -1;
     }
     if (append_section(&out_len, "kcpuinfo.mos", "/kcpuinfo.mos") < 0) return -1;
@@ -184,7 +224,7 @@ static int serve_os_page(int client) {
     if (append_section(&out_len, "kversion.mos", "/kversion.mos") < 0) return -1;
 
     if (append_cstr(os_page, sizeof(os_page), &out_len,
-                    "</body></html>\n") < 0) {
+                    "</div></div></body></html>\n") < 0) {
         return -1;
     }
 

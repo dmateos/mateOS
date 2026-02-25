@@ -28,6 +28,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Background Jobs** - Shell supports `&` suffix to run tasks in background with `jobs` tracking
 
 ### Process Management
+- **Userland Init Daemon** - `init.elf` is the default boot program; starts `httpd.elf`, launches `shell.elf`, and respawns the shell on exit
 - **spawn + wait** - Fork-like process creation from ELF binaries
 - **argc/argv** - Programs receive command-line arguments via `_start(int argc, char **argv)`
 - **Non-blocking wait** - `wait_nb()` polls child status without blocking
@@ -42,7 +43,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **lwIP TCP/IP Stack** - Full IPv4 networking (ARP, ICMP, TCP, UDP)
 - **ICMP Ping** - `ping` command and `net_ping()` syscall
 - **TCP Sockets** - Kernel socket table with listen/accept/send/recv/close syscalls
-- **HTTP Server** - Userland `httpd` serves HTML on port 80 (socket ownership tracking + task-exit cleanup + `SO_REUSEADDR` for restart reliability)
+- **HTTP Server** - Userland `httpd` serves HTML on port 80 (auto-started by `init.elf`; socket ownership tracking + task-exit cleanup + `SO_REUSEADDR` for restart reliability)
 - **Network Configuration** - `ifconfig` command to set/view IP, netmask, gateway
 - **DHCP via QEMU** - Automatic IP configuration with QEMU user-mode networking
 
@@ -154,14 +155,12 @@ Flags can be combined freely:
 ### Testing the HTTP Server
 
 ```bash
-# Terminal 1: start OS with networking
+# Terminal 1: start OS with networking (httpd auto-starts via init.elf)
 make run NET=1 HTTP=1
-
-# In the mateOS shell:
-$ httpd &
 
 # Terminal 2: test from host
 curl http://localhost:8080
+curl http://localhost:8080/os
 ```
 
 ### Requirements
@@ -172,7 +171,7 @@ curl http://localhost:8080
 
 ## Shell
 
-The shell runs as a Ring 3 user process (`shell.elf`). Programs can be run by name without an extension — the shell tries `.elf` first, then `.wlf` automatically.
+The shell runs as a Ring 3 user process (`shell.elf`) under the default userland init daemon (`init.elf`). Programs can be run by name without an extension — the shell tries `.elf` first, then `.wlf` automatically.
 
 **File extensions:**
 - `.elf` — CLI programs (shell, ls, cat, ping, etc.)
@@ -212,13 +211,13 @@ These are separate ELF binaries invoked by name:
 - `winfm` - GUI file manager with icon grid and extension filter `.wlf`
 - `wintask` - GUI task manager with CPU% and kill `.wlf`
 - `wintempleos` - TempleOS-style visual easter egg app `.wlf`
-- `httpd` - HTTP server (port 80, serves `/os` system status page)
+- `httpd` - HTTP server (port 80, serves the system status dashboard at `/`, with `/os` as a compatibility alias)
 - `burn` - CPU burn test (busy loop, 100% CPU) `.elf`
 - `doom` - DOOM (requires WM + DOOM1.WAD in filesystem)
 
 Run any program by name: `hello`, `test`, `gui`
 
-Append `&` to run in background: `httpd &`
+Append `&` to run in background (for manual service testing): `httpd &`
 
 ## Test Suite
 
@@ -277,16 +276,20 @@ FAT16 files are accessible through the same VFS syscalls as ramfs files. The she
 
 ## HTTP Server
 
-`httpd` serves both static files and a dynamic system status page:
+`httpd` serves both static files and a dynamic system status page (styled dashboard UI):
 
 ```bash
 make run GFX=1 NET=1 HTTP=1
-# In winterm: httpd &
-# From host: curl http://localhost:8080/os
+# httpd auto-starts via init.elf
+# From host:
+curl http://localhost:8080
+curl http://localhost:8080/os
 ```
 
-- `GET /` — serves `index.htm` from filesystem
-- `GET /os` — dynamic page aggregating system info:
+- `GET /` — dynamic system status dashboard
+- `GET /os` — compatibility alias for the same dashboard
+- `GET /index.htm` — static file from filesystem (if present)
+- Dashboard aggregates system info:
   - CPU info (vendor, family/model/stepping, feature flags)
   - Memory stats (PMM frames used/free, heap usage)
   - IRQ table (masked/unmasked, handler status)
@@ -315,7 +318,7 @@ The VFS exposes synthetic read-only `.mos` files that provide runtime system inf
 - `/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
 - `/kversion.mos` — kernel version/build metadata (semver, git hash, ABI, build UTC)
 
-These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server's `/os` page reads all of them.
+These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server dashboard (`/`, and `/os` alias) reads all of them.
 
 ## Syscall Reference
 
@@ -429,6 +432,7 @@ Rust components compiled with `no_std` and custom i686 target
 ### `userland/`
 User-space programs:
 - `shell.c` - Interactive shell with background job support and auto `.elf` fallback to `.wlf`
+- `init.c` - Minimal userland init daemon (starts `httpd`, launches/respawns `shell`)
 - `hello.c` - Hello world test program
 - `test.c` - Comprehensive test suite (23 tests)
 - `gui.c` - Window manager (compositing, drag, z-order, close buttons, desktop icons, mouse cursor)
@@ -439,7 +443,7 @@ User-space programs:
 - `wintask.c` - GUI task manager (CPU%, kill, auto-refresh) → `.wlf`
 - `winsleep.c` - Window sleep demo → `.wlf`
 - `wintempleos.c` - TempleOS-style visual easter egg app → `.wlf`
-- `httpd.c` - HTTP server (port 80, static files + dynamic `/os` system status page)
+- `httpd.c` - HTTP server (port 80, dynamic `/` dashboard + `/os` alias + static `index.htm`)
 - `burn.c` - CPU burn test (busy loop) → `.elf`
 - `ping.c` - ICMP ping utility
 - `cat.c` - Display file contents
