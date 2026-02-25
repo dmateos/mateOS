@@ -100,7 +100,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **System Info** - cpuinfo, meminfo, lspci, lsirq, netstats syscalls + virtual .mos files
 - **Userland Shell** - Interactive command-line shell running in Ring 3
 - **DOOM Port** - doomgeneric DOOM engine running in a WM window (640x400 build, indexed-color window buffer composited by the WM)
-- **Test Suite** - 33-test userland test suite covering syscalls, memory, process isolation, VFS, argv, security validation
+- **Test Suite** - 38-test userland test suite covering syscalls, memory, process isolation, VFS, argv, security validation
 
 ## Building
 
@@ -203,7 +203,7 @@ These are separate ELF binaries invoked by name:
 - `ifconfig [ip mask gw]` - Show or set network configuration
 - `shutdown` - Power off (ACPI)
 - `hello` - Hello world demo
-- `test` - Run 33-test suite
+- `test` - Run 38-test suite
 - `cctest` - Compiler smoke test (`cc test2.c` + `cc test.c` + run outputs; requires FAT16 test files)
 - `gui` - Start window manager (launches winterm + file manager)
 - `winterm` - Terminal emulator (inside WM) `.wlf`
@@ -227,7 +227,7 @@ Append `&` to run in background (for manual service testing): `httpd &`
 $ test
 ```
 
-33 tests covering:
+38 tests covering:
 1. Basic syscalls (write, yield)
 2. String operations
 3. Math (addition, multiplication, division, modulo)
@@ -261,6 +261,11 @@ $ test
 31. VFS seek edge cases (SEEK_CUR, SEEK_SET, SEEK_END, read at EOF)
 32. Invalid fd operations (negative fd, out-of-range, double close)
 33. tasklist pointer validation (NULL, kernel-range rejection)
+34. write() pointer validation (kernel-range, low address rejection)
+35. stat() pointer validation (kernel-range path and buffer rejection)
+36. readdir() pointer validation (NULL, kernel-range buffer rejection)
+37. getcwd() pointer validation (NULL, kernel-range, valid buffer)
+38. Path syscall validation (unlink/mkdir/rmdir/chdir NULL and kernel-range)
 
 ## FAT16 Filesystem
 

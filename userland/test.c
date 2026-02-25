@@ -1324,6 +1324,206 @@ static int test_tasklist_validation(void) {
 }
 
 // ============================================================
+// Test 34: write() pointer validation
+// ============================================================
+static int test_write_ptr_validation(void) {
+    print("TEST 34: write() pointer validation\n");
+
+    // write with kernel-range buffer should return -1
+    int ret = write(1, (const void *)0x200000, 10);
+    if (ret != -1) {
+        print("  FAILED: write(kernel ptr) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - write(kernel ptr, 10): rejected OK\n");
+
+    // write with address below user region should return -1
+    ret = write(1, (const void *)0x1000, 4);
+    if (ret != -1) {
+        print("  FAILED: write(low addr) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - write(0x1000, 4): rejected OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 35: stat() pointer validation
+// ============================================================
+static int test_stat_ptr_validation(void) {
+    print("TEST 35: stat() pointer validation\n");
+
+    // stat with kernel-range stat buffer should return -1
+    int ret = stat("hello.elf", (stat_t *)0x200000);
+    if (ret != -1) {
+        print("  FAILED: stat(valid, kernel ptr) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - stat(valid, kernel ptr): rejected OK\n");
+
+    // stat with kernel-range path should return -1
+    ret = stat((const char *)0x100000, (stat_t *)0x200000);
+    if (ret != -1) {
+        print("  FAILED: stat(kernel path, kernel buf) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - stat(kernel path): rejected OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 36: readdir() pointer validation
+// ============================================================
+static int test_readdir_ptr_validation(void) {
+    print("TEST 36: readdir() pointer validation\n");
+
+    // readdir with NULL output buffer should return -1
+    int ret = readdir(0, (char *)0, 32);
+    if (ret != -1) {
+        print("  FAILED: readdir(0, NULL) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - readdir(NULL buf): rejected OK\n");
+
+    // readdir with kernel-range buffer should return -1
+    ret = readdir(0, (char *)0x100000, 32);
+    if (ret != -1) {
+        print("  FAILED: readdir(0, kernel ptr) returned ");
+        print_num(ret);
+        print(" (expected -1)\n");
+        return 0;
+    }
+    print("  - readdir(kernel ptr): rejected OK\n");
+
+    // readdir with valid buffer should still work
+    char name[32];
+    ret = readdir(0, name, 32);
+    if (ret <= 0) {
+        print("  FAILED: readdir(0, valid) returned ");
+        print_num(ret);
+        print(" (expected >0)\n");
+        return 0;
+    }
+    print("  - readdir(valid buf): OK (");
+    print(name);
+    print(")\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 37: getcwd() pointer validation
+// ============================================================
+static int test_getcwd_validation(void) {
+    print("TEST 37: getcwd() pointer validation\n");
+
+    // getcwd with NULL buffer should return NULL
+    char *ret = getcwd((char *)0, 64);
+    if (ret != (char *)0) {
+        print("  FAILED: getcwd(NULL) didn't return NULL\n");
+        return 0;
+    }
+    print("  - getcwd(NULL, 64): rejected OK\n");
+
+    // getcwd with kernel-range buffer should return NULL
+    ret = getcwd((char *)0x200000, 64);
+    if (ret != (char *)0) {
+        print("  FAILED: getcwd(kernel ptr) didn't return NULL\n");
+        return 0;
+    }
+    print("  - getcwd(kernel ptr): rejected OK\n");
+
+    // getcwd with valid buffer should work
+    char buf[64];
+    ret = getcwd(buf, sizeof(buf));
+    if (ret == (char *)0) {
+        print("  FAILED: getcwd(valid) returned NULL\n");
+        return 0;
+    }
+    print("  - getcwd(valid): '");
+    print(buf);
+    print("' OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 38: unlink/mkdir/rmdir NULL path validation
+// ============================================================
+static int test_path_validation(void) {
+    print("TEST 38: path syscall validation\n");
+
+    // unlink(NULL) should return -1
+    int ret = unlink((const char *)0);
+    if (ret != -1) {
+        print("  FAILED: unlink(NULL) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - unlink(NULL): rejected OK\n");
+
+    // mkdir(NULL) should return -1
+    ret = mkdir((const char *)0);
+    if (ret != -1) {
+        print("  FAILED: mkdir(NULL) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - mkdir(NULL): rejected OK\n");
+
+    // rmdir(NULL) should return -1
+    ret = rmdir((const char *)0);
+    if (ret != -1) {
+        print("  FAILED: rmdir(NULL) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - rmdir(NULL): rejected OK\n");
+
+    // chdir(NULL) should return -1
+    ret = chdir((const char *)0);
+    if (ret != -1) {
+        print("  FAILED: chdir(NULL) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - chdir(NULL): rejected OK\n");
+
+    // unlink with kernel pointer should return -1
+    ret = unlink((const char *)0x100000);
+    if (ret != -1) {
+        print("  FAILED: unlink(kernel ptr) returned ");
+        print_num(ret);
+        print("\n");
+        return 0;
+    }
+    print("  - unlink(kernel ptr): rejected OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
@@ -1333,7 +1533,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 33;
+    int total = 38;
 
     // Run all tests
     if (test_syscalls())         passed++;  // 1
@@ -1369,6 +1569,11 @@ void _start(int argc, char **argv) {
     if (test_seek_edges())       passed++;  // 31
     if (test_invalid_fd())       passed++;  // 32
     if (test_tasklist_validation()) passed++; // 33
+    if (test_write_ptr_validation()) passed++; // 34
+    if (test_stat_ptr_validation()) passed++;  // 35
+    if (test_readdir_ptr_validation()) passed++; // 36
+    if (test_getcwd_validation()) passed++;    // 37
+    if (test_path_validation())   passed++;    // 38
 
     print("========================================\n");
     print("  Results: ");

@@ -22,7 +22,7 @@ mateOS is an educational 32-bit x86 operating system written in C and Rust. It b
 - **Validate all pointers and sizes from userland.** Syscall arguments come from untrusted Ring 3 code. Bounds-check buffer lengths, validate FD indices, reject out-of-range PIDs. Never trust user-supplied addresses without checking they fall in user-accessible pages.
 - **Check every return value.** `pmm_alloc_frame()` can return 0 (OOM). `ramfs_lookup()` can return NULL. Handle failure paths explicitly — a graceful error return is always better than a kernel panic or silent corruption.
 - **Free what you allocate.** PMM frames, page tables, kernel stacks, FD tables — every allocation must have a corresponding free path in task exit/destroy. Leaked frames eventually exhaust the 6144-frame PMM.
-- **Test after every change.** Run the 33-test suite (`test` in the shell). If you added a feature, add a test. If you fixed a bug, add a regression test.
+- **Test after every change.** Run the 38-test suite (`test` in the shell). If you added a feature, add a test. If you fixed a bug, add a regression test.
 
 ### Think About the Whole System
 
@@ -65,7 +65,7 @@ make run FAT16=1             # FAT16 disk — verify file ops on disk
 
 After any kernel or syscall change:
 1. `make clean && make` — zero errors, zero warnings that aren't pre-existing
-2. `make run` → shell boots → type `test` → all 33 tests pass
+2. `make run` → shell boots → type `test` → all 38 tests pass
 3. `make run` → type `ls` → files listed → type `hello` → prints hello
 4. If GUI changed: `make run GFX=1` → `gui` → winterm works, winfm works
 5. If networking changed: `make run NET=1 HTTP=1` → `httpd &` → `curl localhost:8080/os` from host
@@ -174,7 +174,7 @@ Update README.md Virtual OS Files section.
 | `src/arch/i686/paging.c` | Page tables, COW, address spaces |
 | `src/arch/i686/interrupts_asm.S` | ISR stubs, syscall entry, context switch |
 | `userland/syscalls.h` | Syscall IDs + wrapper prototypes |
-| `userland/test.c` | 33-test suite |
+| `userland/test.c` | 38-test suite |
 | `userland/gui.c` | Window manager |
 | `userland/shell.c` | Shell (text mode) |
 | `userland/winterm.c` | Terminal emulator (GUI mode) |

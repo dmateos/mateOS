@@ -616,6 +616,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
                          uint32_t edx, void *frame) {
   switch (eax) {
     case SYS_WRITE:
+      if (edx > 0 && !validate_user_ptr(ecx, edx)) return (uint32_t)-1;
       return (uint32_t)sys_do_write((int)ebx, (const char *)ecx, (size_t)edx);
 
     case SYS_EXIT:
@@ -627,6 +628,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return 0;
 
     case SYS_EXEC:
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
       return (uint32_t)sys_do_exec((const char *)ebx, (iret_frame_t *)frame);
 
     case SYS_GFX_INIT:
@@ -642,6 +644,12 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_SPAWN:
       // Spawn uses filename as-is — ramfs is flat, programs live at root.
       // Shell already appends .elf/.wlf; no cwd resolution needed.
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
+      // Validate argv array if provided (ecx=argv, edx=argc)
+      if (ecx && edx > 0) {
+        if (!validate_user_ptr(ecx, (uint32_t)edx * sizeof(uint32_t)))
+          return (uint32_t)-1;
+      }
       return (uint32_t)sys_do_spawn((const char *)ebx,
                                      (const char **)ecx, (int)edx);
 
@@ -651,6 +659,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     case SYS_READDIR:
       // readdir(path, index, buf) — ebx=path (NULL=cwd), ecx=index, edx=buf
       // Buffer size fixed at 32 (matches FAT16 8.3 names and typical user buffers)
+      if (ebx && !validate_user_string(ebx)) return (uint32_t)-1;
+      if (!validate_user_ptr(edx, 32)) return (uint32_t)-1;
       return (uint32_t)sys_do_readdir((const char *)ebx, ecx, (char *)edx, 32);
 
     case SYS_GETPID:
@@ -666,6 +676,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return 0;
 
     case SYS_WIN_CREATE: {
+      if (ecx && !validate_user_string(ecx)) return (uint32_t)-1;
       int w = (int)(ebx >> 16);
       int h = (int)(ebx & 0xFFFF);
       task_t *cur = task_current();
@@ -724,7 +735,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return 0;
 
     case SYS_NETGET: {
-      if (!ebx || !ecx || !edx) return (uint32_t)-1;
+      if (!validate_user_ptr(ebx, 4) || !validate_user_ptr(ecx, 4) ||
+          !validate_user_ptr(edx, 4))
+        return (uint32_t)-1;
       uint32_t ip_be = 0, mask_be = 0, gw_be = 0;
       net_get_config(&ip_be, &mask_be, &gw_be);
       *(uint32_t *)ebx = ip_be;
@@ -734,7 +747,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_NETSTATS: {
-      if (!ebx || !ecx) return (uint32_t)-1;
+      if (!validate_user_ptr(ebx, 4) || !validate_user_ptr(ecx, 4))
+        return (uint32_t)-1;
       uint32_t rx = 0, tx = 0;
       net_get_stats(&rx, &tx);
       *(uint32_t *)ebx = rx;
@@ -778,6 +792,9 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_GETMOUSE: {
+      if (ebx && !validate_user_ptr(ebx, 4)) return (uint32_t)-1;
+      if (ecx && !validate_user_ptr(ecx, 4)) return (uint32_t)-1;
+      if (edx && !validate_user_ptr(edx, 1)) return (uint32_t)-1;
       mouse_state_t ms = mouse_get_state();
       if (ebx) *(int *)ebx = ms.x;
       if (ecx) *(int *)ecx = ms.y;
@@ -828,7 +845,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
     }
 
     case SYS_STAT: {
-      if (!ebx || !ecx) return (uint32_t)-1;
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
+      if (!validate_user_ptr(ecx, sizeof(vfs_stat_t))) return (uint32_t)-1;
       task_t *scur = task_current();
       char spath[VFS_PATH_MAX];
       vfs_resolve_path(scur ? scur->cwd : "/", (const char *)ebx, spath);
@@ -839,7 +857,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
       return (uint32_t)sys_do_detach();
 
     case SYS_UNLINK: {
-      if (!ebx) return (uint32_t)-1;
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
       task_t *ucur = task_current();
       char upath[VFS_PATH_MAX];
       vfs_resolve_path(ucur ? ucur->cwd : "/", (const char *)ebx, upath);
@@ -860,7 +878,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_MKDIR: {
       // mkdir(path) -> 0 or -1
-      if (!ebx) return (uint32_t)-1;
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
       task_t *mcur = task_current();
       char mpath[VFS_PATH_MAX];
       vfs_resolve_path(mcur ? mcur->cwd : "/", (const char *)ebx, mpath);
@@ -869,7 +887,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_CHDIR: {
       // chdir(path) -> 0 or -1
-      if (!ebx) return (uint32_t)-1;
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
       task_t *ccur = task_current();
       if (!ccur) return (uint32_t)-1;
       char cpath[VFS_PATH_MAX];
@@ -888,7 +906,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_RMDIR: {
       // rmdir(path) -> 0 or -1
-      if (!ebx) return (uint32_t)-1;
+      if (!validate_user_string(ebx)) return (uint32_t)-1;
       task_t *rcur = task_current();
       char rpath[VFS_PATH_MAX];
       vfs_resolve_path(rcur ? rcur->cwd : "/", (const char *)ebx, rpath);
@@ -897,7 +915,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx,
 
     case SYS_GETCWD: {
       // getcwd(buf, size) -> 0 or -1
-      if (!ebx || ecx == 0) return (uint32_t)-1;
+      if (!validate_user_ptr(ebx, ecx)) return (uint32_t)-1;
       task_t *gcur = task_current();
       if (!gcur) return (uint32_t)-1;
       char *gbuf = (char *)ebx;
