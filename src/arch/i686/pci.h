@@ -1,7 +1,7 @@
 #ifndef _PCI_H
 #define _PCI_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 // PCI config space I/O ports
 #define PCI_CONFIG_ADDR  0xCF8

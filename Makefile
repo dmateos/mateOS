@@ -3,7 +3,7 @@ CC = clang --target=$(TARGET_ARCH)
 AS = clang --target=$(TARGET_ARCH)
 LD = clang --target=$(TARGET_ARCH)
 CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes -fno-pie \
-         -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip
+         -I$(SRCDIR) -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip
 LDFLAGS = -T src/linker.ld -ffreestanding -O2 -nostdlib -static -Wl,--build-id=none
 ARCH = i686
 
@@ -24,6 +24,11 @@ RUST_TARGET_DIR = i686-unknown-none
 RUST_LIB = rust/target/$(RUST_TARGET_DIR)/debug/libmateos_rust.a
 
 SRC_C = $(wildcard $(SRCDIR)/*.c)
+SRC_C_FS = $(wildcard $(SRCDIR)/fs/*.c)
+SRC_C_PROC = $(wildcard $(SRCDIR)/proc/*.c)
+SRC_C_NET = $(wildcard $(SRCDIR)/net/*.c)
+SRC_C_IO = $(wildcard $(SRCDIR)/io/*.c)
+SRC_C_BOOT = $(wildcard $(SRCDIR)/boot/*.c)
 SRC_C_UTILS = $(wildcard $(SRCDIR)/utils/*.c)
 SRC_C_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.c)
 SRC_C_LIBALLOC = $(wildcard $(SRCDIR)/liballoc/*.c)
@@ -32,17 +37,22 @@ SRC_S = $(wildcard $(SRCDIR)/*.S)
 SRC_S_ARCH = $(wildcard $(SRCDIR)/arch/$(ARCH)/*.S)
 
 OBJ_C = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRC_C))
+OBJ_C_FS = $(patsubst $(SRCDIR)/fs/%.c,$(BUILDDIR)/fs/%.o,$(SRC_C_FS))
+OBJ_C_PROC = $(patsubst $(SRCDIR)/proc/%.c,$(BUILDDIR)/proc/%.o,$(SRC_C_PROC))
+OBJ_C_NET = $(patsubst $(SRCDIR)/net/%.c,$(BUILDDIR)/net/%.o,$(SRC_C_NET))
+OBJ_C_IO = $(patsubst $(SRCDIR)/io/%.c,$(BUILDDIR)/io/%.o,$(SRC_C_IO))
+OBJ_C_BOOT = $(patsubst $(SRCDIR)/boot/%.c,$(BUILDDIR)/boot/%.o,$(SRC_C_BOOT))
 OBJ_C_UTILS = $(patsubst $(SRCDIR)/utils/%.c,$(BUILDDIR)/utils/%.o,$(SRC_C_UTILS))
-OBJ_C_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.c,$(BUILDDIR)/%.o,$(SRC_C_ARCH))
-OBJ_C_LIBALLOC = $(patsubst $(SRCDIR)/liballoc/%.c,$(BUILDDIR)/%.o,$(SRC_C_LIBALLOC))
+OBJ_C_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.c,$(BUILDDIR)/arch/%.o,$(SRC_C_ARCH))
+OBJ_C_LIBALLOC = $(patsubst $(SRCDIR)/liballoc/%.c,$(BUILDDIR)/liballoc/%.o,$(SRC_C_LIBALLOC))
 OBJ_C_DRIVERS = $(patsubst $(SRCDIR)/drivers/%.c,$(BUILDDIR)/drivers/%.o,$(SRC_C_DRIVERS))
 OBJ_S = $(patsubst $(SRCDIR)/%.S,$(BUILDDIR)/%.o,$(SRC_S))
-OBJ_S_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.S,$(BUILDDIR)/%.o,$(SRC_S_ARCH))
+OBJ_S_ARCH = $(patsubst $(SRCDIR)/arch/$(ARCH)/%.S,$(BUILDDIR)/arch/%.o,$(SRC_S_ARCH))
 
 # lwIP sources
 LWIP_DIR = $(SRCDIR)/lwip/src
 LWIP_CFLAGS = -std=gnu99 -ffreestanding -O2 -fno-pie \
-              -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip -I$(SRCDIR)/lwip/include -Wno-address
+              -I$(SRCDIR) -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip -I$(SRCDIR)/lwip/include -Wno-address
 SRC_LWIP_CORE = $(LWIP_DIR)/core/init.c $(LWIP_DIR)/core/def.c \
                 $(LWIP_DIR)/core/inet_chksum.c $(LWIP_DIR)/core/ip.c \
                 $(LWIP_DIR)/core/mem.c $(LWIP_DIR)/core/memp.c \
@@ -69,8 +79,12 @@ rust:
 
 $(RUST_LIB): rust
 
-$(TARGET): $(OBJ_C) $(OBJ_C_UTILS) $(OBJ_S) $(OBJ_C_ARCH) $(OBJ_S_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(RUST_LIB)
-	$(LD) $(LDFLAGS) $(OBJ_C) $(OBJ_C_UTILS) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) $(OBJ_S) $(OBJ_S_ARCH) $(RUST_LIB) -o $(TARGET)
+OBJS_ALL = $(OBJ_C) $(OBJ_C_FS) $(OBJ_C_PROC) $(OBJ_C_NET) $(OBJ_C_IO) $(OBJ_C_BOOT) \
+           $(OBJ_C_UTILS) $(OBJ_C_ARCH) $(OBJ_C_LIBALLOC) $(OBJ_C_DRIVERS) $(OBJ_LWIP) \
+           $(OBJ_S) $(OBJ_S_ARCH)
+
+$(TARGET): $(OBJS_ALL) $(RUST_LIB)
+	$(LD) $(LDFLAGS) $(OBJS_ALL) $(RUST_LIB) -o $(TARGET)
 
 $(KERNEL_VERSION_FILE): tools/gen_version_header.sh
 	./tools/gen_version_header.sh $(KERNEL_VERSION_FILE) $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH) $(VERSION_ABI)
@@ -79,24 +93,44 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(BUILDDIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILDDIR)/fs/%.o: $(SRCDIR)/fs/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILDDIR)/proc/%.o: $(SRCDIR)/proc/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILDDIR)/net/%.o: $(SRCDIR)/net/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILDDIR)/io/%.o: $(SRCDIR)/io/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILDDIR)/boot/%.o: $(SRCDIR)/boot/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(BUILDDIR)/utils/%.o: $(SRCDIR)/utils/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.c $(KERNEL_VERSION_FILE)
-	@mkdir -p $(BUILDDIR)
+$(BUILDDIR)/arch/%.o: $(SRCDIR)/arch/$(ARCH)/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.S
 	@mkdir -p $(BUILDDIR)
 	$(AS) -c $< -o $@
 
-$(BUILDDIR)/%.o: $(SRCDIR)/arch/$(ARCH)/%.S
-	@mkdir -p $(BUILDDIR)
+$(BUILDDIR)/arch/%.o: $(SRCDIR)/arch/$(ARCH)/%.S
+	@mkdir -p $(dir $@)
 	$(AS) -c $< -o $@
 
-$(BUILDDIR)/%.o: $(SRCDIR)/liballoc/%.c $(KERNEL_VERSION_FILE)
-	@mkdir -p $(BUILDDIR)
+$(BUILDDIR)/liballoc/%.o: $(SRCDIR)/liballoc/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILDDIR)/drivers/%.o: $(SRCDIR)/drivers/%.c $(KERNEL_VERSION_FILE)
@@ -181,11 +215,11 @@ endif
 
 $(FAT16_IMG):
 	python3 tools/mkfat16_test_disk.py $(FAT16_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),) \
-		$(if $(wildcard test.c),--add test.c,) \
-		$(if $(wildcard test2.c),--add test2.c,) \
-		$(if $(wildcard t3a.c),--add t3a.c,) \
-		$(if $(wildcard t3b.c),--add t3b.c,) \
-		$(if $(wildcard t4.c),--add t4.c,)
+		$(if $(wildcard tests/cc/test.c),--add tests/cc/test.c,) \
+		$(if $(wildcard tests/cc/test2.c),--add tests/cc/test2.c,) \
+		$(if $(wildcard tests/cc/t3a.c),--add tests/cc/t3a.c,) \
+		$(if $(wildcard tests/cc/t3b.c),--add tests/cc/t3b.c,) \
+		$(if $(wildcard tests/cc/t4.c),--add tests/cc/t4.c,)
 
 fat16img: $(FAT16_IMG)
 

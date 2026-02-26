@@ -1,7 +1,7 @@
 #ifndef _GDT_H
 #define _GDT_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 // GDT entry count: null, kernel code, kernel data, user code, user data, TSS
 #define GDT_ENTRY_COUNT 6

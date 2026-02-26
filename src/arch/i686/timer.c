@@ -1,7 +1,7 @@
 #include "timer.h"
-#include "../../lib.h"
-#include "../../task.h"
-#include "../../net.h"
+#include "lib.h"
+#include "proc/task.h"
+#include "net/net.h"
 #include "io.h"
 #include "interrupts.h"
 

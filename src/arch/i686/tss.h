@@ -1,7 +1,7 @@
 #ifndef _TSS_H
 #define _TSS_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 // Task State Segment structure
 typedef struct {

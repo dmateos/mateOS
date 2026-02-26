@@ -1,5 +1,5 @@
 #include "legacytty.h"
-#include "../../lib.h"
+#include "lib.h"
 #include "io.h"
 #include "vga.h"
 

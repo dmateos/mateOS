@@ -1,7 +1,7 @@
 #ifndef _INTERRUPTS_H
 #define _INTERRUPTS_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 typedef struct idt_entry {
   uint16_t base_low;

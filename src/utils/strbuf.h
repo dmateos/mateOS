@@ -1,7 +1,7 @@
 #ifndef _STRBUF_H
 #define _STRBUF_H
 
-#include "../lib.h"
+#include "lib.h"
 
 int strbuf_append_char(char *dst, uint32_t cap, uint32_t *len, char c);
 int strbuf_append_cstr(char *dst, uint32_t cap, uint32_t *len, const char *s);

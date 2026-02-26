@@ -1,7 +1,7 @@
 #ifndef _RTL8139_H
 #define _RTL8139_H
 
-#include "../lib.h"
+#include "lib.h"
 
 // Receive callback type — driver calls this for each received frame
 typedef void (*nic_rx_callback_t)(uint8_t *data, uint16_t len);

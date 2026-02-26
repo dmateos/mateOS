@@ -1,7 +1,7 @@
 #include "interrupts.h"
-#include "../../lib.h"
-#include "../../task.h"
-#include "../../memlayout.h"
+#include "lib.h"
+#include "proc/task.h"
+#include "memlayout.h"
 #include "io.h"
 #include "util.h"
 

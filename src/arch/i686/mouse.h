@@ -1,7 +1,7 @@
 #ifndef _MOUSE_H
 #define _MOUSE_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 typedef struct {
     int x, y;

@@ -1,7 +1,7 @@
 #ifndef _SLOT_TABLE_H
 #define _SLOT_TABLE_H
 
-#include "../lib.h"
+#include "lib.h"
 
 int slot_table_find_free_by_flag(void *items, uint32_t count,
                                  uint32_t stride, uint32_t flag_offset);

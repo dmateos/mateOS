@@ -1,7 +1,7 @@
 #ifndef _PAGING_H
 #define _PAGING_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 // Page table entry flags
 #define PAGE_PRESENT   0x1

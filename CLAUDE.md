@@ -145,7 +145,7 @@ GUI programs should call `detach()` after `win_create()` to release the parent s
 
 ## Adding a Virtual .mos File
 
-Virtual OS files are generated in `src/vfs_proc.c`. Pattern:
+Virtual OS files are generated in `src/fs/vfs_proc.c`. Pattern:
 ```c
 static int vgen_myinfo(char *buf, int cap) {
     int pos = 0;
@@ -167,9 +167,14 @@ Update README.md Virtual OS Files section.
 |------|---------|
 | `src/kernel.c` | Boot sequence, main loop |
 | `src/syscall.c` | Syscall dispatcher (52 handlers) |
-| `src/task.c` | Scheduler, spawn, wait, kill, exit |
-| `src/vfs.c` | VFS dispatch + virtual file plumbing |
-| `src/vfs_proc.c` | `.mos` file generators |
+| `src/proc/task.c` | Scheduler, spawn, wait, kill, exit |
+| `src/proc/elf.c` | ELF32 loader and validator |
+| `src/proc/pmm.c` | Physical memory manager |
+| `src/fs/vfs.c` | VFS dispatch + virtual file plumbing |
+| `src/fs/vfs_proc.c` | `.mos` file generators |
+| `src/fs/fat16.c` | FAT16 filesystem driver |
+| `src/net/net.c` | Networking (lwIP, sockets, ping) |
+| `src/io/window.c` | Window manager kernel side |
 | `src/memlayout.h` | Memory layout constants |
 | `src/arch/i686/paging.c` | Page tables, COW, address spaces |
 | `src/arch/i686/interrupts_asm.S` | ISR stubs, syscall entry, context switch |

@@ -1,7 +1,7 @@
 #include "vga.h"
 #include "io.h"
 #include "legacytty.h"
-#include "../../lib.h"
+#include "lib.h"
 
 static int vga_mode13h_active = 0;
 static int vga_bga_active = 0;

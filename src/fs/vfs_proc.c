@@ -2,14 +2,14 @@
 
 #include "vfs.h"
 #include "liballoc/liballoc_hooks.h"
-#include "pmm.h"
+#include "proc/pmm.h"
 #include "arch/i686/util.h"
 #include "arch/i686/interrupts.h"
 #include "arch/i686/pci.h"
 #include "arch/i686/timer.h"
-#include "window.h"
-#include "task.h"
-#include "net.h"
+#include "io/window.h"
+#include "proc/task.h"
+#include "net/net.h"
 #include "version.h"
 #include "utils/strbuf.h"
 

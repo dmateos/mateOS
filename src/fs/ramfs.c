@@ -1,7 +1,7 @@
 #include "ramfs.h"
 #include "vfs.h"
 #include "lib.h"
-#include "task.h"
+#include "proc/task.h"
 #include "arch/i686/paging.h"
 #include "memlayout.h"
 

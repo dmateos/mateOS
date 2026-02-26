@@ -1,5 +1,5 @@
 #include "util.h"
-#include "../../lib.h"
+#include "lib.h"
 
 void cause_div_exception(void) {
   asm volatile("div %0" : : "r"(0));

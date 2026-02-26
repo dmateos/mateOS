@@ -100,6 +100,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **System Info** - cpuinfo, meminfo, lspci, lsirq, netstats syscalls + virtual .mos files
 - **Userland Shell** - Interactive command-line shell running in Ring 3
 - **DOOM Port** - doomgeneric DOOM engine running in a WM window (640x400 build, indexed-color window buffer composited by the WM)
+- **Security Hardening** - Pointer validation on all syscalls, stack guard page, ELF segment bounds checking, VFS open mode enforcement
 - **Test Suite** - 39-test userland test suite covering syscalls, memory, process isolation, VFS, argv, security validation
 
 ## Building
@@ -193,6 +194,9 @@ These are separate ELF binaries invoked by name:
 - `cat <file>` - Display file contents
 - `cp <src> <dst>` - Copy a file
 - `del <file>` - Delete a file
+- `mkdir <dir>` - Create a directory
+- `rmdir <dir>` - Remove a directory
+- `mv <src> <dst>` - Move or rename a file
 - `touch <file>` - Create an empty file
 - `writefile <file> <text>` - Write text to a file
 - `echo <text>` - Print text
@@ -398,22 +402,40 @@ These files are readable via normal `open()`/`fread()` syscalls. The file manage
 ## Project Structure
 
 ### `src/`
-Main kernel source files:
-- `kernel.c` - Kernel entry point and initialization
-- `task.c/h` - Task management, scheduler, per-process CR3 switching
+Kernel core (central entry points and shared definitions):
+- `kernel.c/h` - Kernel entry point and initialization
 - `syscall.c/h` - System call dispatcher and handlers (52 syscalls, IDs 1-52)
-- `pmm.c/h` - Physical memory manager (bitmap frame allocator)
-- `elf.c/h` - ELF32 binary loader
-- `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
-- `fat16.c/h` - FAT16 filesystem driver (read/write, MBR partition, cluster alloc, unlink)
+- `lib.c/h` - Kernel utility functions (printf, memcpy, string ops)
+- `memlayout.h` - Shared virtual memory layout constants (heap/user region/stack)
+- `version.h` - Auto-generated version info (semver, git hash, ABI, build date)
+
+### `src/fs/`
+Filesystem subsystem:
 - `vfs.c/h` - Virtual file system abstraction layer + virtual-file plumbing
 - `vfs_proc.c/h` - Proc-style synthetic `.mos` generators and registration (`k*.mos`)
-- `multiboot.c/h` - Multiboot info parsing, initrd detection
+- `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
+- `fat16.c/h` - FAT16 filesystem driver (read/write, MBR partition, cluster alloc, unlink)
+
+### `src/proc/`
+Process management:
+- `task.c/h` - Task management, scheduler, per-process CR3 switching
+- `elf.c/h` - ELF32 binary loader and validator
+- `pmm.c/h` - Physical memory manager (bitmap frame allocator)
+
+### `src/net/`
+Networking:
+- `net.c/h` - Networking layer (lwIP integration, DHCP, TCP socket table, ICMP ping)
+
+### `src/io/`
+I/O and display:
 - `console.c/h` - Early boot console
 - `keyboard.c/h` - PS/2 keyboard driver with extended scancodes, shift support, ring buffer
-- `net.c/h` - Networking layer (lwIP integration, DHCP, TCP socket table, ICMP ping)
+- `tty.c/h` - Terminal emulation
 - `window.c/h` - Window manager subsystem (create, destroy, composite, focus)
-- `memlayout.h` - Shared virtual memory layout constants (heap/user region/stack)
+
+### `src/boot/`
+Boot:
+- `multiboot.c/h` - Multiboot info parsing, initrd detection
 
 ### `src/utils/`
 Shared kernel utilities:
@@ -455,7 +477,7 @@ User-space programs:
 - `shell.c` - Interactive shell with background job support and auto `.elf` fallback to `.wlf`
 - `init.c` - Minimal userland init daemon (starts `httpd`, launches/respawns `shell`)
 - `hello.c` - Hello world test program
-- `test.c` - Comprehensive test suite (33 tests)
+- `test.c` - Comprehensive test suite (39 tests)
 - `gui.c` - Window manager (compositing, drag, z-order, close buttons, desktop icons, mouse cursor)
 - `winterm.c` - Terminal emulator (61x34 chars, stdout redirect, argv passing) → `.wlf`
 - `winhello.c` - Window hello world demo → `.wlf`
@@ -481,9 +503,12 @@ User-space programs:
 - `as86.c` - In-OS x86 assembler (phase-1, flat binary subset)
 - `ld86.c` - In-OS linker phase-1 (flat binary -> ELF32 single segment)
 - `cc.c` - In-OS C build driver (`smallerc` -> `as86` -> `ld86`)
+- `mkdir.c` - Create directory
+- `rmdir.c` - Remove directory
+- `mv.c` - Move/rename files
 - `shutdown.c` - ACPI power off
 - `ugfx.c/h` - Userland graphics library (pixel, rect, text, buffer ops)
-- `syscalls.c/h` - Syscall wrappers (int 0x80; IDs 46-49 removed)
+- `syscalls.c/h` - Syscall wrappers (int 0x80; IDs 1-52)
 - `cmd_shared.c/h` - Shared shell builtins (help, clear, exit)
 - `user.ld` - Linker script (loads at 0x700000)
 

@@ -1,7 +1,7 @@
 #ifndef _IO_H
 #define _IO_H
 
-#include "../../lib.h"
+#include "lib.h"
 #include <stdint.h>
 
 #define IO_KB_DATA 0x60

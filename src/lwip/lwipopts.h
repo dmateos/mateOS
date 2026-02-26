@@ -52,7 +52,7 @@ extern unsigned int get_tick_count(void);
 #define SYS_LIGHTWEIGHT_PROT    1
 typedef int sys_prot_t;
 
-#include "../arch/i686/cpu.h"
+#include "arch/i686/cpu.h"
 
 static inline sys_prot_t sys_arch_protect(void) {
   return (sys_prot_t)cpu_irq_save();

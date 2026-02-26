@@ -1,14 +1,14 @@
 #include "task.h"
 #include "syscall.h"  // for load_elf_into
 #include "lib.h"
-#include "vfs.h"
+#include "fs/vfs.h"
 #include "liballoc/liballoc_1_1.h"
 #include "arch/i686/tss.h"
 #include "arch/i686/paging.h"
 #include "arch/i686/cpu.h"
 #include "pmm.h"
-#include "window.h"
-#include "net.h"
+#include "io/window.h"
+#include "net/net.h"
 #include "memlayout.h"
 
 // Task array and management

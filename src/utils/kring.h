@@ -1,7 +1,7 @@
 #ifndef _KRING_H
 #define _KRING_H
 
-#include "../lib.h"
+#include "lib.h"
 
 typedef struct {
   uint8_t *buf;

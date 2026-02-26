@@ -1,5 +1,5 @@
 #include "ata_pio.h"
-#include "../arch/i686/io.h"
+#include "arch/i686/io.h"
 
 #define ATA_IO_BASE      0x1F0
 #define ATA_CTRL_BASE    0x3F6

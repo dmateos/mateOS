@@ -3,7 +3,7 @@
 
 #include "lib.h"
 #include "arch/i686/paging.h"
-#include "vfs.h"
+#include "fs/vfs.h"
 
 // Task states
 typedef enum {

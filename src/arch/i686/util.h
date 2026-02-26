@@ -1,7 +1,7 @@
 #ifndef _UTIL_H
 #define _UTIL_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 void cause_div_exception(void);
 int check_protected_mode(void);

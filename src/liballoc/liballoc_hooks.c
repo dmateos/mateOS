@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "../arch/i686/cpu.h"
-#include "../memlayout.h"
+#include "arch/i686/cpu.h"
+#include "memlayout.h"
 #include "liballoc_hooks.h"
 
 // Bump allocator for liballoc hooks

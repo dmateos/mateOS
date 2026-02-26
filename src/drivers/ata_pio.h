@@ -1,7 +1,7 @@
 #ifndef _ATA_PIO_H
 #define _ATA_PIO_H
 
-#include "../lib.h"
+#include "lib.h"
 
 // Initialize primary-master ATA PIO device.
 // Returns 0 on success, -1 if no ATA disk is available.

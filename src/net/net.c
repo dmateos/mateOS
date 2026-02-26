@@ -3,7 +3,7 @@
 #include "drivers/rtl8139.h"
 #include "arch/i686/timer.h"
 #include "arch/i686/cpu.h"
-#include "task.h"
+#include "proc/task.h"
 #include "utils/kring.h"
 #include "utils/slot_table.h"
 #include <stddef.h>

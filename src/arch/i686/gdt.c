@@ -1,5 +1,5 @@
 #include "gdt.h"
-#include "../../lib.h"
+#include "lib.h"
 
 // Pointer to GDT for later modification (TSS)
 static gdt_entry_t *gdt_entries = NULL;

@@ -1,7 +1,7 @@
 #include "rtl8139.h"
-#include "../arch/i686/pci.h"
-#include "../arch/i686/io.h"
-#include "../arch/i686/interrupts.h"
+#include "arch/i686/pci.h"
+#include "arch/i686/io.h"
+#include "arch/i686/interrupts.h"
 
 // ---- RTL8139 constants ----
 #define RTL_VENDOR_ID 0x10EC

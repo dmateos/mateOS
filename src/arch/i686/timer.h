@@ -1,7 +1,7 @@
 #ifndef _TIMER_H
 #define _TIMER_H
 
-#include "../../lib.h"
+#include "lib.h"
 
 void init_timer(uint32_t frequency);
 uint32_t get_tick_count(void);

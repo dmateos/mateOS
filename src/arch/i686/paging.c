@@ -1,7 +1,7 @@
 #include "paging.h"
-#include "../../lib.h"
-#include "../../memlayout.h"
-#include "../../pmm.h"
+#include "lib.h"
+#include "memlayout.h"
+#include "proc/pmm.h"
 
 // Assembly functions to manipulate control registers
 extern void enable_paging(uint32_t page_directory_physical);

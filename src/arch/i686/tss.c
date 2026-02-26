@@ -1,6 +1,6 @@
 #include "tss.h"
 #include "gdt.h"
-#include "../../lib.h"
+#include "lib.h"
 
 // Global TSS entry
 static tss_entry_t tss __attribute__((aligned(4096)));
