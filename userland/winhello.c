@@ -1,8 +1,8 @@
 // Window hello app - simple windowed program for mateOS WM
 
-#include "ugfx.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
+#include "ugfx.h"
 
 #define W 500
 #define H 350
@@ -11,7 +11,8 @@ static unsigned char buf[W * H];
 static char last_key_str[] = "Key: _";
 
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
     int wid = win_create(W, H, "Hello");
     if (wid < 0) {
         print("error: requires window manager\n");
@@ -20,14 +21,14 @@ void _start(int argc, char **argv) {
     detach();
 
     // Draw initial content
-    ugfx_buf_clear(buf, W, H, 7);  // Light gray background
+    ugfx_buf_clear(buf, W, H, 7); // Light gray background
 
     // Decorative border
-    ugfx_buf_hline(buf, W, H, 0, 0, W, 9);       // Top - light blue
-    ugfx_buf_hline(buf, W, H, 0, H - 1, W, 9);   // Bottom
+    ugfx_buf_hline(buf, W, H, 0, 0, W, 9);     // Top - light blue
+    ugfx_buf_hline(buf, W, H, 0, H - 1, W, 9); // Bottom
     for (int y = 0; y < H; y++) {
-        ugfx_buf_pixel(buf, W, H, 0, y, 9);       // Left
-        ugfx_buf_pixel(buf, W, H, W - 1, y, 9);   // Right
+        ugfx_buf_pixel(buf, W, H, 0, y, 9);     // Left
+        ugfx_buf_pixel(buf, W, H, W - 1, y, 9); // Right
     }
 
     // Title
@@ -41,11 +42,12 @@ void _start(int argc, char **argv) {
     // Event loop
     while (1) {
         int key = win_getkey(wid);
-        if (key == 'q') break;
+        if (key == 'q')
+            break;
         if (key > 0) {
             // Show the last pressed key
             last_key_str[5] = (char)key;
-            ugfx_buf_rect(buf, W, H, 8, 66, 100, 10, 7);  // Clear area
+            ugfx_buf_rect(buf, W, H, 8, 66, 100, 10, 7); // Clear area
             ugfx_buf_string(buf, W, H, 8, 66, last_key_str, 4);
             win_write(wid, buf, sizeof(buf));
         }

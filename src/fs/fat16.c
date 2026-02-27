@@ -4,16 +4,16 @@
 #include "vfs.h"
 
 #define FAT16_SECTOR_SIZE 512
-#define FAT16_MAX_OPEN    16
-#define FAT16_MAX_PATH    64
+#define FAT16_MAX_OPEN 16
+#define FAT16_MAX_PATH 64
 
 #define FAT16_ATTR_READONLY 0x01
-#define FAT16_ATTR_HIDDEN   0x02
-#define FAT16_ATTR_SYSTEM   0x04
+#define FAT16_ATTR_HIDDEN 0x02
+#define FAT16_ATTR_SYSTEM 0x04
 #define FAT16_ATTR_VOLUMEID 0x08
-#define FAT16_ATTR_DIR      0x10
-#define FAT16_ATTR_ARCHIVE  0x20
-#define FAT16_ATTR_LFN      0x0F
+#define FAT16_ATTR_DIR 0x10
+#define FAT16_ATTR_ARCHIVE 0x20
+#define FAT16_ATTR_LFN 0x0F
 
 #define FAT16_EOC 0xFFFF
 
@@ -88,7 +88,7 @@ typedef struct {
 // Represents the location of a directory (root dir vs subdir cluster chain).
 // cluster==0 means the fixed root directory region.
 typedef struct {
-    uint16_t cluster;  // 0 = root dir, >= 2 = first cluster of subdir
+    uint16_t cluster; // 0 = root dir, >= 2 = first cluster of subdir
 } fat16_dir_loc_t;
 
 static fat16_state_t g_fat;
@@ -99,14 +99,18 @@ static int is_fat16_part_type(uint8_t type) {
 }
 
 static char upper_ascii(char c) {
-    if (c >= 'a' && c <= 'z') return (char)(c - ('a' - 'A'));
+    if (c >= 'a' && c <= 'z')
+        return (char)(c - ('a' - 'A'));
     return c;
 }
 
 static int is_83_char(char c) {
-    if (c >= 'A' && c <= 'Z') return 1;
-    if (c >= '0' && c <= '9') return 1;
-    if (c == '_' || c == '$' || c == '~' || c == '-' || c == '!') return 1;
+    if (c >= 'A' && c <= 'Z')
+        return 1;
+    if (c >= '0' && c <= '9')
+        return 1;
+    if (c == '_' || c == '$' || c == '~' || c == '-' || c == '!')
+        return 1;
     return 0;
 }
 
@@ -138,7 +142,8 @@ static uint16_t fat16_get_entry(uint16_t cluster) {
     uint32_t fat_sec = g_fat.fat_start_lba + (fat_offset / FAT16_SECTOR_SIZE);
     uint32_t ent_off = fat_offset % FAT16_SECTOR_SIZE;
 
-    if (ata_read_sector(fat_sec, sec) < 0) return FAT16_EOC;
+    if (ata_read_sector(fat_sec, sec) < 0)
+        return FAT16_EOC;
     return read_u16(sec + ent_off);
 }
 
@@ -150,29 +155,35 @@ static int fat16_set_entry(uint16_t cluster, uint16_t value) {
 
     // Mirror to all FAT copies
     for (uint8_t fat_i = 0; fat_i < g_fat.fat_count; fat_i++) {
-        uint32_t fat_sec = g_fat.fat_start_lba + fat_i * g_fat.sectors_per_fat + fat_rel_sec;
-        if (ata_read_sector(fat_sec, sec) < 0) return -1;
+        uint32_t fat_sec =
+            g_fat.fat_start_lba + fat_i * g_fat.sectors_per_fat + fat_rel_sec;
+        if (ata_read_sector(fat_sec, sec) < 0)
+            return -1;
         write_u16(sec + ent_off, value);
-        if (ata_write_sector(fat_sec, sec) < 0) return -1;
+        if (ata_write_sector(fat_sec, sec) < 0)
+            return -1;
     }
 
     return 0;
 }
 
 static int fat16_alloc_cluster(uint16_t *out_cluster) {
-    if (!out_cluster) return -1;
+    if (!out_cluster)
+        return -1;
 
     for (uint32_t c = 2; c < g_fat.cluster_count + 2; c++) {
         uint16_t v = fat16_get_entry((uint16_t)c);
         if (v == 0x0000) {
-            if (fat16_set_entry((uint16_t)c, FAT16_EOC) < 0) return -1;
+            if (fat16_set_entry((uint16_t)c, FAT16_EOC) < 0)
+                return -1;
 
             // Zero the newly allocated cluster on disk
             uint8_t zero[FAT16_SECTOR_SIZE];
             memset(zero, 0, sizeof(zero));
             uint32_t lba = cluster_to_lba((uint16_t)c);
             for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
-                if (ata_write_sector(lba + s, zero) < 0) return -1;
+                if (ata_write_sector(lba + s, zero) < 0)
+                    return -1;
             }
 
             *out_cluster = (uint16_t)c;
@@ -190,20 +201,25 @@ static int fat16_free_chain(uint16_t first) {
     uint32_t iter = 0;
     while (c >= 2 && c < 0xFFF8 && iter < max_iter) {
         uint16_t next = fat16_get_entry(c);
-        if (fat16_set_entry(c, 0x0000) < 0) return -1;
-        if (next == c) break;
+        if (fat16_set_entry(c, 0x0000) < 0)
+            return -1;
+        if (next == c)
+            break;
         c = next;
         iter++;
     }
     return 0;
 }
 
-static int fat16_ensure_cluster_for_index(fat16_open_t *f, uint32_t idx, uint16_t *out_cluster) {
-    if (!f || !out_cluster) return -1;
+static int fat16_ensure_cluster_for_index(fat16_open_t *f, uint32_t idx,
+                                          uint16_t *out_cluster) {
+    if (!f || !out_cluster)
+        return -1;
 
     if (f->first_cluster < 2) {
         uint16_t n;
-        if (fat16_alloc_cluster(&n) < 0) return -1;
+        if (fat16_alloc_cluster(&n) < 0)
+            return -1;
         f->first_cluster = n;
     }
 
@@ -212,9 +228,12 @@ static int fat16_ensure_cluster_for_index(fat16_open_t *f, uint32_t idx, uint16_
         uint16_t next = fat16_get_entry(c);
         if (next >= 0xFFF8 || next < 2) {
             uint16_t n;
-            if (fat16_alloc_cluster(&n) < 0) return -1;
-            if (fat16_set_entry(c, n) < 0) return -1;
-            if (fat16_set_entry(n, FAT16_EOC) < 0) return -1;
+            if (fat16_alloc_cluster(&n) < 0)
+                return -1;
+            if (fat16_set_entry(c, n) < 0)
+                return -1;
+            if (fat16_set_entry(n, FAT16_EOC) < 0)
+                return -1;
             next = n;
         }
         c = next;
@@ -227,7 +246,8 @@ static int fat16_ensure_cluster_for_index(fat16_open_t *f, uint32_t idx, uint16_
 static void fat16_dirent_name_to_string(const fat16_dirent_t *de, char *out) {
     int p = 0;
     for (int i = 0; i < 8; i++) {
-        if (de->name[i] == ' ') break;
+        if (de->name[i] == ' ')
+            break;
         out[p++] = (char)de->name[i];
     }
 
@@ -242,7 +262,8 @@ static void fat16_dirent_name_to_string(const fat16_dirent_t *de, char *out) {
     if (has_ext) {
         out[p++] = '.';
         for (int i = 8; i < 11; i++) {
-            if (de->name[i] == ' ') break;
+            if (de->name[i] == ' ')
+                break;
             out[p++] = (char)de->name[i];
         }
     }
@@ -250,28 +271,35 @@ static void fat16_dirent_name_to_string(const fat16_dirent_t *de, char *out) {
 }
 
 static int fat16_name_to_83(const char *in, uint8_t out[11]) {
-    if (!in || !*in) return -1;
+    if (!in || !*in)
+        return -1;
 
-    for (int i = 0; i < 11; i++) out[i] = ' ';
+    for (int i = 0; i < 11; i++)
+        out[i] = ' ';
 
     int i = 0;
     int base_len = 0;
     while (in[i] && in[i] != '.') {
         char c = upper_ascii(in[i]);
-        if (!is_83_char(c)) return -1;
-        if (base_len >= 8) return -1;
+        if (!is_83_char(c))
+            return -1;
+        if (base_len >= 8)
+            return -1;
         out[base_len++] = (uint8_t)c;
         i++;
     }
-    if (base_len == 0) return -1;
+    if (base_len == 0)
+        return -1;
 
     if (in[i] == '.') {
         i++;
         int ext_len = 0;
         while (in[i]) {
             char c = upper_ascii(in[i]);
-            if (!is_83_char(c)) return -1;
-            if (ext_len >= 3) return -1;
+            if (!is_83_char(c))
+                return -1;
+            if (ext_len >= 3)
+                return -1;
             out[8 + ext_len] = (uint8_t)c;
             ext_len++;
             i++;
@@ -286,13 +314,15 @@ static int fat16_name_to_83(const char *in, uint8_t out[11]) {
 // ---------------------------------------------------------------------------
 
 // Search a directory for a name83 entry. For root dir (dir.cluster==0),
-// scans the fixed root directory sectors. For subdirs, follows the cluster chain.
-// Returns 0 on match, -1 on not found. Optionally returns first free slot.
+// scans the fixed root directory sectors. For subdirs, follows the cluster
+// chain. Returns 0 on match, -1 on not found. Optionally returns first free
+// slot.
 static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
-                                fat16_dirent_t *out,
-                                uint32_t *out_lba, uint16_t *out_off,
-                                uint32_t *free_lba, uint16_t *free_off) {
-    if (!g_fat.mounted || !name83) return -1;
+                               fat16_dirent_t *out, uint32_t *out_lba,
+                               uint16_t *out_off, uint32_t *free_lba,
+                               uint16_t *free_off) {
+    if (!g_fat.mounted || !name83)
+        return -1;
 
     uint8_t sec[FAT16_SECTOR_SIZE];
 
@@ -300,7 +330,8 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
         // Root directory: fixed LBA region
         for (uint32_t s = 0; s < g_fat.root_dir_sectors; s++) {
             uint32_t lba = g_fat.root_start_lba + s;
-            if (ata_read_sector(lba, sec) < 0) return -1;
+            if (ata_read_sector(lba, sec) < 0)
+                return -1;
 
             for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
                 fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
@@ -319,13 +350,18 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
                     }
                     continue;
                 }
-                if (de->attr == FAT16_ATTR_LFN) continue;
-                if (de->attr & FAT16_ATTR_VOLUMEID) continue;
+                if (de->attr == FAT16_ATTR_LFN)
+                    continue;
+                if (de->attr & FAT16_ATTR_VOLUMEID)
+                    continue;
 
                 if (memcmp(de->name, name83, 11) == 0) {
-                    if (out) *out = *de;
-                    if (out_lba) *out_lba = lba;
-                    if (out_off) *out_off = (uint16_t)off;
+                    if (out)
+                        *out = *de;
+                    if (out_lba)
+                        *out_lba = lba;
+                    if (out_off)
+                        *out_off = (uint16_t)off;
                     return 0;
                 }
             }
@@ -336,7 +372,8 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
         while (cl >= 2 && cl < 0xFFF8) {
             for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
                 uint32_t lba = cluster_to_lba(cl) + s;
-                if (ata_read_sector(lba, sec) < 0) return -1;
+                if (ata_read_sector(lba, sec) < 0)
+                    return -1;
 
                 for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
                     fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
@@ -355,13 +392,18 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
                         }
                         continue;
                     }
-                    if (de->attr == FAT16_ATTR_LFN) continue;
-                    if (de->attr & FAT16_ATTR_VOLUMEID) continue;
+                    if (de->attr == FAT16_ATTR_LFN)
+                        continue;
+                    if (de->attr & FAT16_ATTR_VOLUMEID)
+                        continue;
 
                     if (memcmp(de->name, name83, 11) == 0) {
-                        if (out) *out = *de;
-                        if (out_lba) *out_lba = lba;
-                        if (out_off) *out_off = (uint16_t)off;
+                        if (out)
+                            *out = *de;
+                        if (out_lba)
+                            *out_lba = lba;
+                        if (out_off)
+                            *out_off = (uint16_t)off;
                         return 0;
                     }
                 }
@@ -377,120 +419,148 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
 //   - final_de: the dirent of the final component (if found)
 //   - name83: the 8.3 name of the final component
 //   - free slot in parent (for O_CREAT / mkdir)
-// Returns 0 if the final entry was found, -1 if not (parent may still be valid).
-// If the path is "/" or empty, returns -2 (refers to root dir itself).
-static int fat16_resolve_path(const char *path,
-                               fat16_dir_loc_t *parent_dir,
-                               fat16_dirent_t *final_de,
-                               uint32_t *de_lba, uint16_t *de_off,
-                               uint8_t name83[11],
-                               uint32_t *free_lba, uint16_t *free_off) {
-    if (!g_fat.mounted || !path) return -1;
+// Returns 0 if the final entry was found, -1 if not (parent may still be
+// valid). If the path is "/" or empty, returns -2 (refers to root dir itself).
+static int fat16_resolve_path(const char *path, fat16_dir_loc_t *parent_dir,
+                              fat16_dirent_t *final_de, uint32_t *de_lba,
+                              uint16_t *de_off, uint8_t name83[11],
+                              uint32_t *free_lba, uint16_t *free_off) {
+    if (!g_fat.mounted || !path)
+        return -1;
 
     // Skip leading slash
-    while (*path == '/') path++;
-    if (*path == '\0') return -2;  // path is just "/"
+    while (*path == '/')
+        path++;
+    if (*path == '\0')
+        return -2; // path is just "/"
 
-    fat16_dir_loc_t cur_dir = { .cluster = 0 };  // start at root
+    fat16_dir_loc_t cur_dir = {.cluster = 0}; // start at root
 
     // Walk path components separated by '/'
     while (1) {
         // Find end of current component
         const char *end = path;
-        while (*end && *end != '/') end++;
+        while (*end && *end != '/')
+            end++;
         int comp_len = (int)(end - path);
-        if (comp_len == 0) { path = end + 1; continue; }
+        if (comp_len == 0) {
+            path = end + 1;
+            continue;
+        }
 
         // Extract component name
         char comp[13];
-        if (comp_len >= (int)sizeof(comp)) return -1;  // name too long
+        if (comp_len >= (int)sizeof(comp))
+            return -1; // name too long
         memcpy(comp, path, (size_t)comp_len);
         comp[comp_len] = '\0';
 
         // Convert to 8.3
         uint8_t c83[11];
-        if (fat16_name_to_83(comp, c83) < 0) return -1;
+        if (fat16_name_to_83(comp, c83) < 0)
+            return -1;
 
         // Is this the last component?
         const char *rest = end;
-        while (*rest == '/') rest++;
+        while (*rest == '/')
+            rest++;
         int is_last = (*rest == '\0');
 
         if (is_last) {
             // This is the final component — look it up in cur_dir
-            if (parent_dir) *parent_dir = cur_dir;
-            if (name83) memcpy(name83, c83, 11);
-            if (free_lba) *free_lba = 0;
-            if (free_off) *free_off = 0;
+            if (parent_dir)
+                *parent_dir = cur_dir;
+            if (name83)
+                memcpy(name83, c83, 11);
+            if (free_lba)
+                *free_lba = 0;
+            if (free_off)
+                *free_off = 0;
             return fat16_lookup_in_dir(cur_dir, c83, final_de, de_lba, de_off,
-                                        free_lba, free_off);
+                                       free_lba, free_off);
         } else {
             // Intermediate component — must be a directory
             fat16_dirent_t de;
-            if (fat16_lookup_in_dir(cur_dir, c83, &de, NULL, NULL, NULL, NULL) < 0) {
-                return -1;  // intermediate dir not found
+            if (fat16_lookup_in_dir(cur_dir, c83, &de, NULL, NULL, NULL, NULL) <
+                0) {
+                return -1; // intermediate dir not found
             }
-            if (!(de.attr & FAT16_ATTR_DIR)) return -1;  // not a directory
+            if (!(de.attr & FAT16_ATTR_DIR))
+                return -1; // not a directory
             cur_dir.cluster = de.first_cluster_lo;
             path = rest;
         }
     }
 }
 
-// Resolve a path to a directory location. If path is "/" or empty, returns root.
-// If path points to a directory entry, returns its cluster. Returns 0 on success.
+// Resolve a path to a directory location. If path is "/" or empty, returns
+// root. If path points to a directory entry, returns its cluster. Returns 0 on
+// success.
 static int fat16_resolve_dir(const char *path, fat16_dir_loc_t *out_dir) {
-    if (!g_fat.mounted || !path || !out_dir) return -1;
+    if (!g_fat.mounted || !path || !out_dir)
+        return -1;
 
     // Skip leading slash
     const char *p = path;
-    while (*p == '/') p++;
+    while (*p == '/')
+        p++;
     if (*p == '\0') {
-        out_dir->cluster = 0;  // root directory
+        out_dir->cluster = 0; // root directory
         return 0;
     }
 
     fat16_dir_loc_t parent;
     fat16_dirent_t de;
-    int rc = fat16_resolve_path(path, &parent, &de, NULL, NULL, NULL, NULL, NULL);
+    int rc =
+        fat16_resolve_path(path, &parent, &de, NULL, NULL, NULL, NULL, NULL);
     if (rc == -2) {
         out_dir->cluster = 0;
         return 0;
     }
-    if (rc < 0) return -1;
-    if (!(de.attr & FAT16_ATTR_DIR)) return -1;
+    if (rc < 0)
+        return -1;
+    if (!(de.attr & FAT16_ATTR_DIR))
+        return -1;
     out_dir->cluster = de.first_cluster_lo;
     return 0;
 }
 
 static int fat16_update_dirent(fat16_open_t *f) {
-    if (!f || f->dirent_lba == 0) return -1;
+    if (!f || f->dirent_lba == 0)
+        return -1;
     uint8_t sec[FAT16_SECTOR_SIZE];
-    if (ata_read_sector(f->dirent_lba, sec) < 0) return -1;
+    if (ata_read_sector(f->dirent_lba, sec) < 0)
+        return -1;
 
     fat16_dirent_t *de = (fat16_dirent_t *)(sec + f->dirent_off);
     de->first_cluster_lo = f->first_cluster;
     de->file_size = f->size;
     de->attr = f->attr;
 
-    if (ata_write_sector(f->dirent_lba, sec) < 0) return -1;
+    if (ata_write_sector(f->dirent_lba, sec) < 0)
+        return -1;
     return 0;
 }
 
-static int fat16_read_file(uint16_t first_cluster, uint32_t pos, void *buf, uint32_t len) {
-    if (len == 0) return 0;
+static int fat16_read_file(uint16_t first_cluster, uint32_t pos, void *buf,
+                           uint32_t len) {
+    if (len == 0)
+        return 0;
 
-    if (first_cluster < 2) return 0;
+    if (first_cluster < 2)
+        return 0;
 
     uint8_t *out = (uint8_t *)buf;
-    uint32_t cluster_size = (uint32_t)g_fat.sectors_per_cluster * FAT16_SECTOR_SIZE;
+    uint32_t cluster_size =
+        (uint32_t)g_fat.sectors_per_cluster * FAT16_SECTOR_SIZE;
     uint32_t skip_clusters = pos / cluster_size;
     uint32_t in_cluster = pos % cluster_size;
 
     uint16_t cl = first_cluster;
     for (uint32_t i = 0; i < skip_clusters; i++) {
         uint16_t next = fat16_get_entry(cl);
-        if (next >= 0xFFF8 || next == FAT16_EOC || next < 2) return 0;
+        if (next >= 0xFFF8 || next == FAT16_EOC || next < 2)
+            return 0;
         cl = next;
     }
 
@@ -500,14 +570,16 @@ static int fat16_read_file(uint16_t first_cluster, uint32_t pos, void *buf, uint
         for (uint8_t s = 0; s < g_fat.sectors_per_cluster && done < len; s++) {
             uint32_t sector_off = (uint32_t)s * FAT16_SECTOR_SIZE;
             uint32_t lba = cluster_to_lba(cl) + s;
-            if (ata_read_sector(lba, sec) < 0) return (int)done;
+            if (ata_read_sector(lba, sec) < 0)
+                return (int)done;
 
             if (in_cluster >= sector_off + FAT16_SECTOR_SIZE) {
                 continue;
             }
 
             uint32_t start = 0;
-            if (in_cluster > sector_off) start = in_cluster - sector_off;
+            if (in_cluster > sector_off)
+                start = in_cluster - sector_off;
             uint32_t avail = FAT16_SECTOR_SIZE - start;
             uint32_t need = len - done;
             uint32_t take = (avail < need) ? avail : need;
@@ -527,7 +599,8 @@ static int fat16_read_file(uint16_t first_cluster, uint32_t pos, void *buf, uint
 // ---------------------------------------------------------------------------
 
 static int fat16_vfs_open(const char *path, int flags) {
-    if (!g_fat.mounted || !path) return -1;
+    if (!g_fat.mounted || !path)
+        return -1;
 
     int access = flags & 0x3;
     if (!(access == O_RDONLY || access == O_WRONLY || access == O_RDWR)) {
@@ -540,47 +613,56 @@ static int fat16_vfs_open(const char *path, int flags) {
     uint16_t de_off = 0, free_off = 0;
     uint8_t name83[11];
 
-    int rc = fat16_resolve_path(path, &parent, &de, &de_lba, &de_off,
-                                 name83, &free_lba, &free_off);
-    if (rc == -2) return -1;  // can't open root dir as file
+    int rc = fat16_resolve_path(path, &parent, &de, &de_lba, &de_off, name83,
+                                &free_lba, &free_off);
+    if (rc == -2)
+        return -1; // can't open root dir as file
 
     int found = (rc == 0);
 
     if (!found) {
-        if (!(flags & O_CREAT)) return -1;
-        if (free_lba == 0) return -1;
+        if (!(flags & O_CREAT))
+            return -1;
+        if (free_lba == 0)
+            return -1;
 
         uint8_t sec[FAT16_SECTOR_SIZE];
-        if (ata_read_sector(free_lba, sec) < 0) return -1;
+        if (ata_read_sector(free_lba, sec) < 0)
+            return -1;
         fat16_dirent_t *nde = (fat16_dirent_t *)(sec + free_off);
         memset(nde, 0, sizeof(*nde));
         memcpy(nde->name, name83, 11);
         nde->attr = FAT16_ATTR_ARCHIVE;
         nde->first_cluster_lo = 0;
         nde->file_size = 0;
-        if (ata_write_sector(free_lba, sec) < 0) return -1;
+        if (ata_write_sector(free_lba, sec) < 0)
+            return -1;
 
         de = *nde;
         de_lba = free_lba;
         de_off = free_off;
     }
 
-    if (de.attr & FAT16_ATTR_DIR) return -1;
+    if (de.attr & FAT16_ATTR_DIR)
+        return -1;
 
     // Truncate regular file when requested and writable.
     if ((flags & O_TRUNC) && access != O_RDONLY) {
         if (de.first_cluster_lo >= 2) {
-            if (fat16_free_chain(de.first_cluster_lo) < 0) return -1;
+            if (fat16_free_chain(de.first_cluster_lo) < 0)
+                return -1;
         }
         de.first_cluster_lo = 0;
         de.file_size = 0;
 
         uint8_t sec[FAT16_SECTOR_SIZE];
-        if (ata_read_sector(de_lba, sec) < 0) return -1;
+        if (ata_read_sector(de_lba, sec) < 0)
+            return -1;
         fat16_dirent_t *wde = (fat16_dirent_t *)(sec + de_off);
         wde->first_cluster_lo = 0;
         wde->file_size = 0;
-        if (ata_write_sector(de_lba, sec) < 0) return -1;
+        if (ata_write_sector(de_lba, sec) < 0)
+            return -1;
     }
 
     int h = -1;
@@ -590,7 +672,8 @@ static int fat16_vfs_open(const char *path, int flags) {
             break;
         }
     }
-    if (h < 0) return -1;
+    if (h < 0)
+        return -1;
 
     g_open[h].in_use = 1;
     g_open[h].flags = flags;
@@ -604,32 +687,43 @@ static int fat16_vfs_open(const char *path, int flags) {
 }
 
 static int fat16_vfs_read(int handle, void *buf, uint32_t len) {
-    if (!g_fat.mounted || !buf || handle < 0 || handle >= FAT16_MAX_OPEN) return -1;
-    if (!g_open[handle].in_use) return -1;
+    if (!g_fat.mounted || !buf || handle < 0 || handle >= FAT16_MAX_OPEN)
+        return -1;
+    if (!g_open[handle].in_use)
+        return -1;
     fat16_open_t *f = &g_open[handle];
 
     int access = f->flags & 0x3;
-    if (access == O_WRONLY) return -1;
+    if (access == O_WRONLY)
+        return -1;
 
-    if (f->pos >= f->size) return 0;
+    if (f->pos >= f->size)
+        return 0;
     uint32_t remain = f->size - f->pos;
-    if (len > remain) len = remain;
+    if (len > remain)
+        len = remain;
 
     int n = fat16_read_file(f->first_cluster, f->pos, buf, len);
-    if (n > 0) f->pos += (uint32_t)n;
+    if (n > 0)
+        f->pos += (uint32_t)n;
     return n;
 }
 
 static int fat16_vfs_write(int handle, const void *buf, uint32_t len) {
-    if (!g_fat.mounted || !buf || handle < 0 || handle >= FAT16_MAX_OPEN) return -1;
-    if (!g_open[handle].in_use) return -1;
+    if (!g_fat.mounted || !buf || handle < 0 || handle >= FAT16_MAX_OPEN)
+        return -1;
+    if (!g_open[handle].in_use)
+        return -1;
 
     fat16_open_t *f = &g_open[handle];
     int access = f->flags & 0x3;
-    if (access == O_RDONLY) return -1;
-    if (len == 0) return 0;
+    if (access == O_RDONLY)
+        return -1;
+    if (len == 0)
+        return 0;
 
-    uint32_t cluster_size = (uint32_t)g_fat.sectors_per_cluster * FAT16_SECTOR_SIZE;
+    uint32_t cluster_size =
+        (uint32_t)g_fat.sectors_per_cluster * FAT16_SECTOR_SIZE;
     uint32_t done = 0;
 
     while (done < len) {
@@ -638,21 +732,24 @@ static int fat16_vfs_write(int handle, const void *buf, uint32_t len) {
         uint32_t in_cl = abs_pos % cluster_size;
 
         uint16_t cl;
-        if (fat16_ensure_cluster_for_index(f, cl_idx, &cl) < 0) break;
+        if (fat16_ensure_cluster_for_index(f, cl_idx, &cl) < 0)
+            break;
 
         uint32_t sec_idx = in_cl / FAT16_SECTOR_SIZE;
         uint32_t sec_off = in_cl % FAT16_SECTOR_SIZE;
         uint32_t lba = cluster_to_lba(cl) + sec_idx;
 
         uint8_t sec[FAT16_SECTOR_SIZE];
-        if (ata_read_sector(lba, sec) < 0) break;
+        if (ata_read_sector(lba, sec) < 0)
+            break;
 
         uint32_t space = FAT16_SECTOR_SIZE - sec_off;
         uint32_t need = len - done;
         uint32_t take = (space < need) ? space : need;
 
         memcpy(sec + sec_off, (const uint8_t *)buf + done, take);
-        if (ata_write_sector(lba, sec) < 0) break;
+        if (ata_write_sector(lba, sec) < 0)
+            break;
 
         done += take;
     }
@@ -667,8 +764,9 @@ static int fat16_vfs_write(int handle, const void *buf, uint32_t len) {
         // is on disk but the metadata is stale — log but still report bytes
         // written so the caller knows data reached the disk.
         if (fat16_update_dirent(f) < 0) {
-            printf("[fat16] warning: dirent update failed after %d byte write\n",
-                   (int)done);
+            printf(
+                "[fat16] warning: dirent update failed after %d byte write\n",
+                (int)done);
         }
     }
 
@@ -676,36 +774,51 @@ static int fat16_vfs_write(int handle, const void *buf, uint32_t len) {
 }
 
 static int fat16_vfs_close(int handle) {
-    if (handle < 0 || handle >= FAT16_MAX_OPEN) return -1;
-    if (!g_open[handle].in_use) return -1;
+    if (handle < 0 || handle >= FAT16_MAX_OPEN)
+        return -1;
+    if (!g_open[handle].in_use)
+        return -1;
     memset(&g_open[handle], 0, sizeof(g_open[handle]));
     return 0;
 }
 
 static int fat16_vfs_seek(int handle, int offset, int whence) {
-    if (handle < 0 || handle >= FAT16_MAX_OPEN) return -1;
-    if (!g_open[handle].in_use) return -1;
+    if (handle < 0 || handle >= FAT16_MAX_OPEN)
+        return -1;
+    if (!g_open[handle].in_use)
+        return -1;
 
     fat16_open_t *f = &g_open[handle];
     int pos;
     switch (whence) {
-        case SEEK_SET: pos = offset; break;
-        case SEEK_CUR: pos = (int)f->pos + offset; break;
-        case SEEK_END: pos = (int)f->size + offset; break;
-        default: return -1;
+    case SEEK_SET:
+        pos = offset;
+        break;
+    case SEEK_CUR:
+        pos = (int)f->pos + offset;
+        break;
+    case SEEK_END:
+        pos = (int)f->size + offset;
+        break;
+    default:
+        return -1;
     }
-    if (pos < 0) pos = 0;
-    if ((uint32_t)pos > f->size) pos = (int)f->size;
+    if (pos < 0)
+        pos = 0;
+    if ((uint32_t)pos > f->size)
+        pos = (int)f->size;
     f->pos = (uint32_t)pos;
     return pos;
 }
 
 static int fat16_vfs_stat(const char *path, vfs_stat_t *st) {
-    if (!g_fat.mounted || !path || !st) return -1;
+    if (!g_fat.mounted || !path || !st)
+        return -1;
 
     // Check if path is root "/"
     const char *p = path;
-    while (*p == '/') p++;
+    while (*p == '/')
+        p++;
     if (*p == '\0') {
         st->size = 0;
         st->type = VFS_DIR;
@@ -719,7 +832,8 @@ static int fat16_vfs_stat(const char *path, vfs_stat_t *st) {
         st->type = VFS_DIR;
         return 0;
     }
-    if (rc < 0) return -1;
+    if (rc < 0)
+        return -1;
 
     st->size = de.file_size;
     st->type = (de.attr & FAT16_ATTR_DIR) ? VFS_DIR : VFS_FILE;
@@ -728,11 +842,14 @@ static int fat16_vfs_stat(const char *path, vfs_stat_t *st) {
 
 // Enumerate entries in a directory. Supports root and subdirectories.
 // Skips '.', '..', volume labels, LFN entries, and deleted entries.
-static int fat16_vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
-    if (!g_fat.mounted || !buf || size == 0 || index < 0) return 0;
+static int fat16_vfs_readdir(const char *path, int index, char *buf,
+                             uint32_t size) {
+    if (!g_fat.mounted || !buf || size == 0 || index < 0)
+        return 0;
 
     fat16_dir_loc_t dir;
-    if (fat16_resolve_dir(path, &dir) < 0) return 0;
+    if (fat16_resolve_dir(path, &dir) < 0)
+        return 0;
 
     uint8_t sec[FAT16_SECTOR_SIZE];
     int vis = 0;
@@ -740,20 +857,26 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf, uint32_t si
     if (dir.cluster == 0) {
         // Root directory
         for (uint32_t s = 0; s < g_fat.root_dir_sectors; s++) {
-            if (ata_read_sector(g_fat.root_start_lba + s, sec) < 0) return 0;
+            if (ata_read_sector(g_fat.root_start_lba + s, sec) < 0)
+                return 0;
 
             for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
                 fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
-                if (de->name[0] == 0x00) return 0;
-                if (de->name[0] == 0xE5) continue;
-                if (de->attr == FAT16_ATTR_LFN) continue;
-                if (de->attr & FAT16_ATTR_VOLUMEID) continue;
+                if (de->name[0] == 0x00)
+                    return 0;
+                if (de->name[0] == 0xE5)
+                    continue;
+                if (de->attr == FAT16_ATTR_LFN)
+                    continue;
+                if (de->attr & FAT16_ATTR_VOLUMEID)
+                    continue;
 
                 if (vis == index) {
                     char name[13];
                     fat16_dirent_name_to_string(de, name);
                     size_t n = strlen(name);
-                    if (n >= size) n = size - 1;
+                    if (n >= size)
+                        n = size - 1;
                     memcpy(buf, name, n);
                     buf[n] = '\0';
                     return (int)(n + 1);
@@ -767,23 +890,32 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf, uint32_t si
         while (cl >= 2 && cl < 0xFFF8) {
             for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
                 uint32_t lba = cluster_to_lba(cl) + s;
-                if (ata_read_sector(lba, sec) < 0) return 0;
+                if (ata_read_sector(lba, sec) < 0)
+                    return 0;
 
                 for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
                     fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
-                    if (de->name[0] == 0x00) return 0;
-                    if (de->name[0] == 0xE5) continue;
-                    if (de->attr == FAT16_ATTR_LFN) continue;
-                    if (de->attr & FAT16_ATTR_VOLUMEID) continue;
+                    if (de->name[0] == 0x00)
+                        return 0;
+                    if (de->name[0] == 0xE5)
+                        continue;
+                    if (de->attr == FAT16_ATTR_LFN)
+                        continue;
+                    if (de->attr & FAT16_ATTR_VOLUMEID)
+                        continue;
                     // Skip '.' and '..' in subdirectory listings
-                    if (de->name[0] == '.' && de->name[1] == ' ') continue;
-                    if (de->name[0] == '.' && de->name[1] == '.' && de->name[2] == ' ') continue;
+                    if (de->name[0] == '.' && de->name[1] == ' ')
+                        continue;
+                    if (de->name[0] == '.' && de->name[1] == '.' &&
+                        de->name[2] == ' ')
+                        continue;
 
                     if (vis == index) {
                         char name[13];
                         fat16_dirent_name_to_string(de, name);
                         size_t n = strlen(name);
-                        if (n >= size) n = size - 1;
+                        if (n >= size)
+                            n = size - 1;
                         memcpy(buf, name, n);
                         buf[n] = '\0';
                         return (int)(n + 1);
@@ -798,31 +930,39 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf, uint32_t si
 }
 
 static int fat16_vfs_unlink(const char *path) {
-    if (!g_fat.mounted || !path) return -1;
+    if (!g_fat.mounted || !path)
+        return -1;
 
     fat16_dirent_t de;
     uint32_t de_lba = 0;
     uint16_t de_off = 0;
-    int rc = fat16_resolve_path(path, NULL, &de, &de_lba, &de_off, NULL, NULL, NULL);
-    if (rc < 0) return -1;
-    if (de.attr & FAT16_ATTR_DIR) return -1;
+    int rc =
+        fat16_resolve_path(path, NULL, &de, &de_lba, &de_off, NULL, NULL, NULL);
+    if (rc < 0)
+        return -1;
+    if (de.attr & FAT16_ATTR_DIR)
+        return -1;
 
     if (de.first_cluster_lo >= 2) {
-        if (fat16_free_chain(de.first_cluster_lo) < 0) return -1;
+        if (fat16_free_chain(de.first_cluster_lo) < 0)
+            return -1;
     }
 
     uint8_t sec[FAT16_SECTOR_SIZE];
-    if (ata_read_sector(de_lba, sec) < 0) return -1;
+    if (ata_read_sector(de_lba, sec) < 0)
+        return -1;
     fat16_dirent_t *wde = (fat16_dirent_t *)(sec + de_off);
-    wde->name[0] = 0xE5;  // 0xE5 = deleted entry marker
-    if (ata_write_sector(de_lba, sec) < 0) return -1;
+    wde->name[0] = 0xE5; // 0xE5 = deleted entry marker
+    if (ata_write_sector(de_lba, sec) < 0)
+        return -1;
 
     return 0;
 }
 
 // Create a new directory at path. Parent must exist and be a directory.
 static int fat16_vfs_mkdir(const char *path) {
-    if (!g_fat.mounted || !path) return -1;
+    if (!g_fat.mounted || !path)
+        return -1;
 
     fat16_dir_loc_t parent;
     fat16_dirent_t de;
@@ -830,17 +970,21 @@ static int fat16_vfs_mkdir(const char *path) {
     uint16_t de_off = 0, free_off = 0;
     uint8_t name83[11];
 
-    int rc = fat16_resolve_path(path, &parent, &de, &de_lba, &de_off,
-                                 name83, &free_lba, &free_off);
-    if (rc == 0) return -1;   // already exists
-    if (rc == -2) return -1;  // can't mkdir "/"
+    int rc = fat16_resolve_path(path, &parent, &de, &de_lba, &de_off, name83,
+                                &free_lba, &free_off);
+    if (rc == 0)
+        return -1; // already exists
+    if (rc == -2)
+        return -1; // can't mkdir "/"
 
     // Need a free slot in the parent directory
-    if (free_lba == 0) return -1;
+    if (free_lba == 0)
+        return -1;
 
     // Allocate a cluster for the new directory's contents
     uint16_t new_cl;
-    if (fat16_alloc_cluster(&new_cl) < 0) return -1;
+    if (fat16_alloc_cluster(&new_cl) < 0)
+        return -1;
 
     // Write '.' and '..' entries in the new cluster
     uint8_t sec[FAT16_SECTOR_SIZE];
@@ -862,35 +1006,43 @@ static int fat16_vfs_mkdir(const char *path) {
     dotdot->first_cluster_lo = parent.cluster;
 
     uint32_t new_lba = cluster_to_lba(new_cl);
-    if (ata_write_sector(new_lba, sec) < 0) return -1;
+    if (ata_write_sector(new_lba, sec) < 0)
+        return -1;
 
     // Write the new directory entry in the parent
-    if (ata_read_sector(free_lba, sec) < 0) return -1;
+    if (ata_read_sector(free_lba, sec) < 0)
+        return -1;
     fat16_dirent_t *nde = (fat16_dirent_t *)(sec + free_off);
     memset(nde, 0, sizeof(*nde));
     memcpy(nde->name, name83, 11);
     nde->attr = FAT16_ATTR_DIR;
     nde->first_cluster_lo = new_cl;
-    nde->file_size = 0;  // directories have size 0 in FAT16
-    if (ata_write_sector(free_lba, sec) < 0) return -1;
+    nde->file_size = 0; // directories have size 0 in FAT16
+    if (ata_write_sector(free_lba, sec) < 0)
+        return -1;
 
     return 0;
 }
 
 // Remove an empty directory. Fails if directory has entries other than . and ..
 static int fat16_vfs_rmdir(const char *path) {
-    if (!g_fat.mounted || !path) return -1;
+    if (!g_fat.mounted || !path)
+        return -1;
 
     fat16_dirent_t de;
     uint32_t de_lba = 0;
     uint16_t de_off = 0;
-    int rc = fat16_resolve_path(path, NULL, &de, &de_lba, &de_off, NULL, NULL, NULL);
-    if (rc < 0) return -1;
-    if (!(de.attr & FAT16_ATTR_DIR)) return -1;  // not a directory
+    int rc =
+        fat16_resolve_path(path, NULL, &de, &de_lba, &de_off, NULL, NULL, NULL);
+    if (rc < 0)
+        return -1;
+    if (!(de.attr & FAT16_ATTR_DIR))
+        return -1; // not a directory
 
     // Check that directory is empty (only . and .. entries)
     uint16_t cl = de.first_cluster_lo;
-    if (cl < 2) return -1;
+    if (cl < 2)
+        return -1;
 
     uint8_t sec[FAT16_SECTOR_SIZE];
     int has_entries = 0;
@@ -898,16 +1050,23 @@ static int fat16_vfs_rmdir(const char *path) {
     while (check_cl >= 2 && check_cl < 0xFFF8) {
         for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
             uint32_t lba = cluster_to_lba(check_cl) + s;
-            if (ata_read_sector(lba, sec) < 0) return -1;
+            if (ata_read_sector(lba, sec) < 0)
+                return -1;
 
             for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
                 fat16_dirent_t *entry = (fat16_dirent_t *)(sec + off);
-                if (entry->name[0] == 0x00) goto done_check;
-                if (entry->name[0] == 0xE5) continue;
-                if (entry->attr == FAT16_ATTR_LFN) continue;
+                if (entry->name[0] == 0x00)
+                    goto done_check;
+                if (entry->name[0] == 0xE5)
+                    continue;
+                if (entry->attr == FAT16_ATTR_LFN)
+                    continue;
                 // Skip '.' and '..'
-                if (entry->name[0] == '.' && entry->name[1] == ' ') continue;
-                if (entry->name[0] == '.' && entry->name[1] == '.' && entry->name[2] == ' ') continue;
+                if (entry->name[0] == '.' && entry->name[1] == ' ')
+                    continue;
+                if (entry->name[0] == '.' && entry->name[1] == '.' &&
+                    entry->name[2] == ' ')
+                    continue;
                 // Found a real entry — not empty
                 has_entries = 1;
                 goto done_check;
@@ -916,16 +1075,20 @@ static int fat16_vfs_rmdir(const char *path) {
         check_cl = fat16_get_entry(check_cl);
     }
 done_check:
-    if (has_entries) return -1;  // directory not empty
+    if (has_entries)
+        return -1; // directory not empty
 
     // Free the directory's cluster chain
-    if (fat16_free_chain(cl) < 0) return -1;
+    if (fat16_free_chain(cl) < 0)
+        return -1;
 
     // Mark directory entry as deleted in parent
-    if (ata_read_sector(de_lba, sec) < 0) return -1;
+    if (ata_read_sector(de_lba, sec) < 0)
+        return -1;
     fat16_dirent_t *wde = (fat16_dirent_t *)(sec + de_off);
-    wde->name[0] = 0xE5;  // 0xE5 = deleted entry marker
-    if (ata_write_sector(de_lba, sec) < 0) return -1;
+    wde->name[0] = 0xE5; // 0xE5 = deleted entry marker
+    if (ata_write_sector(de_lba, sec) < 0)
+        return -1;
 
     return 0;
 }
@@ -946,27 +1109,37 @@ static const vfs_fs_ops_t fat16_ops = {
 
 static int fat16_try_mount_at(uint32_t part_lba) {
     uint8_t sec[FAT16_SECTOR_SIZE];
-    if (ata_read_sector(part_lba, sec) < 0) return -1;
+    if (ata_read_sector(part_lba, sec) < 0)
+        return -1;
 
     fat16_bpb_t *b = (fat16_bpb_t *)sec;
-    if (b->bytes_per_sector != FAT16_SECTOR_SIZE) return -1;
-    if (b->sectors_per_cluster == 0) return -1;
-    if (b->fat_count == 0) return -1;
-    if (b->root_entry_count == 0) return -1;
-    if (b->sectors_per_fat_16 == 0) return -1;
+    if (b->bytes_per_sector != FAT16_SECTOR_SIZE)
+        return -1;
+    if (b->sectors_per_cluster == 0)
+        return -1;
+    if (b->fat_count == 0)
+        return -1;
+    if (b->root_entry_count == 0)
+        return -1;
+    if (b->sectors_per_fat_16 == 0)
+        return -1;
 
-    uint32_t total = b->total_sectors_16 ? b->total_sectors_16 : b->total_sectors_32;
-    if (total == 0) return -1;
+    uint32_t total =
+        b->total_sectors_16 ? b->total_sectors_16 : b->total_sectors_32;
+    if (total == 0)
+        return -1;
 
-    uint32_t root_secs = ((uint32_t)b->root_entry_count * 32u + (FAT16_SECTOR_SIZE - 1)) /
-                         FAT16_SECTOR_SIZE;
-    uint32_t data_secs = total - (b->reserved_sector_count +
-                                  ((uint32_t)b->fat_count * b->sectors_per_fat_16) +
-                                  root_secs);
+    uint32_t root_secs =
+        ((uint32_t)b->root_entry_count * 32u + (FAT16_SECTOR_SIZE - 1)) /
+        FAT16_SECTOR_SIZE;
+    uint32_t data_secs =
+        total - (b->reserved_sector_count +
+                 ((uint32_t)b->fat_count * b->sectors_per_fat_16) + root_secs);
     uint32_t clusters = data_secs / b->sectors_per_cluster;
 
     // FAT16 range
-    if (clusters < 4085 || clusters >= 65525) return -1;
+    if (clusters < 4085 || clusters >= 65525)
+        return -1;
 
     memset(&g_fat, 0, sizeof(g_fat));
     g_fat.mounted = 1;
@@ -978,7 +1151,8 @@ static int fat16_try_mount_at(uint32_t part_lba) {
     g_fat.sectors_per_fat = b->sectors_per_fat_16;
     g_fat.fat_count = b->fat_count;
     g_fat.fat_start_lba = part_lba + b->reserved_sector_count;
-    g_fat.root_start_lba = g_fat.fat_start_lba + ((uint32_t)b->fat_count * b->sectors_per_fat_16);
+    g_fat.root_start_lba =
+        g_fat.fat_start_lba + ((uint32_t)b->fat_count * b->sectors_per_fat_16);
     g_fat.root_dir_sectors = root_secs;
     g_fat.data_start_lba = g_fat.root_start_lba + root_secs;
     g_fat.cluster_count = clusters;
@@ -1021,6 +1195,4 @@ int fat16_init(void) {
     return -1;
 }
 
-const vfs_fs_ops_t *fat16_get_ops(void) {
-    return &fat16_ops;
-}
+const vfs_fs_ops_t *fat16_get_ops(void) { return &fat16_ops; }

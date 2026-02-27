@@ -1,9 +1,10 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static int run_prog_argv(const char *prog, const char **argv, int argc) {
     int pid = spawn_argv(prog, argv, argc);
-    if (pid < 0) return -1;
+    if (pid < 0)
+        return -1;
     return wait(pid);
 }
 
@@ -20,7 +21,7 @@ void _start(int argc, char **argv) {
     print("tccsmoke: start\n");
 
     {
-        const char *a[] = { "tcc.elf", "-v", 0 };
+        const char *a[] = {"tcc.elf", "-v", 0};
         int rc = run_prog_argv("tcc.elf", a, 2);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc -v rc=");
@@ -31,7 +32,7 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = { "tcc.elf", "-c", "test2.c", "-o", "tcc_ret.o", 0 };
+        const char *a[] = {"tcc.elf", "-c", "test2.c", "-o", "tcc_ret.o", 0};
         int rc = run_prog_argv("tcc.elf", a, 5);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc -c test2.c rc=");
@@ -54,7 +55,7 @@ void _start(int argc, char **argv) {
 
     // Test 3: full link (multi-file → executable)
     {
-        const char *a[] = { "tcc.elf", "t3a.c", "t3b.c", "-o", "t3.elf", 0 };
+        const char *a[] = {"tcc.elf", "t3a.c", "t3b.c", "-o", "t3.elf", 0};
         int rc = run_prog_argv("tcc.elf", a, 5);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc link t3 rc=");
@@ -77,7 +78,7 @@ void _start(int argc, char **argv) {
 
     // Test 4: run the compiled program
     {
-        const char *a[] = { "t3.elf", 0 };
+        const char *a[] = {"t3.elf", 0};
         int rc = run_prog_argv("t3.elf", a, 1);
         if (rc != 0) {
             print("tccsmoke: FAIL (run t3.elf rc=");

@@ -64,7 +64,7 @@ static void vga_save_state(void) {
 
     // Save Attribute Controller registers
     for (int i = 0; i < 21; i++) {
-        inb(VGA_INSTAT_READ);  // Reset flip-flop
+        inb(VGA_INSTAT_READ); // Reset flip-flop
         outb(VGA_AC_INDEX, (uint8_t)i);
         saved_ac[i] = inb(VGA_AC_READ);
     }
@@ -73,7 +73,7 @@ static void vga_save_state(void) {
     outb(VGA_AC_INDEX, 0x20);
 
     // Save DAC palette
-    outb(0x3C7, 0);  // DAC read index
+    outb(0x3C7, 0); // DAC read index
     for (int i = 0; i < 256; i++) {
         saved_dac[i][0] = inb(VGA_DAC_DATA);
         saved_dac[i][1] = inb(VGA_DAC_DATA);
@@ -82,24 +82,32 @@ static void vga_save_state(void) {
 
     // Save video memory - all 4 planes
     // Set sequential mode for reading
-    outb(VGA_SEQ_INDEX, 0x04);  // Memory Mode
-    outb(VGA_SEQ_DATA, 0x06);   // Sequential, disable chain-4, disable odd/even
+    outb(VGA_SEQ_INDEX, 0x04); // Memory Mode
+    outb(VGA_SEQ_DATA, 0x06);  // Sequential, disable chain-4, disable odd/even
 
-    outb(VGA_GC_INDEX, 0x05);   // Mode register
-    outb(VGA_GC_DATA, 0x00);    // Read mode 0, write mode 0
-    outb(VGA_GC_INDEX, 0x06);   // Misc register
-    outb(VGA_GC_DATA, 0x05);    // Map A0000, disable odd/even
+    outb(VGA_GC_INDEX, 0x05); // Mode register
+    outb(VGA_GC_DATA, 0x00);  // Read mode 0, write mode 0
+    outb(VGA_GC_INDEX, 0x06); // Misc register
+    outb(VGA_GC_DATA, 0x05);  // Map A0000, disable odd/even
 
     for (int plane = 0; plane < 4; plane++) {
-        outb(VGA_GC_INDEX, 0x04);   // Read Map Select
+        outb(VGA_GC_INDEX, 0x04); // Read Map Select
         outb(VGA_GC_DATA, (uint8_t)plane);
 
         uint8_t *dst;
         switch (plane) {
-            case 0: dst = saved_plane0; break;
-            case 1: dst = saved_plane1; break;
-            case 2: dst = saved_plane2; break;
-            default: dst = saved_plane3; break;
+        case 0:
+            dst = saved_plane0;
+            break;
+        case 1:
+            dst = saved_plane1;
+            break;
+        case 2:
+            dst = saved_plane2;
+            break;
+        default:
+            dst = saved_plane3;
+            break;
         }
         for (int i = 0; i < VGA_PLANE_SIZE; i++) {
             dst[i] = vmem[i];
@@ -120,7 +128,8 @@ static void vga_save_state(void) {
 }
 
 static void vga_restore_state(void) {
-    if (!state_saved) return;
+    if (!state_saved)
+        return;
 
     volatile uint8_t *vmem = (volatile uint8_t *)0xA0000;
 
@@ -129,13 +138,13 @@ static void vga_restore_state(void) {
 
     // Write Sequencer registers (reset first)
     outb(VGA_SEQ_INDEX, 0x00);
-    outb(VGA_SEQ_DATA, 0x01);  // Synchronous reset
+    outb(VGA_SEQ_DATA, 0x01); // Synchronous reset
     for (int i = 1; i < 5; i++) {
         outb(VGA_SEQ_INDEX, (uint8_t)i);
         outb(VGA_SEQ_DATA, saved_seq[i]);
     }
     outb(VGA_SEQ_INDEX, 0x00);
-    outb(VGA_SEQ_DATA, 0x03);  // End reset
+    outb(VGA_SEQ_DATA, 0x03); // End reset
 
     // Unlock CRTC
     outb(VGA_CRTC_INDEX, 0x11);
@@ -171,24 +180,32 @@ static void vga_restore_state(void) {
     }
 
     // Restore video memory - all 4 planes
-    outb(VGA_SEQ_INDEX, 0x04);  // Memory Mode
-    outb(VGA_SEQ_DATA, 0x06);   // Sequential, disable chain-4
+    outb(VGA_SEQ_INDEX, 0x04); // Memory Mode
+    outb(VGA_SEQ_DATA, 0x06);  // Sequential, disable chain-4
 
-    outb(VGA_GC_INDEX, 0x05);   // Mode register
-    outb(VGA_GC_DATA, 0x00);    // Write mode 0
-    outb(VGA_GC_INDEX, 0x06);   // Misc register
-    outb(VGA_GC_DATA, 0x05);    // Map A0000, disable odd/even
+    outb(VGA_GC_INDEX, 0x05); // Mode register
+    outb(VGA_GC_DATA, 0x00);  // Write mode 0
+    outb(VGA_GC_INDEX, 0x06); // Misc register
+    outb(VGA_GC_DATA, 0x05);  // Map A0000, disable odd/even
 
     for (int plane = 0; plane < 4; plane++) {
-        outb(VGA_SEQ_INDEX, 0x02);  // Map Mask
-        outb(VGA_SEQ_DATA, (uint8_t)(1 << plane));  // Select one plane
+        outb(VGA_SEQ_INDEX, 0x02);                 // Map Mask
+        outb(VGA_SEQ_DATA, (uint8_t)(1 << plane)); // Select one plane
 
         const uint8_t *src;
         switch (plane) {
-            case 0: src = saved_plane0; break;
-            case 1: src = saved_plane1; break;
-            case 2: src = saved_plane2; break;
-            default: src = saved_plane3; break;
+        case 0:
+            src = saved_plane0;
+            break;
+        case 1:
+            src = saved_plane1;
+            break;
+        case 2:
+            src = saved_plane2;
+            break;
+        default:
+            src = saved_plane3;
+            break;
         }
         for (int i = 0; i < VGA_PLANE_SIZE; i++) {
             vmem[i] = src[i];
@@ -214,27 +231,19 @@ static void vga_restore_state(void) {
 
 static const uint8_t mode13h_misc = 0x63;
 
-static const uint8_t mode13h_seq[] = {
-    0x03, 0x01, 0x0F, 0x00, 0x0E
-};
+static const uint8_t mode13h_seq[] = {0x03, 0x01, 0x0F, 0x00, 0x0E};
 
-static const uint8_t mode13h_crtc[] = {
-    0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F,
-    0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x9C, 0x0E, 0x8F, 0x28, 0x40, 0x96, 0xB9, 0xA3,
-    0xFF
-};
+static const uint8_t mode13h_crtc[] = {0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF,
+                                       0x1F, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00,
+                                       0x00, 0x00, 0x9C, 0x0E, 0x8F, 0x28, 0x40,
+                                       0x96, 0xB9, 0xA3, 0xFF};
 
-static const uint8_t mode13h_gc[] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x0F,
-    0xFF
-};
+static const uint8_t mode13h_gc[] = {0x00, 0x00, 0x00, 0x00, 0x00,
+                                     0x40, 0x05, 0x0F, 0xFF};
 
-static const uint8_t mode13h_ac[] = {
-    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-    0x41, 0x00, 0x0F, 0x00, 0x00
-};
+static const uint8_t mode13h_ac[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+                                     0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+                                     0x0E, 0x0F, 0x41, 0x00, 0x0F, 0x00, 0x00};
 
 // ============================================================
 // 8x8 Bitmap Font (ASCII 32-126)
@@ -445,13 +454,13 @@ static void vga_write_regs(uint8_t misc, const uint8_t *seq,
 
     // Write Sequencer registers (with reset)
     outb(VGA_SEQ_INDEX, 0x00);
-    outb(VGA_SEQ_DATA, 0x01);  // Synchronous reset
+    outb(VGA_SEQ_DATA, 0x01); // Synchronous reset
     for (int i = 1; i < 5; i++) {
         outb(VGA_SEQ_INDEX, (uint8_t)i);
         outb(VGA_SEQ_DATA, seq[i]);
     }
     outb(VGA_SEQ_INDEX, 0x00);
-    outb(VGA_SEQ_DATA, 0x03);  // End reset
+    outb(VGA_SEQ_DATA, 0x03); // End reset
 
     // Unlock CRTC registers
     outb(VGA_CRTC_INDEX, 0x11);
@@ -490,8 +499,8 @@ void vga_enter_mode13h(void) {
     vga_save_state();
 
     // Program Mode 13h registers
-    vga_write_regs(mode13h_misc, mode13h_seq, mode13h_crtc,
-                   mode13h_gc, mode13h_ac);
+    vga_write_regs(mode13h_misc, mode13h_seq, mode13h_crtc, mode13h_gc,
+                   mode13h_ac);
     vga_init_palette();
     vga_clear(0);
     vga_mode13h_active = 1;
@@ -503,13 +512,9 @@ void vga_enter_text_mode(void) {
     vga_mode13h_active = 0;
 }
 
-int vga_is_mode13h(void) {
-    return vga_mode13h_active;
-}
+int vga_is_mode13h(void) { return vga_mode13h_active; }
 
-int vga_is_graphics(void) {
-    return vga_mode13h_active || vga_bga_active;
-}
+int vga_is_graphics(void) { return vga_mode13h_active || vga_bga_active; }
 
 // Check if Bochs VGA device is present
 int vga_bga_available(void) {
@@ -522,7 +527,8 @@ int vga_bga_available(void) {
 // Returns LFB physical address (typically 0xFD000000 under QEMU), 0 on failure
 uint32_t vga_enter_bga_mode(int width, int height, int bpp) {
     if (!vga_bga_available()) {
-        printf("[vga] BGA not available (id=0x%x)\n", bga_read(VBE_DISPI_INDEX_ID));
+        printf("[vga] BGA not available (id=0x%x)\n",
+               bga_read(VBE_DISPI_INDEX_ID));
         return 0;
     }
 
@@ -540,15 +546,16 @@ uint32_t vga_enter_bga_mode(int width, int height, int bpp) {
     bga_write(VBE_DISPI_INDEX_BPP, (uint16_t)bpp);
 
     // Enable with linear framebuffer
-    bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+    bga_write(VBE_DISPI_INDEX_ENABLE,
+              VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
 
     // Verify settings took effect
     uint16_t actual_w = bga_read(VBE_DISPI_INDEX_XRES);
     uint16_t actual_h = bga_read(VBE_DISPI_INDEX_YRES);
 
     if (actual_w != (uint16_t)width || actual_h != (uint16_t)height) {
-        printf("[vga] BGA mode set failed: requested %dx%d got %dx%d\n",
-               width, height, actual_w, actual_h);
+        printf("[vga] BGA mode set failed: requested %dx%d got %dx%d\n", width,
+               height, actual_w, actual_h);
         bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
         return 0;
     }
@@ -557,21 +564,23 @@ uint32_t vga_enter_bga_mode(int width, int height, int bpp) {
 
     // The LFB address for QEMU's std VGA is at PCI BAR0
     // For QEMU -vga std, this is typically 0xFD000000
-    // We can read it from PCI config space (bus 0, dev 2, fn 0, BAR0 offset 0x10)
-    // PCI config address: 0x80000000 | (bus<<16) | (dev<<11) | (fn<<8) | (reg)
+    // We can read it from PCI config space (bus 0, dev 2, fn 0, BAR0 offset
+    // 0x10) PCI config address: 0x80000000 | (bus<<16) | (dev<<11) | (fn<<8) |
+    // (reg)
     uint32_t pci_addr = 0x80000000 | (0 << 16) | (2 << 11) | (0 << 8) | 0x10;
     outl(0xCF8, pci_addr);
     uint32_t bar0 = inl(0xCFC);
-    uint32_t lfb_addr = bar0 & ~0xF;  // Mask off type bits
+    uint32_t lfb_addr = bar0 & ~0xF; // Mask off type bits
 
-    printf("[vga] BGA mode: %dx%dx%d LFB=0x%x\n",
-           actual_w, actual_h, bpp, lfb_addr);
+    printf("[vga] BGA mode: %dx%dx%d LFB=0x%x\n", actual_w, actual_h, bpp,
+           lfb_addr);
 
     return lfb_addr;
 }
 
 void vga_exit_bga_mode(void) {
-    if (!vga_bga_active) return;
+    if (!vga_bga_active)
+        return;
     bga_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
     vga_bga_active = 0;
     // Restore text mode
@@ -590,9 +599,11 @@ void vga_put_pixel(int x, int y, uint8_t color) {
 
 void vga_fill_rect(int x, int y, int w, int h, uint8_t color) {
     for (int row = y; row < y + h; row++) {
-        if (row < 0 || row >= VGA_HEIGHT) continue;
+        if (row < 0 || row >= VGA_HEIGHT)
+            continue;
         for (int col = x; col < x + w; col++) {
-            if (col < 0 || col >= VGA_WIDTH) continue;
+            if (col < 0 || col >= VGA_WIDTH)
+                continue;
             VGA_FB[row * VGA_WIDTH + col] = color;
         }
     }
@@ -610,14 +621,17 @@ void vga_draw_line(int x0, int y0, int x1, int y1, uint8_t color) {
     int sx = (dx > 0) ? 1 : -1;
     int sy = (dy > 0) ? 1 : -1;
 
-    if (dx < 0) dx = -dx;
-    if (dy < 0) dy = -dy;
+    if (dx < 0)
+        dx = -dx;
+    if (dy < 0)
+        dy = -dy;
 
     int err = dx - dy;
 
     while (1) {
         vga_put_pixel(x0, y0, color);
-        if (x0 == x1 && y0 == y1) break;
+        if (x0 == x1 && y0 == y1)
+            break;
 
         int e2 = 2 * err;
         if (e2 > -dy) {
@@ -636,7 +650,8 @@ void vga_draw_line(int x0, int y0, int x1, int y1, uint8_t color) {
 // ============================================================
 
 void vga_draw_char(int x, int y, char c, uint8_t color) {
-    if (c < 32 || c > 126) return;
+    if (c < 32 || c > 126)
+        return;
     const uint8_t *glyph = font8x8[c - 32];
 
     for (int row = 0; row < 8; row++) {
@@ -676,27 +691,27 @@ void vga_set_palette_entry(uint8_t index, uint8_t r, uint8_t g, uint8_t b) {
 
 void vga_init_palette(void) {
     static const uint8_t cga_palette[16][3] = {
-        { 0,  0,  0},  // 0: Black
-        { 0,  0, 42},  // 1: Blue
-        { 0, 42,  0},  // 2: Green
-        { 0, 42, 42},  // 3: Cyan
-        {42,  0,  0},  // 4: Red
-        {42,  0, 42},  // 5: Magenta
-        {42, 21,  0},  // 6: Brown
-        {42, 42, 42},  // 7: Light Gray
-        {21, 21, 21},  // 8: Dark Gray
-        {21, 21, 63},  // 9: Light Blue
-        {21, 63, 21},  // 10: Light Green
-        {21, 63, 63},  // 11: Light Cyan
-        {63, 21, 21},  // 12: Light Red
-        {63, 21, 63},  // 13: Light Magenta
-        {63, 63, 21},  // 14: Yellow
-        {63, 63, 63},  // 15: White
+        {0, 0, 0},    // 0: Black
+        {0, 0, 42},   // 1: Blue
+        {0, 42, 0},   // 2: Green
+        {0, 42, 42},  // 3: Cyan
+        {42, 0, 0},   // 4: Red
+        {42, 0, 42},  // 5: Magenta
+        {42, 21, 0},  // 6: Brown
+        {42, 42, 42}, // 7: Light Gray
+        {21, 21, 21}, // 8: Dark Gray
+        {21, 21, 63}, // 9: Light Blue
+        {21, 63, 21}, // 10: Light Green
+        {21, 63, 63}, // 11: Light Cyan
+        {63, 21, 21}, // 12: Light Red
+        {63, 21, 63}, // 13: Light Magenta
+        {63, 63, 21}, // 14: Yellow
+        {63, 63, 63}, // 15: White
     };
 
     for (int i = 0; i < 16; i++) {
-        vga_set_palette_entry((uint8_t)i,
-            cga_palette[i][0], cga_palette[i][1], cga_palette[i][2]);
+        vga_set_palette_entry((uint8_t)i, cga_palette[i][0], cga_palette[i][1],
+                              cga_palette[i][2]);
     }
 
     // 6x6x6 color cube (indices 16-231)
@@ -704,10 +719,9 @@ void vga_init_palette(void) {
     for (int r = 0; r < 6; r++) {
         for (int g = 0; g < 6; g++) {
             for (int b = 0; b < 6; b++) {
-                vga_set_palette_entry(idx++,
-                    (uint8_t)(r * 63 / 5),
-                    (uint8_t)(g * 63 / 5),
-                    (uint8_t)(b * 63 / 5));
+                vga_set_palette_entry(idx++, (uint8_t)(r * 63 / 5),
+                                      (uint8_t)(g * 63 / 5),
+                                      (uint8_t)(b * 63 / 5));
             }
         }
     }

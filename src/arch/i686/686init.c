@@ -25,26 +25,26 @@ static uint8_t initial_kernel_stack[4096] __attribute__((aligned(16)));
 #define INITIAL_KERNEL_STACK_TOP ((uint32_t)&initial_kernel_stack[4096])
 
 void init_686(void) {
-  init_term();
+    init_term();
 
-  printf("mateOS kernel started\n");
-  if (!check_protected_mode()) {
-    printf("Protected mode not enabled\n");
-    return;
-  }
+    printf("mateOS kernel started\n");
+    if (!check_protected_mode()) {
+        printf("Protected mode not enabled\n");
+        return;
+    }
 
-  // Global and Interrupt Descriptor Tables
-  init_gdt(&gp_ptr, gdt);
-  init_idt(&idt_ptr, idt_entries);
+    // Global and Interrupt Descriptor Tables
+    init_gdt(&gp_ptr, gdt);
+    init_idt(&idt_ptr, idt_entries);
 
-  // Initialize paging with identity mapping (0-32MB)
-  init_paging(&page_dir, page_tables);
+    // Initialize paging with identity mapping (0-32MB)
+    init_paging(&page_dir, page_tables);
 
-  // Initialize TSS for user mode support
-  tss_init(INITIAL_KERNEL_STACK_TOP);
+    // Initialize TSS for user mode support
+    tss_init(INITIAL_KERNEL_STACK_TOP);
 
-  // Initialize system timer (100 Hz)
-  init_timer(100);
+    // Initialize system timer (100 Hz)
+    init_timer(100);
 
-  printf("mateOS init done\n");
+    printf("mateOS init done\n");
 }

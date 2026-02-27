@@ -3,46 +3,32 @@
 // Low-level syscall helpers.
 static inline int __syscall0(unsigned int n) {
     int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(n)
-        : "memory"
-    );
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(n) : "memory");
     return ret;
 }
 
 static inline int __syscall1(unsigned int n, unsigned int a1) {
     int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(n), "b"(a1)
-        : "memory"
-    );
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(n), "b"(a1) : "memory");
     return ret;
 }
 
 static inline int __syscall2(unsigned int n, unsigned int a1, unsigned int a2) {
     int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(n), "b"(a1), "c"(a2)
-        : "memory"
-    );
+    __asm__ volatile("int $0x80"
+                     : "=a"(ret)
+                     : "a"(n), "b"(a1), "c"(a2)
+                     : "memory");
     return ret;
 }
 
 static inline int __syscall3(unsigned int n, unsigned int a1, unsigned int a2,
                              unsigned int a3) {
     int ret;
-    __asm__ volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(n), "b"(a1), "c"(a2), "d"(a3)
-        : "memory"
-    );
+    __asm__ volatile("int $0x80"
+                     : "=a"(ret)
+                     : "a"(n), "b"(a1), "c"(a2), "d"(a3)
+                     : "memory");
     return ret;
 }
 
@@ -58,38 +44,30 @@ void exit(int code) {
     }
 }
 
-void yield(void) {
-    (void)__syscall0(SYS_YIELD);
-}
+void yield(void) { (void)__syscall0(SYS_YIELD); }
 
 unsigned char *gfx_init(void) {
     return (unsigned char *)(unsigned int)__syscall0(SYS_GFX_INIT);
 }
 
-void gfx_exit(void) {
-    (void)__syscall0(SYS_GFX_EXIT);
-}
+void gfx_exit(void) { (void)__syscall0(SYS_GFX_EXIT); }
 
 unsigned char getkey(unsigned int flags) {
     return (unsigned char)__syscall1(SYS_GETKEY, flags);
 }
 
-unsigned int gfx_info(void) {
-    return (unsigned int)__syscall0(SYS_GFX_INFO);
-}
+unsigned int gfx_info(void) { return (unsigned int)__syscall0(SYS_GFX_INFO); }
 
 int spawn(const char *filename) {
     return __syscall3(SYS_SPAWN, (unsigned int)filename, 0, 0);
 }
 
 int spawn_argv(const char *filename, const char **argv, int argc) {
-    return __syscall3(SYS_SPAWN, (unsigned int)filename,
-                      (unsigned int)argv, (unsigned int)argc);
+    return __syscall3(SYS_SPAWN, (unsigned int)filename, (unsigned int)argv,
+                      (unsigned int)argc);
 }
 
-int wait(int task_id) {
-    return __syscall1(SYS_WAIT, (unsigned int)task_id);
-}
+int wait(int task_id) { return __syscall1(SYS_WAIT, (unsigned int)task_id); }
 
 int readdir(unsigned int index, char *buf, unsigned int size) {
     // Legacy: list cwd (path=NULL)
@@ -97,23 +75,19 @@ int readdir(unsigned int index, char *buf, unsigned int size) {
 }
 
 int readdir_path(const char *path, unsigned int index, char *buf) {
-    return __syscall3(SYS_READDIR, (unsigned int)path, index, (unsigned int)buf);
+    return __syscall3(SYS_READDIR, (unsigned int)path, index,
+                      (unsigned int)buf);
 }
 
-int getpid(void) {
-    return __syscall0(SYS_GETPID);
-}
+int getpid(void) { return __syscall0(SYS_GETPID); }
 
-void taskinfo(void) {
-    (void)__syscall0(SYS_TASKINFO);
-}
+void taskinfo(void) { (void)__syscall0(SYS_TASKINFO); }
 
-void shutdown(void) {
-    (void)__syscall0(SYS_SHUTDOWN);
-}
+void shutdown(void) { (void)__syscall0(SYS_SHUTDOWN); }
 
 int win_create(int width, int height, const char *title) {
-    unsigned int packed = ((unsigned int)width << 16) | ((unsigned int)height & 0xFFFF);
+    unsigned int packed =
+        ((unsigned int)width << 16) | ((unsigned int)height & 0xFFFF);
     return __syscall2(SYS_WIN_CREATE, packed, (unsigned int)title);
 }
 
@@ -122,7 +96,8 @@ int win_destroy(int wid) {
 }
 
 int win_write(int wid, const unsigned char *data, unsigned int len) {
-    return __syscall3(SYS_WIN_WRITE, (unsigned int)wid, (unsigned int)data, len);
+    return __syscall3(SYS_WIN_WRITE, (unsigned int)wid, (unsigned int)data,
+                      len);
 }
 
 int win_read(int wid, unsigned char *dest, unsigned int len) {
@@ -158,20 +133,18 @@ void net_cfg(unsigned int ip_be, unsigned int mask_be, unsigned int gw_be) {
 }
 
 int net_get(unsigned int *ip_be, unsigned int *mask_be, unsigned int *gw_be) {
-    return __syscall3(SYS_NETGET, (unsigned int)ip_be, (unsigned int)mask_be, (unsigned int)gw_be);
+    return __syscall3(SYS_NETGET, (unsigned int)ip_be, (unsigned int)mask_be,
+                      (unsigned int)gw_be);
 }
 
 int net_stats(unsigned int *rx_packets, unsigned int *tx_packets) {
-    return __syscall2(SYS_NETSTATS, (unsigned int)rx_packets, (unsigned int)tx_packets);
+    return __syscall2(SYS_NETSTATS, (unsigned int)rx_packets,
+                      (unsigned int)tx_packets);
 }
 
-int sleep_ms(unsigned int ms) {
-    return __syscall1(SYS_SLEEPMS, ms);
-}
+int sleep_ms(unsigned int ms) { return __syscall1(SYS_SLEEPMS, ms); }
 
-int sock_listen(unsigned int port) {
-    return __syscall1(SYS_SOCK_LISTEN, port);
-}
+int sock_listen(unsigned int port) { return __syscall1(SYS_SOCK_LISTEN, port); }
 
 int sock_accept(int fd) {
     return __syscall1(SYS_SOCK_ACCEPT, (unsigned int)fd);
@@ -185,13 +158,11 @@ int sock_recv(int fd, void *buf, unsigned int len) {
     return __syscall3(SYS_SOCK_RECV, (unsigned int)fd, (unsigned int)buf, len);
 }
 
-int sock_close(int fd) {
-    return __syscall1(SYS_SOCK_CLOSE, (unsigned int)fd);
-}
+int sock_close(int fd) { return __syscall1(SYS_SOCK_CLOSE, (unsigned int)fd); }
 
 int win_read_text(int wid, char *buf, int max_len) {
-    return __syscall3(SYS_WIN_READ_TEXT, (unsigned int)wid,
-                      (unsigned int)buf, (unsigned int)max_len);
+    return __syscall3(SYS_WIN_READ_TEXT, (unsigned int)wid, (unsigned int)buf,
+                      (unsigned int)max_len);
 }
 
 int win_set_stdout(int wid) {
@@ -199,8 +170,8 @@ int win_set_stdout(int wid) {
 }
 
 int getmouse(int *x, int *y, unsigned char *buttons) {
-    return __syscall3(SYS_GETMOUSE, (unsigned int)x,
-                      (unsigned int)y, (unsigned int)buttons);
+    return __syscall3(SYS_GETMOUSE, (unsigned int)x, (unsigned int)y,
+                      (unsigned int)buttons);
 }
 
 int open(const char *path, int flags) {
@@ -215,12 +186,11 @@ int fd_write(int fd, const void *buf, unsigned int len) {
     return __syscall3(SYS_FWRITE, (unsigned int)fd, (unsigned int)buf, len);
 }
 
-int close(int fd) {
-    return __syscall1(SYS_CLOSE, (unsigned int)fd);
-}
+int close(int fd) { return __syscall1(SYS_CLOSE, (unsigned int)fd); }
 
 int seek(int fd, int offset, int whence) {
-    return __syscall3(SYS_SEEK, (unsigned int)fd, (unsigned int)offset, (unsigned int)whence);
+    return __syscall3(SYS_SEEK, (unsigned int)fd, (unsigned int)offset,
+                      (unsigned int)whence);
 }
 
 int stat(const char *path, stat_t *st) {
@@ -231,17 +201,11 @@ int unlink(const char *path) {
     return __syscall1(SYS_UNLINK, (unsigned int)path);
 }
 
-int kill(int task_id) {
-    return __syscall1(SYS_KILL, (unsigned int)task_id);
-}
+int kill(int task_id) { return __syscall1(SYS_KILL, (unsigned int)task_id); }
 
-unsigned int get_ticks(void) {
-    return (unsigned int)__syscall0(SYS_GETTICKS);
-}
+unsigned int get_ticks(void) { return (unsigned int)__syscall0(SYS_GETTICKS); }
 
-int detach(void) {
-    return __syscall0(SYS_DETACH);
-}
+int detach(void) { return __syscall0(SYS_DETACH); }
 
 void *sbrk(int increment) {
     return (void *)(unsigned int)__syscall1(SYS_SBRK, (unsigned int)increment);

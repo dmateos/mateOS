@@ -1,15 +1,17 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static int run_prog_argv(const char *prog, const char **argv, int argc) {
     int pid = spawn_argv(prog, argv, argc);
-    if (pid < 0) return -1;
+    if (pid < 0)
+        return -1;
     return wait(pid);
 }
 
 static int run_prog(const char *prog) {
     int pid = spawn(prog);
-    if (pid < 0) return -1;
+    if (pid < 0)
+        return -1;
     return wait(pid);
 }
 
@@ -27,7 +29,8 @@ static int fail(const char *msg, int rc) {
 
 static int require_file_nonempty(const char *path) {
     stat_t st;
-    if (stat(path, &st) < 0) return -1;
+    if (stat(path, &st) < 0)
+        return -1;
     return (st.size > 0) ? 0 : -1;
 }
 
@@ -48,66 +51,81 @@ void _start(int argc, char **argv) {
     print("cctest: compiler smoke start\n");
 
     {
-        const char *a[] = { "cc.elf", "test2.c", "-o", "cc_ret.elf", 0 };
+        const char *a[] = {"cc.elf", "test2.c", "-o", "cc_ret.elf", 0};
         int rc = run_prog_argv("cc.elf", a, 4);
-        if (rc != 0) finish_and_exit(fail("cc test2.c", rc));
+        if (rc != 0)
+            finish_and_exit(fail("cc test2.c", rc));
     }
     {
         int rc = run_prog("cc_ret.elf");
-        if (rc != 0) finish_and_exit(fail("run cc_ret.elf", rc));
+        if (rc != 0)
+            finish_and_exit(fail("run cc_ret.elf", rc));
     }
 
     {
-        const char *a[] = { "cc.elf", "test.c", "-o", "cc_print.elf", 0 };
+        const char *a[] = {"cc.elf", "test.c", "-o", "cc_print.elf", 0};
         int rc = run_prog_argv("cc.elf", a, 4);
-        if (rc != 0) finish_and_exit(fail("cc test.c", rc));
+        if (rc != 0)
+            finish_and_exit(fail("cc test.c", rc));
     }
     {
         int rc = run_prog("cc_print.elf");
-        if (rc != 0) finish_and_exit(fail("run cc_print.elf", rc));
+        if (rc != 0)
+            finish_and_exit(fail("run cc_print.elf", rc));
     }
 
     {
-        const char *a[] = { "cc.elf", "-S", "test2.c", "-o", "cc_s.asm", 0 };
+        const char *a[] = {"cc.elf", "-S", "test2.c", "-o", "cc_s.asm", 0};
         int rc = run_prog_argv("cc.elf", a, 5);
-        if (rc != 0) finish_and_exit(fail("cc -S test2.c", rc));
-        if (require_file_nonempty("cc_s.asm") != 0) finish_and_exit(fail("missing cc_s.asm", -1));
+        if (rc != 0)
+            finish_and_exit(fail("cc -S test2.c", rc));
+        if (require_file_nonempty("cc_s.asm") != 0)
+            finish_and_exit(fail("missing cc_s.asm", -1));
     }
 
     {
-        const char *a[] = { "cc.elf", "-c", "test2.c", "-o", "cc_c.o", 0 };
+        const char *a[] = {"cc.elf", "-c", "test2.c", "-o", "cc_c.o", 0};
         int rc = run_prog_argv("cc.elf", a, 5);
-        if (rc != 0) finish_and_exit(fail("cc -c test2.c", rc));
-        if (require_file_nonempty("cc_c.o") != 0) finish_and_exit(fail("missing cc_c.o", -1));
+        if (rc != 0)
+            finish_and_exit(fail("cc -c test2.c", rc));
+        if (require_file_nonempty("cc_c.o") != 0)
+            finish_and_exit(fail("missing cc_c.o", -1));
     }
     {
-        const char *a[] = { "cc.elf", "cc_c.o", "-o", "cc_obj.elf", 0 };
+        const char *a[] = {"cc.elf", "cc_c.o", "-o", "cc_obj.elf", 0};
         int rc = run_prog_argv("cc.elf", a, 4);
-        if (rc != 0) finish_and_exit(fail("cc cc_c.o", rc));
+        if (rc != 0)
+            finish_and_exit(fail("cc cc_c.o", rc));
     }
     {
         int rc = run_prog("cc_obj.elf");
-        if (rc != 0) finish_and_exit(fail("run cc_obj.elf", rc));
+        if (rc != 0)
+            finish_and_exit(fail("run cc_obj.elf", rc));
     }
 
     {
-        const char *a[] = { "cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0 };
+        const char *a[] = {"cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0};
         int rc = run_prog_argv("cc.elf", a, 5);
-        if (rc != 0) finish_and_exit(fail("cc t3a.c t3b.c", rc));
+        if (rc != 0)
+            finish_and_exit(fail("cc t3a.c t3b.c", rc));
     }
     {
         int rc = run_prog("ccmul.elf");
-        if (rc != 0) finish_and_exit(fail("run ccmul.elf", rc));
+        if (rc != 0)
+            finish_and_exit(fail("run ccmul.elf", rc));
     }
 
     {
-        const char *a[] = { "cc.elf", "t4.c", "libtiny.a", "-o", "cc_lib.elf", 0 };
+        const char *a[] = {"cc.elf", "t4.c",       "libtiny.a",
+                           "-o",     "cc_lib.elf", 0};
         int rc = run_prog_argv("cc.elf", a, 5);
-        if (rc != 0) finish_and_exit(fail("cc t4.c libtiny.a", rc));
+        if (rc != 0)
+            finish_and_exit(fail("cc t4.c libtiny.a", rc));
     }
     {
         int rc = run_prog("cc_lib.elf");
-        if (rc != 0) finish_and_exit(fail("run cc_lib.elf", rc));
+        if (rc != 0)
+            finish_and_exit(fail("run cc_lib.elf", rc));
     }
 
     print("cctest: PASS\n");

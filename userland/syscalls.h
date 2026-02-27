@@ -2,57 +2,57 @@
 #define _USERLAND_SYSCALLS_H
 
 // Syscall numbers (must match kernel)
-#define SYS_WRITE    1
-#define SYS_EXIT     2
-#define SYS_YIELD    3
+#define SYS_WRITE 1
+#define SYS_EXIT 2
+#define SYS_YIELD 3
 #define SYS_GFX_INIT 5
 #define SYS_GFX_EXIT 6
-#define SYS_GETKEY   7
-#define SYS_SPAWN    8
-#define SYS_WAIT     9
-#define SYS_READDIR  10
-#define SYS_GETPID   11
+#define SYS_GETKEY 7
+#define SYS_SPAWN 8
+#define SYS_WAIT 9
+#define SYS_READDIR 10
+#define SYS_GETPID 11
 #define SYS_TASKINFO 12
 #define SYS_SHUTDOWN 13
-#define SYS_WIN_CREATE  14
+#define SYS_WIN_CREATE 14
 #define SYS_WIN_DESTROY 15
-#define SYS_WIN_WRITE   16
-#define SYS_WIN_READ    17
-#define SYS_WIN_GETKEY  18
+#define SYS_WIN_WRITE 16
+#define SYS_WIN_READ 17
+#define SYS_WIN_GETKEY 18
 #define SYS_WIN_SENDKEY 19
-#define SYS_WIN_LIST    20
-#define SYS_GFX_INFO   21
-#define SYS_TASKLIST   22
-#define SYS_WAIT_NB    23
-#define SYS_PING       24
-#define SYS_NETCFG     25
-#define SYS_NETGET     26
-#define SYS_SLEEPMS    27
+#define SYS_WIN_LIST 20
+#define SYS_GFX_INFO 21
+#define SYS_TASKLIST 22
+#define SYS_WAIT_NB 23
+#define SYS_PING 24
+#define SYS_NETCFG 25
+#define SYS_NETGET 26
+#define SYS_SLEEPMS 27
 #define SYS_SOCK_LISTEN 28
 #define SYS_SOCK_ACCEPT 29
-#define SYS_SOCK_SEND   30
-#define SYS_SOCK_RECV   31
-#define SYS_SOCK_CLOSE  32
-#define SYS_WIN_READ_TEXT  33
+#define SYS_SOCK_SEND 30
+#define SYS_SOCK_RECV 31
+#define SYS_SOCK_CLOSE 32
+#define SYS_WIN_READ_TEXT 33
 #define SYS_WIN_SET_STDOUT 34
-#define SYS_GETMOUSE       35
-#define SYS_OPEN           36
-#define SYS_FREAD          37
-#define SYS_FWRITE         38
-#define SYS_CLOSE          39
-#define SYS_SEEK           40
-#define SYS_STAT           41
-#define SYS_DETACH         42
-#define SYS_UNLINK         43
-#define SYS_KILL           44
-#define SYS_GETTICKS       45
-#define SYS_MKDIR          46
-#define SYS_CHDIR          47
-#define SYS_GETCWD         48
-#define SYS_RMDIR          49
-#define SYS_NETSTATS       50
-#define SYS_SBRK           51
-#define SYS_DEBUG_EXIT     52
+#define SYS_GETMOUSE 35
+#define SYS_OPEN 36
+#define SYS_FREAD 37
+#define SYS_FWRITE 38
+#define SYS_CLOSE 39
+#define SYS_SEEK 40
+#define SYS_STAT 41
+#define SYS_DETACH 42
+#define SYS_UNLINK 43
+#define SYS_KILL 44
+#define SYS_GETTICKS 45
+#define SYS_MKDIR 46
+#define SYS_CHDIR 47
+#define SYS_GETCWD 48
+#define SYS_RMDIR 49
+#define SYS_NETSTATS 50
+#define SYS_SBRK 51
+#define SYS_DEBUG_EXIT 52
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -63,7 +63,7 @@ void yield(void);
 unsigned char *gfx_init(void);
 void gfx_exit(void);
 unsigned char getkey(unsigned int flags);
-unsigned int gfx_info(void);  // Returns (bpp<<24)|(width<<12)|height
+unsigned int gfx_info(void); // Returns (bpp<<24)|(width<<12)|height
 
 // Process management syscalls
 int spawn(const char *filename);
@@ -83,14 +83,14 @@ void shutdown(void);
 typedef struct {
     unsigned int id;
     unsigned int parent_id;
-    unsigned int ring;     // 0=kernel, 3=user
-    unsigned int state;    // 0=ready, 1=running, 2=blocked, 3=terminated
+    unsigned int ring;  // 0=kernel, 3=user
+    unsigned int state; // 0=ready, 1=running, 2=blocked, 3=terminated
     unsigned int runtime_ticks;
     char name[32];
 } taskinfo_entry_t;
 
 int tasklist(taskinfo_entry_t *buf, int max);
-int wait_nb(int task_id);  // Non-blocking: returns -1 if still running
+int wait_nb(int task_id); // Non-blocking: returns -1 if still running
 
 // Window info struct (must match kernel's win_info_t)
 typedef struct {
@@ -134,22 +134,22 @@ int getmouse(int *x, int *y, unsigned char *buttons);
 #define SEEK_END 2
 
 // Special key codes
-#define KEY_LEFT   0x80
-#define KEY_RIGHT  0x81
-#define KEY_UP     0x82
-#define KEY_DOWN   0x83
+#define KEY_LEFT 0x80
+#define KEY_RIGHT 0x81
+#define KEY_UP 0x82
+#define KEY_DOWN 0x83
 
 // Open flags
 #define O_RDONLY 0
 #define O_WRONLY 1
-#define O_RDWR   2
-#define O_CREAT  4
-#define O_TRUNC  8
+#define O_RDWR 2
+#define O_CREAT 4
+#define O_TRUNC 8
 
 // Stat result (must match kernel's vfs_stat_t)
 typedef struct {
     unsigned int size;
-    unsigned int type;  // 0=file, 1=dir
+    unsigned int type; // 0=file, 1=dir
 } stat_t;
 
 // File I/O syscalls

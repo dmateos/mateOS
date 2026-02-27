@@ -1,6 +1,6 @@
 #include "cmd_shared.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static void cmd_help(const cmd_io_t *io) {
     io->print("Built-in commands:\n");
@@ -20,7 +20,8 @@ cmd_result_t cmd_try_builtin(const char *line, const cmd_io_t *io) {
         return CMD_HANDLED;
     }
     if (strcmp(line, "clear") == 0) {
-        if (io->clear) io->clear();
+        if (io->clear)
+            io->clear();
         return CMD_HANDLED;
     }
     if (strcmp(line, "exit") == 0) {

@@ -1,9 +1,10 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static int run_prog_argv(const char *prog, const char **argv, int argc) {
     int pid = spawn_argv(prog, argv, argc);
-    if (pid < 0) return -1;
+    if (pid < 0)
+        return -1;
     return wait(pid);
 }
 
@@ -19,7 +20,7 @@ void _start(int argc, char **argv) {
 
     print("ccsymtest: start\n");
     {
-        const char *a[] = { "cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0 };
+        const char *a[] = {"cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0};
         int rc = run_prog_argv("cc.elf", a, 5);
         if (rc != 0) {
             print("ccsymtest: FAIL (cc rc=");

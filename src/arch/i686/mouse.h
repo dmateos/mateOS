@@ -5,7 +5,7 @@
 
 typedef struct {
     int x, y;
-    uint8_t buttons;  // bit0=left, bit1=right, bit2=middle
+    uint8_t buttons; // bit0=left, bit1=right, bit2=middle
 } mouse_state_t;
 
 void mouse_init(void);

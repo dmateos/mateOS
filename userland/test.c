@@ -1,8 +1,9 @@
 // Comprehensive test program for mateOS userland
-// Tests syscalls, process management, memory isolation, and user mode functionality
+// Tests syscalls, process management, memory isolation, and user mode
+// functionality
 
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 // ============================================================
 // Test 1: Basic syscall functionality
@@ -23,7 +24,7 @@ static int test_syscalls(void) {
 
     // Test write with larger buffer
     const char *msg = "Hello, testing!";
-    ret = write(1, msg, 0);  // zero-length write
+    ret = write(1, msg, 0); // zero-length write
     // Zero-length write should return -1 (invalid)
     // (kernel returns -1 for len==0)
 
@@ -70,23 +71,40 @@ static int test_math(void) {
     int a = 42, b = 58;
     int sum = a + b;
     print("  - Addition: ");
-    print_num(a); print(" + "); print_num(b); print(" = "); print_num(sum);
+    print_num(a);
+    print(" + ");
+    print_num(b);
+    print(" = ");
+    print_num(sum);
     print("\n");
-    if (sum != 100) { print("  FAILED\n"); return 0; }
+    if (sum != 100) {
+        print("  FAILED\n");
+        return 0;
+    }
 
     int mult = a * 2;
     print("  - Multiplication: ");
-    print_num(a); print(" * 2 = "); print_num(mult);
+    print_num(a);
+    print(" * 2 = ");
+    print_num(mult);
     print("\n");
-    if (mult != 84) { print("  FAILED\n"); return 0; }
+    if (mult != 84) {
+        print("  FAILED\n");
+        return 0;
+    }
 
     // Test division
     int div = 100 / 7;
     int mod = 100 % 7;
     print("  - Division: 100 / 7 = ");
-    print_num(div); print(" remainder "); print_num(mod);
+    print_num(div);
+    print(" remainder ");
+    print_num(mod);
     print("\n");
-    if (div != 14 || mod != 2) { print("  FAILED\n"); return 0; }
+    if (div != 14 || mod != 2) {
+        print("  FAILED\n");
+        return 0;
+    }
 
     print("  PASSED\n\n");
     return 1;
@@ -106,7 +124,8 @@ static int test_stack(void) {
     print("  - Array: [");
     for (int i = 0; i < 10; i++) {
         print_num(arr[i]);
-        if (i < 9) print(", ");
+        if (i < 9)
+            print(", ");
     }
     print("]\n");
 
@@ -125,13 +144,16 @@ static int test_stack(void) {
 // Test 5: Function calls (recursion)
 // ============================================================
 static int factorial(int n) {
-    if (n <= 1) return 1;
+    if (n <= 1)
+        return 1;
     return n * factorial(n - 1);
 }
 
 static int fibonacci(int n) {
-    if (n <= 0) return 0;
-    if (n == 1) return 1;
+    if (n <= 0)
+        return 0;
+    if (n == 1)
+        return 1;
     return fibonacci(n - 1) + fibonacci(n - 2);
 }
 
@@ -142,13 +164,19 @@ static int test_functions(void) {
     print("  - factorial(5) = ");
     print_num(result);
     print("\n");
-    if (result != 120) { print("  FAILED\n"); return 0; }
+    if (result != 120) {
+        print("  FAILED\n");
+        return 0;
+    }
 
     int fib = fibonacci(10);
     print("  - fibonacci(10) = ");
     print_num(fib);
     print("\n");
-    if (fib != 55) { print("  FAILED\n"); return 0; }
+    if (fib != 55) {
+        print("  FAILED\n");
+        return 0;
+    }
 
     print("  PASSED\n\n");
     return 1;
@@ -159,7 +187,7 @@ static int test_functions(void) {
 // ============================================================
 static int global_counter = 0;
 static const char *global_string = "Global data works!";
-static int bss_array[8];  // Should be zero-initialized
+static int bss_array[8]; // Should be zero-initialized
 
 static int test_globals(void) {
     print("TEST 6: Global and BSS data\n");
@@ -169,7 +197,10 @@ static int test_globals(void) {
     print("  - Counter: ");
     print_num(global_counter);
     print("\n");
-    if (global_counter != 10) { print("  FAILED: counter\n"); return 0; }
+    if (global_counter != 10) {
+        print("  FAILED: counter\n");
+        return 0;
+    }
 
     print("  - String: ");
     print(global_string);
@@ -249,11 +280,17 @@ static int test_memory(void) {
     // Fill with 0xFF then zero
     memset(buf, 0xFF, 256);
     for (int i = 0; i < 256; i++) {
-        if (buf[i] != 0xFF) { print("  FAILED: fill 0xFF\n"); return 0; }
+        if (buf[i] != 0xFF) {
+            print("  FAILED: fill 0xFF\n");
+            return 0;
+        }
     }
     memset(buf, 0, 256);
     for (int i = 0; i < 256; i++) {
-        if (buf[i] != 0) { print("  FAILED: fill 0x00\n"); return 0; }
+        if (buf[i] != 0) {
+            print("  FAILED: fill 0x00\n");
+            return 0;
+        }
     }
     print("  - Memset fill/zero: OK\n");
 
@@ -308,12 +345,16 @@ static int test_readdir(void) {
         print(name);
         print("\n");
 
-        if (strcmp(name, "shell.elf") == 0) found_shell = 1;
-        if (strcmp(name, "hello.elf") == 0) found_hello = 1;
-        if (strcmp(name, "test.elf") == 0)  found_test = 1;
+        if (strcmp(name, "shell.elf") == 0)
+            found_shell = 1;
+        if (strcmp(name, "hello.elf") == 0)
+            found_hello = 1;
+        if (strcmp(name, "test.elf") == 0)
+            found_test = 1;
 
         count++;
-        if (count > 20) break;  // Safety limit
+        if (count > 20)
+            break; // Safety limit
     }
 
     if (count == 0) {
@@ -324,9 +365,18 @@ static int test_readdir(void) {
     print_num(count);
     print("\n");
 
-    if (!found_shell) { print("  FAILED: shell.elf not found\n"); return 0; }
-    if (!found_hello) { print("  FAILED: hello.elf not found\n"); return 0; }
-    if (!found_test)  { print("  FAILED: test.elf not found\n"); return 0; }
+    if (!found_shell) {
+        print("  FAILED: shell.elf not found\n");
+        return 0;
+    }
+    if (!found_hello) {
+        print("  FAILED: hello.elf not found\n");
+        return 0;
+    }
+    if (!found_test) {
+        print("  FAILED: test.elf not found\n");
+        return 0;
+    }
 
     print("  PASSED\n\n");
     return 1;
@@ -424,7 +474,8 @@ static int test_write_return(void) {
 // Test 14: Large stack usage (deep recursion, big locals)
 // ============================================================
 static int sum_recursive(int n) {
-    if (n <= 0) return 0;
+    if (n <= 0)
+        return 0;
     // Use some stack space with a local array
     volatile int pad[4];
     pad[0] = n;
@@ -451,12 +502,16 @@ static int test_deep_stack(void) {
     }
     int check = 1;
     for (int i = 0; i < 128; i++) {
-        if (big[i] != i * 3 + 7) { check = 0; break; }
+        if (big[i] != i * 3 + 7) {
+            check = 0;
+            break;
+        }
     }
     print("  - Large local array (128 ints): ");
     print(check ? "OK" : "FAILED");
     print("\n");
-    if (!check) return 0;
+    if (!check)
+        return 0;
 
     print("  PASSED\n\n");
     return 1;
@@ -544,11 +599,20 @@ static int test_libc_more(void) {
 
     char numbuf[16];
     itoa(0, numbuf);
-    if (strcmp(numbuf, "0") != 0) { print("  FAILED: itoa(0)\n"); return 0; }
+    if (strcmp(numbuf, "0") != 0) {
+        print("  FAILED: itoa(0)\n");
+        return 0;
+    }
     itoa(12345, numbuf);
-    if (strcmp(numbuf, "12345") != 0) { print("  FAILED: itoa(12345)\n"); return 0; }
+    if (strcmp(numbuf, "12345") != 0) {
+        print("  FAILED: itoa(12345)\n");
+        return 0;
+    }
     itoa(-42, numbuf);
-    if (strcmp(numbuf, "-42") != 0) { print("  FAILED: itoa(-42)\n"); return 0; }
+    if (strcmp(numbuf, "-42") != 0) {
+        print("  FAILED: itoa(-42)\n");
+        return 0;
+    }
     print("  - itoa: OK\n");
 
     print("  PASSED\n\n");
@@ -581,7 +645,8 @@ static int test_wait_nb(void) {
     int code = -1;
     for (int i = 0; i < 500; i++) {
         code = wait_nb(child);
-        if (code != -1) break;
+        if (code != -1)
+            break;
         yield();
     }
     if (code != 0) {
@@ -669,7 +734,8 @@ static int test_detach(void) {
     print("TEST 20: detach behavior\n");
 
     // Existing detached app in tree: winsleep.wlf (detaches after win_create).
-    // In text mode (no WM), it exits before detach, so we treat that as skipped.
+    // In text mode (no WM), it exits before detach, so we treat that as
+    // skipped.
     int child = spawn("winsleep.wlf");
     if (child < 0) {
         print("  SKIP: couldn't spawn winsleep.wlf\n\n");
@@ -695,7 +761,7 @@ static int test_detach(void) {
 static int test_vfs_io(void) {
     print("TEST 21: VFS file I/O\n");
 
-    int fd = open("hello.elf", 0);  // O_RDONLY
+    int fd = open("hello.elf", 0); // O_RDONLY
     if (fd < 0) {
         print("  FAILED: open hello.elf\n");
         return 0;
@@ -1067,7 +1133,7 @@ static int test_getticks(void) {
     print("TEST 29: getticks monotonicity\n");
 
     unsigned int t1 = get_ticks();
-    yield();  // let at least one tick pass
+    yield(); // let at least one tick pass
     unsigned int t2 = get_ticks();
 
     print("  - t1=");
@@ -1099,12 +1165,14 @@ static int test_getticks(void) {
 static int test_fd_limits(void) {
     print("TEST 30: File descriptor limits\n");
 
-    // Open files until we hit the limit (fds 0-2 reserved, max 16 total = 13 available)
+    // Open files until we hit the limit (fds 0-2 reserved, max 16 total = 13
+    // available)
     int fds[16];
     int count = 0;
     for (int i = 0; i < 16; i++) {
         fds[i] = open("hello.elf", 0);
-        if (fds[i] < 0) break;
+        if (fds[i] < 0)
+            break;
         count++;
     }
     print("  - opened ");
@@ -1118,7 +1186,8 @@ static int test_fd_limits(void) {
     if (count >= 16) {
         print("  FAILED: no fd limit enforced\n");
         // Close them all
-        for (int i = 0; i < count; i++) close(fds[i]);
+        for (int i = 0; i < count; i++)
+            close(fds[i]);
         return 0;
     }
 
@@ -1590,7 +1659,8 @@ static int test_vfs_mode(void) {
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
     print("========================================\n");
     print("  mateOS User Program Test Suite\n");
     print("========================================\n\n");
@@ -1599,45 +1669,84 @@ void _start(int argc, char **argv) {
     int total = 39;
 
     // Run all tests
-    if (test_syscalls())         passed++;  // 1
-    if (test_strings())          passed++;  // 2
-    if (test_math())             passed++;  // 3
-    if (test_stack())            passed++;  // 4
-    if (test_functions())        passed++;  // 5
-    if (test_globals())          passed++;  // 6
-    if (test_yields())           passed++;  // 7
-    if (test_memory())           passed++;  // 8
-    if (test_getpid())           passed++;  // 9
-    if (test_readdir())          passed++;  // 10
-    if (test_spawn_wait())       passed++;  // 11
-    if (test_spawn_invalid())    passed++;  // 12
-    if (test_write_return())     passed++;  // 13
-    if (test_deep_stack())       passed++;  // 14
-    if (test_process_isolation()) passed++; // 15
-    if (test_libc_more())        passed++;  // 16
-    if (test_wait_nb())          passed++;  // 17
-    if (test_sleep_ms())         passed++;  // 18
-    if (test_tasklist())         passed++;  // 19
-    if (test_detach())           passed++;  // 20
-    if (test_vfs_io())           passed++;  // 21
-    if (test_spawn_argv())       passed++;  // 22
-    if (test_write_edges())      passed++;  // 23
-    if (test_ptr_validation())   passed++;  // 24
-    if (test_fwrite_validation()) passed++; // 25
-    if (test_stat_edges())       passed++;  // 26
-    if (test_sbrk())             passed++;  // 27
-    if (test_kill())             passed++;  // 28
-    if (test_getticks())         passed++;  // 29
-    if (test_fd_limits())        passed++;  // 30
-    if (test_seek_edges())       passed++;  // 31
-    if (test_invalid_fd())       passed++;  // 32
-    if (test_tasklist_validation()) passed++; // 33
-    if (test_write_ptr_validation()) passed++; // 34
-    if (test_stat_ptr_validation()) passed++;  // 35
-    if (test_readdir_ptr_validation()) passed++; // 36
-    if (test_getcwd_validation()) passed++;    // 37
-    if (test_path_validation())   passed++;    // 38
-    if (test_vfs_mode())          passed++;    // 39
+    if (test_syscalls())
+        passed++; // 1
+    if (test_strings())
+        passed++; // 2
+    if (test_math())
+        passed++; // 3
+    if (test_stack())
+        passed++; // 4
+    if (test_functions())
+        passed++; // 5
+    if (test_globals())
+        passed++; // 6
+    if (test_yields())
+        passed++; // 7
+    if (test_memory())
+        passed++; // 8
+    if (test_getpid())
+        passed++; // 9
+    if (test_readdir())
+        passed++; // 10
+    if (test_spawn_wait())
+        passed++; // 11
+    if (test_spawn_invalid())
+        passed++; // 12
+    if (test_write_return())
+        passed++; // 13
+    if (test_deep_stack())
+        passed++; // 14
+    if (test_process_isolation())
+        passed++; // 15
+    if (test_libc_more())
+        passed++; // 16
+    if (test_wait_nb())
+        passed++; // 17
+    if (test_sleep_ms())
+        passed++; // 18
+    if (test_tasklist())
+        passed++; // 19
+    if (test_detach())
+        passed++; // 20
+    if (test_vfs_io())
+        passed++; // 21
+    if (test_spawn_argv())
+        passed++; // 22
+    if (test_write_edges())
+        passed++; // 23
+    if (test_ptr_validation())
+        passed++; // 24
+    if (test_fwrite_validation())
+        passed++; // 25
+    if (test_stat_edges())
+        passed++; // 26
+    if (test_sbrk())
+        passed++; // 27
+    if (test_kill())
+        passed++; // 28
+    if (test_getticks())
+        passed++; // 29
+    if (test_fd_limits())
+        passed++; // 30
+    if (test_seek_edges())
+        passed++; // 31
+    if (test_invalid_fd())
+        passed++; // 32
+    if (test_tasklist_validation())
+        passed++; // 33
+    if (test_write_ptr_validation())
+        passed++; // 34
+    if (test_stat_ptr_validation())
+        passed++; // 35
+    if (test_readdir_ptr_validation())
+        passed++; // 36
+    if (test_getcwd_validation())
+        passed++; // 37
+    if (test_path_validation())
+        passed++; // 38
+    if (test_vfs_mode())
+        passed++; // 39
 
     print("========================================\n");
     print("  Results: ");

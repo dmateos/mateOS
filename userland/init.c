@@ -1,5 +1,5 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static void spawn_service(const char *name) {
     int pid = spawn(name);

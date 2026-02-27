@@ -11,10 +11,10 @@
 
 // Ramfs file entry
 typedef struct {
-  char name[RAMFS_NAME_MAX];
-  uint32_t data;    // Pointer to file data in memory
-  uint32_t size;    // File size in bytes
-  int in_use;       // 1 if entry is valid, 0 if free
+    char name[RAMFS_NAME_MAX];
+    uint32_t data; // Pointer to file data in memory
+    uint32_t size; // File size in bytes
+    int in_use;    // 1 if entry is valid, 0 if free
 } ramfs_file_t;
 
 // Initialize ramfs from initrd module

@@ -5,10 +5,10 @@
 
 // Physical frame allocator
 // Manages 4KB frames from 8MB to 32MB (6144 frames)
-#define PMM_START      0x800000   // 8MB - below is kernel/heap/boot
-#define PMM_END        0x2000000  // 32MB
-#define PMM_FRAME_SIZE 0x1000     // 4KB
-#define PMM_FRAME_COUNT ((PMM_END - PMM_START) / PMM_FRAME_SIZE)  // 6144
+#define PMM_START 0x800000    // 8MB - below is kernel/heap/boot
+#define PMM_END 0x2000000     // 32MB
+#define PMM_FRAME_SIZE 0x1000 // 4KB
+#define PMM_FRAME_COUNT ((PMM_END - PMM_START) / PMM_FRAME_SIZE) // 6144
 
 void pmm_init(void);
 void pmm_reserve_region(uint32_t start_addr, uint32_t size_bytes);

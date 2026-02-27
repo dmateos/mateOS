@@ -8,21 +8,21 @@
 #define WIN_TITLE_MAX 32
 #define WIN_KEY_BUF_SIZE 16
 #define WIN_TEXT_BUF_SIZE 2048
-#define WIN_MAX_WIDTH  800
+#define WIN_MAX_WIDTH 800
 #define WIN_MAX_HEIGHT 500
 
 // Window ID encoding: (generation << 8) | slot_index
 #define WIN_MAKE_ID(slot, gen) (((int)(gen) << 8) | (slot))
-#define WIN_SLOT(wid)          ((wid) & 0xFF)
-#define WIN_GEN(wid)           (((wid) >> 8) & 0xFFFF)
+#define WIN_SLOT(wid) ((wid) & 0xFF)
+#define WIN_GEN(wid) (((wid) >> 8) & 0xFFFF)
 
 typedef struct {
     int active;
-    uint16_t generation;          // Incremented on each slot reuse
+    uint16_t generation; // Incremented on each slot reuse
     uint32_t owner_pid;
     int w, h;
     char title[WIN_TITLE_MAX];
-    uint8_t *buffer;              // kmalloc'd pixel buffer (w*h bytes)
+    uint8_t *buffer; // kmalloc'd pixel buffer (w*h bytes)
     uint32_t buf_size;
     uint8_t key_buf[WIN_KEY_BUF_SIZE];
     kring_u8_t key_ring;

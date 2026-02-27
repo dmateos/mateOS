@@ -1,5 +1,5 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 void _start(int argc, char **argv) {
     if (argc < 3) {
@@ -33,7 +33,8 @@ void _start(int argc, char **argv) {
             close(out);
             exit(1);
         }
-        if (n == 0) break;
+        if (n == 0)
+            break;
 
         int off = 0;
         while (off < n) {

@@ -4,35 +4,36 @@
 #include "lib.h"
 
 typedef struct idt_entry {
-  uint16_t base_low;
-  uint16_t selector;
-  uint8_t zero;
-  uint8_t flags;
-  uint16_t base_high;
+    uint16_t base_low;
+    uint16_t selector;
+    uint8_t zero;
+    uint8_t flags;
+    uint16_t base_high;
 } __attribute__((packed)) idt_entry_t;
 
 typedef struct idt_ptr {
-  uint16_t limit;
-  uint32_t base;
+    uint16_t limit;
+    uint32_t base;
 } __attribute__((packed)) idt_ptr_t;
 
 void register_interrupt_handler_impl(uint8_t, void (*h)(uint32_t, uint32_t),
                                      const char *name);
-#define register_interrupt_handler(n, h) \
-  register_interrupt_handler_impl((n), (h), #h)
+#define register_interrupt_handler(n, h)                                       \
+    register_interrupt_handler_impl((n), (h), #h)
 void init_idt(idt_ptr_t *idt_ptr, idt_entry_t *idt_entries);
 void idt_breakpoint(void);
-void idt_exception_handler(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+void idt_exception_handler(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
+                           uint32_t);
 void idt_irq_handler(uint32_t, uint32_t);
 void pic_unmask_irq(uint8_t irq);
 void irq_list(void);
 typedef struct {
-  uint8_t irq;
-  uint8_t vec;
-  uint8_t masked;
-  uint8_t has_handler;
-  uint32_t handler_addr;
-  const char *handler_name;
+    uint8_t irq;
+    uint8_t vec;
+    uint8_t masked;
+    uint8_t has_handler;
+    uint32_t handler_addr;
+    const char *handler_name;
 } irq_info_t;
 int irq_get_snapshot(irq_info_t *out, int max);
 

@@ -1,11 +1,13 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static int parse_pid(const char *s, int *out) {
-    if (!s || !*s) return -1;
+    if (!s || !*s)
+        return -1;
     int n = 0;
     for (int i = 0; s[i]; i++) {
-        if (s[i] < '0' || s[i] > '9') return -1;
+        if (s[i] < '0' || s[i] > '9')
+            return -1;
         n = n * 10 + (s[i] - '0');
     }
     *out = n;

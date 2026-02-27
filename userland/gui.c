@@ -1,56 +1,56 @@
 // mateOS Window Manager
 // Compositing WM with overlap support and full-frame backbuffer present.
 
-#include "ugfx.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
+#include "ugfx.h"
 
-#define TASKBAR_H    20
-#define TITLE_BAR_H  14
-#define BORDER       1
+#define TASKBAR_H 20
+#define TITLE_BAR_H 14
+#define BORDER 1
 #define WM_MAX_SLOTS 16
-#define GAP          6
-#define CLOSE_W      12
+#define GAP 6
+#define CLOSE_W 12
 
 #define MAX_FB_W 1024
 #define MAX_FB_H 768
 
 // Theme colors (indexed palette)
-#define COL_DESKTOP_A       31   // deep teal-blue
-#define COL_DESKTOP_B       31
-#define COL_DESKTOP_DOT     67
-#define COL_TASKBAR_BG      24   // dark blue
-#define COL_TASKBAR_STRIP   74   // cyan-blue accent
-#define COL_TASKBAR_TXT    255
-#define COL_TASKBAR_MUTED  250
-#define COL_TITLE_ACT_A     75   // bright blue
-#define COL_TITLE_ACT_B    117   // lighter cyan-blue
-#define COL_TITLE_INACT_A   60   // muted slate
-#define COL_TITLE_INACT_B   67
-#define COL_TITLE_TXT      255
-#define COL_TITLE_TXT_DIM  252
-#define COL_BORDER_ACT     254
-#define COL_BORDER_INACT   244
-#define COL_SURFACE        237   // dark gray surface
-#define COL_SURFACE_EDGE   242
-#define COL_SHADOW_NEAR    236
-#define COL_SHADOW_FAR       0
-#define COL_CURSOR         255
+#define COL_DESKTOP_A 31 // deep teal-blue
+#define COL_DESKTOP_B 31
+#define COL_DESKTOP_DOT 67
+#define COL_TASKBAR_BG 24    // dark blue
+#define COL_TASKBAR_STRIP 74 // cyan-blue accent
+#define COL_TASKBAR_TXT 255
+#define COL_TASKBAR_MUTED 250
+#define COL_TITLE_ACT_A 75   // bright blue
+#define COL_TITLE_ACT_B 117  // lighter cyan-blue
+#define COL_TITLE_INACT_A 60 // muted slate
+#define COL_TITLE_INACT_B 67
+#define COL_TITLE_TXT 255
+#define COL_TITLE_TXT_DIM 252
+#define COL_BORDER_ACT 254
+#define COL_BORDER_INACT 244
+#define COL_SURFACE 237 // dark gray surface
+#define COL_SURFACE_EDGE 242
+#define COL_SHADOW_NEAR 236
+#define COL_SHADOW_FAR 0
+#define COL_CURSOR 255
 
-#define DS_ICON_W    40
-#define DS_ICON_H    44
-#define DS_TERM_X    12
-#define DS_TERM_Y    (TASKBAR_H + 10)
-#define DS_FILES_X   12
-#define DS_FILES_Y   (TASKBAR_H + 60)
-#define DS_TASK_X    12
-#define DS_TASK_Y    (TASKBAR_H + 110)
+#define DS_ICON_W 40
+#define DS_ICON_H 44
+#define DS_TERM_X 12
+#define DS_TERM_Y (TASKBAR_H + 10)
+#define DS_FILES_X 12
+#define DS_FILES_Y (TASKBAR_H + 60)
+#define DS_TASK_X 12
+#define DS_TASK_Y (TASKBAR_H + 110)
 
 typedef struct {
-    int x, y;       // content area top-left
-    int wid;        // kernel window id
-    int pid;        // child pid
-    int w, h;       // content dimensions
+    int x, y; // content area top-left
+    int wid;  // kernel window id
+    int pid;  // child pid
+    int w, h; // content dimensions
     char title[32];
 } wm_slot_t;
 
@@ -76,7 +76,8 @@ static int drag_slot = -1;
 static int drag_ox = 0, drag_oy = 0;
 static unsigned char prev_buttons = 0;
 
-// Read buffer for child window pixels (large enough for 640x400 Doom and roomy apps)
+// Read buffer for child window pixels (large enough for 640x400 Doom and roomy
+// apps)
 static unsigned char read_buf[800 * 500];
 
 // Full-screen compositor backbuffer
@@ -87,29 +88,30 @@ static unsigned char wm_backbuf[MAX_FB_W * MAX_FB_H];
 #define CURSOR_H 16
 static const unsigned char cursor_data[CURSOR_H] = {
     0x80, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF,
-    0xF8, 0xF8, 0xFC, 0x4C, 0x0C, 0x06, 0x06, 0x00
-};
+    0xF8, 0xF8, 0xFC, 0x4C, 0x0C, 0x06, 0x06, 0x00};
 static const unsigned char cursor_mask[CURSOR_H] = {
     0xC0, 0xE0, 0xF0, 0xF8, 0xFC, 0xFE, 0xFF, 0xFF,
-    0xFF, 0xFC, 0xFE, 0xFE, 0x4E, 0x0F, 0x0F, 0x07
-};
+    0xFF, 0xFC, 0xFE, 0xFE, 0x4E, 0x0F, 0x0F, 0x07};
 
 static void wm_strcpy(char *dst, const char *src, int max) {
     int i;
-    for (i = 0; i < max - 1 && src[i]; i++) dst[i] = src[i];
+    for (i = 0; i < max - 1 && src[i]; i++)
+        dst[i] = src[i];
     dst[i] = '\0';
 }
 
 static int wm_strlen(const char *s) {
     int n = 0;
-    while (s && s[n]) n++;
+    while (s && s[n])
+        n++;
     return n;
 }
 
 static void wm_append_str(char *dst, int max, const char *src) {
     int i = wm_strlen(dst);
     int j = 0;
-    while (i < max - 1 && src && src[j]) dst[i++] = src[j++];
+    while (i < max - 1 && src && src[j])
+        dst[i++] = src[j++];
     dst[i] = '\0';
 }
 
@@ -146,14 +148,16 @@ static int slot_is_active(int s) {
 
 static int find_slot_by_wid(int wid) {
     for (int s = 0; s < WM_MAX_SLOTS; s++) {
-        if (slots[s].wid == wid) return s;
+        if (slots[s].wid == wid)
+            return s;
     }
     return -1;
 }
 
 static int find_free_slot(void) {
     for (int s = 0; s < WM_MAX_SLOTS; s++) {
-        if (slots[s].wid < 0) return s;
+        if (slots[s].wid < 0)
+            return s;
     }
     return -1;
 }
@@ -165,37 +169,47 @@ static void z_sync_active(void) {
     // Keep existing ordering for still-active slots.
     for (int i = 0; i < z_count; i++) {
         int s = z_order[i];
-        if (slot_is_active(s)) next[n++] = s;
+        if (slot_is_active(s))
+            next[n++] = s;
     }
 
     // Append any active slot that was not already tracked.
     for (int s = 0; s < WM_MAX_SLOTS; s++) {
-        if (!slot_is_active(s)) continue;
+        if (!slot_is_active(s))
+            continue;
         int seen = 0;
         for (int i = 0; i < n; i++) {
-            if (next[i] == s) { seen = 1; break; }
+            if (next[i] == s) {
+                seen = 1;
+                break;
+            }
         }
-        if (!seen) next[n++] = s;
+        if (!seen)
+            next[n++] = s;
     }
 
-    for (int i = 0; i < n; i++) z_order[i] = next[i];
+    for (int i = 0; i < n; i++)
+        z_order[i] = next[i];
     z_count = n;
 }
 
 static void z_bring_front(int slot) {
-    if (!slot_is_active(slot)) return;
+    if (!slot_is_active(slot))
+        return;
     z_sync_active();
 
     int out = 0;
     for (int i = 0; i < z_count; i++) {
-        if (z_order[i] != slot) z_order[out++] = z_order[i];
+        if (z_order[i] != slot)
+            z_order[out++] = z_order[i];
     }
     z_order[out++] = slot;
     z_count = out;
 }
 
 static int z_next_focus(void) {
-    if (z_count <= 0) return -1;
+    if (z_count <= 0)
+        return -1;
     // Cycle through z-order slots.
     for (int i = 0; i < z_count; i++) {
         if (z_order[i] == focus) {
@@ -210,11 +224,14 @@ static void get_slot_content_size(int slot, int *out_w, int *out_h) {
     int h = slots[slot].h > 0 ? slots[slot].h : content_h;
 
     // Allow large windows (eg Doom 640x400), but keep them on-screen.
-    if (w > ugfx_width - 2 * (GAP + BORDER)) w = ugfx_width - 2 * (GAP + BORDER);
+    if (w > ugfx_width - 2 * (GAP + BORDER))
+        w = ugfx_width - 2 * (GAP + BORDER);
     if (h > ugfx_height - TASKBAR_H - 2 * (GAP + BORDER) - TITLE_BAR_H)
         h = ugfx_height - TASKBAR_H - 2 * (GAP + BORDER) - TITLE_BAR_H;
-    if (w < 16) w = 16;
-    if (h < 16) h = 16;
+    if (w < 16)
+        w = 16;
+    if (h < 16)
+        h = 16;
 
     *out_w = w;
     *out_h = h;
@@ -239,7 +256,8 @@ static int slot_hit_test(int slot, int mx, int my) {
 static int title_hit_test(int slot, int mx, int my) {
     int fx, fy, fw, fh;
     get_slot_frame(slot, &fx, &fy, &fw, &fh);
-    return (mx >= fx && mx < fx + fw && my >= fy && my < fy + TITLE_BAR_H + 2 * BORDER);
+    return (mx >= fx && mx < fx + fw && my >= fy &&
+            my < fy + TITLE_BAR_H + 2 * BORDER);
 }
 
 static int close_hit_test(int slot, int mx, int my) {
@@ -259,10 +277,14 @@ static void compute_layout(void) {
     int usable_h = ugfx_height - TASKBAR_H - GAP * 3;
     content_w = usable_w / 2;
     content_h = (usable_h - (TITLE_BAR_H + 2 * BORDER) * 2) / 2;
-    if (content_w > 500) content_w = 500;
-    if (content_h > 350) content_h = 350;
-    if (content_w < 120) content_w = 120;
-    if (content_h < 72) content_h = 72;
+    if (content_w > 500)
+        content_w = 500;
+    if (content_h > 350)
+        content_h = 350;
+    if (content_w < 120)
+        content_w = 120;
+    if (content_h < 72)
+        content_h = 72;
 }
 
 static unsigned int next_place_rand(void) {
@@ -279,8 +301,10 @@ static void place_slot_random(int slot, unsigned int salt) {
     int min_y = TASKBAR_H + GAP + BORDER + TITLE_BAR_H;
     int max_y = ugfx_height - GAP - BORDER - slot_h;
 
-    if (max_x < min_x) max_x = min_x;
-    if (max_y < min_y) max_y = min_y;
+    if (max_x < min_x)
+        max_x = min_x;
+    if (max_y < min_y)
+        max_y = min_y;
 
     place_seed ^= salt + (unsigned int)(slot * 2654435761u);
     unsigned int rx = next_place_rand();
@@ -293,7 +317,8 @@ static void place_slot_random(int slot, unsigned int salt) {
 }
 
 static inline void bb_pixel(int x, int y, unsigned char c) {
-    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return;
+    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height)
+        return;
     wm_backbuf[y * ugfx_width + x] = c;
 }
 
@@ -306,7 +331,8 @@ static void bb_hline(int x, int y, int w, unsigned char c) {
 }
 
 static void bb_vline(int x, int y, int h, unsigned char c) {
-    for (int i = 0; i < h; i++) bb_pixel(x, y + i, c);
+    for (int i = 0; i < h; i++)
+        bb_pixel(x, y + i, c);
 }
 
 static void bb_rect_outline(int x, int y, int w, int h, unsigned char c) {
@@ -320,21 +346,27 @@ static void bb_string(int x, int y, const char *s, unsigned char c) {
     ugfx_buf_string(wm_backbuf, ugfx_width, ugfx_height, x, y, s, c);
 }
 
-static void bb_string_fit(int x, int y, int max_w, const char *s, unsigned char c) {
-    if (!s || max_w <= 0) return;
+static void bb_string_fit(int x, int y, int max_w, const char *s,
+                          unsigned char c) {
+    if (!s || max_w <= 0)
+        return;
     int max_chars = max_w / 8;
-    if (max_chars <= 0) return;
+    if (max_chars <= 0)
+        return;
     int len = wm_strlen(s);
     if (len <= max_chars) {
         bb_string(x, y, s, c);
         return;
     }
-    if (max_chars <= 3) return;
+    if (max_chars <= 3)
+        return;
     char tmp[64];
     int keep = max_chars - 3;
-    if (keep > (int)sizeof(tmp) - 4) keep = (int)sizeof(tmp) - 4;
+    if (keep > (int)sizeof(tmp) - 4)
+        keep = (int)sizeof(tmp) - 4;
     int i;
-    for (i = 0; i < keep && s[i]; i++) tmp[i] = s[i];
+    for (i = 0; i < keep && s[i]; i++)
+        tmp[i] = s[i];
     tmp[i++] = '.';
     tmp[i++] = '.';
     tmp[i++] = '.';
@@ -342,9 +374,11 @@ static void bb_string_fit(int x, int y, int max_w, const char *s, unsigned char 
     bb_string(x, y, tmp, c);
 }
 
-static void bb_string_bg(int x, int y, const char *s, unsigned char fg, unsigned char bg) {
+static void bb_string_bg(int x, int y, const char *s, unsigned char fg,
+                         unsigned char bg) {
     int len = wm_strlen(s);
-    if (len > 0) bb_rect(x - 2, y - 1, len * 8 + 4, 10, bg);
+    if (len > 0)
+        bb_rect(x - 2, y - 1, len * 8 + 4, 10, bg);
     bb_string(x, y, s, fg);
 }
 
@@ -367,8 +401,10 @@ static void launch_tasks(void) {
     (void)pid;
 }
 
-static void bb_draw_bitmap16(int x, int y, const unsigned short *rows, unsigned char fg, int scale) {
-    if (scale < 1) scale = 1;
+static void bb_draw_bitmap16(int x, int y, const unsigned short *rows,
+                             unsigned char fg, int scale) {
+    if (scale < 1)
+        scale = 1;
     for (int ry = 0; ry < 16; ry++) {
         unsigned short bits = rows[ry];
         for (int rx = 0; rx < 16; rx++) {
@@ -381,21 +417,21 @@ static void bb_draw_bitmap16(int x, int y, const unsigned short *rows, unsigned 
 
 static const unsigned short icon_term_bits[16] = {
     0x0000, 0x7FFE, 0x4002, 0x5FF2, 0x500A, 0x57C2, 0x5002, 0x53F2,
-    0x5202, 0x5002, 0x5FFC, 0x4002, 0x7FFE, 0x0000, 0x0000, 0x0000
-};
+    0x5202, 0x5002, 0x5FFC, 0x4002, 0x7FFE, 0x0000, 0x0000, 0x0000};
 static const unsigned short icon_folder_bits[16] = {
     0x0000, 0x0FC0, 0x1FF8, 0x3C1C, 0x3FFE, 0x7FFE, 0x6006, 0x6006,
-    0x6006, 0x6006, 0x6006, 0x7FFE, 0x3FFC, 0x0000, 0x0000, 0x0000
-};
+    0x6006, 0x6006, 0x6006, 0x7FFE, 0x3FFC, 0x0000, 0x0000, 0x0000};
 static const unsigned short icon_tasks_bits[16] = {
     0x0000, 0x7FFE, 0x4002, 0x5A5A, 0x5A5A, 0x4002, 0x7FFE, 0x0000,
-    0x318C, 0x318C, 0x318C, 0x318C, 0x7FFE, 0x0000, 0x0000, 0x0000
-};
+    0x318C, 0x318C, 0x318C, 0x318C, 0x7FFE, 0x0000, 0x0000, 0x0000};
 
-static void draw_desktop_icon(int x, int y, unsigned char body, const char *label) {
+static void draw_desktop_icon(int x, int y, unsigned char body,
+                              const char *label) {
     const unsigned short *glyph = icon_term_bits;
-    if (label && label[0] == 'F') glyph = icon_folder_bits;
-    if (label && label[0] == 'T' && label[1] == 'A') glyph = icon_tasks_bits;
+    if (label && label[0] == 'F')
+        glyph = icon_folder_bits;
+    if (label && label[0] == 'T' && label[1] == 'A')
+        glyph = icon_tasks_bits;
 
     bb_rect(x + 3, y + 3, 32, 28, COL_SHADOW_NEAR);
     bb_rect(x + 1, y + 1, 32, 28, COL_SURFACE_EDGE);
@@ -406,7 +442,8 @@ static void draw_desktop_icon(int x, int y, unsigned char body, const char *labe
     int llen = wm_strlen(label);
     int label_w = llen * 8;
     int tx = x + (32 - label_w) / 2;
-    if (tx < x - 4) tx = x - 4;
+    if (tx < x - 4)
+        tx = x - 4;
     bb_rect(x - 4, y + 31, 44, 11, COL_DESKTOP_A);
     bb_string(tx, y + 33, label, 255);
 }
@@ -425,7 +462,8 @@ static void draw_taskbar(void) {
     const char *wm_label = "mateOS WM";
     int wm_label_w = wm_strlen(wm_label) * 8;
     int wm_badge_w = wm_label_w + 12;
-    if (wm_badge_w < 76) wm_badge_w = 76;
+    if (wm_badge_w < 76)
+        wm_badge_w = 76;
 
     bb_rect(0, 0, ugfx_width, TASKBAR_H, COL_TASKBAR_BG);
     bb_hline(0, 0, ugfx_width, COL_BORDER_ACT);
@@ -442,7 +480,8 @@ static void draw_taskbar(void) {
         if (pill_w > 40) {
             bb_rect(pill_x, 3, pill_w, 14, COL_SURFACE_EDGE);
             bb_rect(pill_x + 1, 4, pill_w - 2, 12, COL_SURFACE);
-            bb_string_fit(pill_x + 4, 6, pill_w - 8, slots[focus].title, COL_TITLE_TXT_DIM);
+            bb_string_fit(pill_x + 4, 6, pill_w - 8, slots[focus].title,
+                          COL_TITLE_TXT_DIM);
         }
     }
 
@@ -452,7 +491,8 @@ static void draw_taskbar(void) {
 }
 
 static void load_kversion_once(void) {
-    if (g_kversion[0]) return;
+    if (g_kversion[0])
+        return;
     int fd = open("kversion.mos", O_RDONLY);
     if (fd < 0) {
         wm_strcpy(g_kversion, "mateOS", sizeof(g_kversion));
@@ -474,7 +514,8 @@ static void load_kversion_once(void) {
 }
 
 static void set_info_line(int idx, const char *text) {
-    if (idx < 0 || idx >= (int)(sizeof(g_info_lines) / sizeof(g_info_lines[0]))) return;
+    if (idx < 0 || idx >= (int)(sizeof(g_info_lines) / sizeof(g_info_lines[0])))
+        return;
     wm_strcpy(g_info_lines[idx], text, sizeof(g_info_lines[idx]));
 }
 
@@ -492,7 +533,8 @@ static void build_system_info(void) {
 
     taskinfo_entry_t tasks[32];
     int tcount = tasklist(tasks, 32);
-    if (tcount < 0) tcount = 0;
+    if (tcount < 0)
+        tcount = 0;
 
     char line[96];
     line[0] = '\0';
@@ -548,7 +590,8 @@ static void draw_system_info_panel(void) {
     int panel_h = 10 + g_info_line_count * 10;
     int x = ugfx_width - panel_w - 8;
     int y = TASKBAR_H + 8;
-    if (x < 0) x = 0;
+    if (x < 0)
+        x = 0;
 
     bb_rect(x + 2, y + 2, panel_w, panel_h, COL_SHADOW_NEAR);
     bb_rect(x, y, panel_w, panel_h, COL_SURFACE);
@@ -578,12 +621,15 @@ static void draw_window_frame(int slot, int is_focused) {
 
     draw_window_shadow(fx, fy, fw, fh);
 
-    bb_rect_outline(fx, fy, fw, fh, is_focused ? COL_BORDER_ACT : COL_BORDER_INACT);
+    bb_rect_outline(fx, fy, fw, fh,
+                    is_focused ? COL_BORDER_ACT : COL_BORDER_INACT);
     bb_rect(fx + BORDER, fy + BORDER, win_w, TITLE_BAR_H, title_col_a);
     bb_hline(fx + BORDER, fy + BORDER + 1, win_w, title_col_b);
     bb_hline(fx + BORDER, fy + BORDER, win_w, COL_BORDER_ACT);
-    bb_hline(fx + BORDER, fy + BORDER + TITLE_BAR_H - 1, win_w, COL_SURFACE_EDGE);
-    bb_rect(fx + BORDER, fy + BORDER + TITLE_BAR_H, win_w, fh - TITLE_BAR_H - 2 * BORDER, COL_SURFACE);
+    bb_hline(fx + BORDER, fy + BORDER + TITLE_BAR_H - 1, win_w,
+             COL_SURFACE_EDGE);
+    bb_rect(fx + BORDER, fy + BORDER + TITLE_BAR_H, win_w,
+            fh - TITLE_BAR_H - 2 * BORDER, COL_SURFACE);
     bb_rect_outline(fx + BORDER, fy + BORDER + TITLE_BAR_H, win_w,
                     fh - TITLE_BAR_H - 2 * BORDER, COL_SURFACE_EDGE);
 
@@ -591,14 +637,20 @@ static void draw_window_frame(int slot, int is_focused) {
         int title_x = fx + BORDER + 4;
         int close_left = fx + fw - BORDER - CLOSE_W - 2;
         int title_max_w = close_left - 4 - title_x;
-        if (title_max_w < 0) title_max_w = 0;
-        bb_string_fit(title_x, fy + BORDER + 3, title_max_w, slots[slot].title, COL_TITLE_TXT);
+        if (title_max_w < 0)
+            title_max_w = 0;
+        bb_string_fit(title_x, fy + BORDER + 3, title_max_w, slots[slot].title,
+                      COL_TITLE_TXT);
         if (is_focused) {
             int tlen = 0;
-            while (slots[slot].title[tlen]) tlen++;
+            while (slots[slot].title[tlen])
+                tlen++;
             int ulw = 10 + tlen * 4;
-            if (ulw > win_w - 28) ulw = win_w - 28;
-            if (ulw > 6) bb_hline(fx + BORDER + 4, fy + BORDER + TITLE_BAR_H - 3, ulw, COL_TITLE_TXT_DIM);
+            if (ulw > win_w - 28)
+                ulw = win_w - 28;
+            if (ulw > 6)
+                bb_hline(fx + BORDER + 4, fy + BORDER + TITLE_BAR_H - 3, ulw,
+                         COL_TITLE_TXT_DIM);
         }
 
         // Close button (Windows-like titlebar X)
@@ -607,20 +659,23 @@ static void draw_window_frame(int slot, int is_focused) {
         int bw = CLOSE_W;
         int bh = TITLE_BAR_H - 2;
         bb_rect(bx, by, bw, bh, is_focused ? 12 : 8);
-        bb_hline(bx + 1, by + 1, bw - 2, is_focused ? title_col_b : COL_TITLE_INACT_B);
+        bb_hline(bx + 1, by + 1, bw - 2,
+                 is_focused ? title_col_b : COL_TITLE_INACT_B);
         bb_rect_outline(bx, by, bw, bh, 15);
         bb_string(bx + 2, by + 2, "X", 15);
     }
 }
 
 static void composite_window(int slot) {
-    if (!slot_is_active(slot)) return;
+    if (!slot_is_active(slot))
+        return;
 
     int win_w, win_h;
     get_slot_content_size(slot, &win_w, &win_h);
 
     int buf_size = win_w * win_h;
-    if (buf_size > (int)sizeof(read_buf)) buf_size = (int)sizeof(read_buf);
+    if (buf_size > (int)sizeof(read_buf))
+        buf_size = (int)sizeof(read_buf);
 
     int bytes = win_read(slots[slot].wid, read_buf, (unsigned int)buf_size);
     if (bytes <= 0) {
@@ -637,11 +692,13 @@ static void composite_window(int slot) {
 
     for (int row = 0; row < win_h; row++) {
         int dy = sy + row;
-        if (dy < 0 || dy >= ugfx_height) continue;
+        if (dy < 0 || dy >= ugfx_height)
+            continue;
 
         for (int col = 0; col < win_w; col++) {
             int dx = sx + col;
-            if (dx < 0 || dx >= ugfx_width) continue;
+            if (dx < 0 || dx >= ugfx_width)
+                continue;
 
             int idx = row * win_w + col;
             unsigned char c = (idx < bytes) ? read_buf[idx] : 0;
@@ -653,14 +710,17 @@ static void composite_window(int slot) {
 static void draw_cursor(int mx, int my) {
     for (int row = 0; row < CURSOR_H; row++) {
         int y = my + row;
-        if (y < 0 || y >= ugfx_height) continue;
+        if (y < 0 || y >= ugfx_height)
+            continue;
         unsigned char mask = cursor_mask[row];
         unsigned char bits = cursor_data[row];
         for (int col = 0; col < CURSOR_W; col++) {
             int x = mx + col;
-            if (x < 0 || x >= ugfx_width) continue;
+            if (x < 0 || x >= ugfx_width)
+                continue;
             if (mask & (0x80 >> col)) {
-                unsigned char color = (bits & (0x80 >> col)) ? COL_CURSOR : COL_SHADOW_FAR;
+                unsigned char color =
+                    (bits & (0x80 >> col)) ? COL_CURSOR : COL_SHADOW_FAR;
                 bb_pixel(x, y, color);
             }
         }
@@ -673,7 +733,8 @@ static void discover_windows(void) {
 
     // Remove dead tracked windows.
     for (int s = 0; s < WM_MAX_SLOTS; s++) {
-        if (!slot_is_active(s)) continue;
+        if (!slot_is_active(s))
+            continue;
         int alive = 0;
         for (int i = 0; i < wcount; i++) {
             if (info[i].window_id == slots[s].wid) {
@@ -737,7 +798,8 @@ static void discover_windows(void) {
 
     num_slots = 0;
     for (int s = 0; s < WM_MAX_SLOTS; s++) {
-        if (slot_is_active(s)) num_slots++;
+        if (slot_is_active(s))
+            num_slots++;
     }
 
     z_sync_active();
@@ -766,7 +828,8 @@ static void handle_mouse(int mx, int my, unsigned char buttons) {
                 prev_buttons = buttons;
                 return;
             }
-            if (hit_rect(mx, my, DS_FILES_X, DS_FILES_Y, DS_ICON_W, DS_ICON_H)) {
+            if (hit_rect(mx, my, DS_FILES_X, DS_FILES_Y, DS_ICON_W,
+                         DS_ICON_H)) {
                 launch_files();
                 prev_buttons = buttons;
                 return;
@@ -844,7 +907,8 @@ static void render_frame(int mx, int my) {
     // Back to front
     for (int i = 0; i < z_count; i++) {
         int s = z_order[i];
-        if (!slot_is_active(s)) continue;
+        if (!slot_is_active(s))
+            continue;
         draw_window_frame(s, s == focus);
         composite_window(s);
     }
@@ -856,7 +920,8 @@ static void render_frame(int mx, int my) {
 }
 
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
 
     if (ugfx_init() != 0) {
         write(1, "WM: gfx_init failed\n", 20);
@@ -895,7 +960,8 @@ void _start(int argc, char **argv) {
         wm_strcpy(slots[1].title, "FileMgr", 32);
     }
 
-    for (int i = 0; i < 30; i++) yield();
+    for (int i = 0; i < 30; i++)
+        yield();
     discover_windows();
 
     int running = 1;
@@ -924,10 +990,14 @@ void _start(int argc, char **argv) {
         }
 
         getmouse(&mx, &my, &btns);
-        if (mx < 0) mx = 0;
-        if (my < 0) my = 0;
-        if (mx >= ugfx_width) mx = ugfx_width - 1;
-        if (my >= ugfx_height) my = ugfx_height - 1;
+        if (mx < 0)
+            mx = 0;
+        if (my < 0)
+            my = 0;
+        if (mx >= ugfx_width)
+            mx = ugfx_width - 1;
+        if (my >= ugfx_height)
+            my = ugfx_height - 1;
 
         if (mx != last_mx || my != last_my || btns != last_btns) {
             need_redraw = 1;

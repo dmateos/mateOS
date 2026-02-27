@@ -1,5 +1,5 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 #define MAX_IN_BYTES (2 * 1024 * 1024)
 #define MAX_INPUTS 128
@@ -46,8 +46,8 @@
 #define SEC_UNDEF 0xFFFFFFFFu
 
 typedef struct __attribute__((packed)) {
-    unsigned char magic[4];   // "MOBJ"
-    unsigned int version;     // 1
+    unsigned char magic[4]; // "MOBJ"
+    unsigned int version;   // 1
     unsigned int org;
     unsigned int entry_off;
     unsigned int text_size;
@@ -57,8 +57,8 @@ typedef struct __attribute__((packed)) {
 } mobj_header_v1_t;
 
 typedef struct __attribute__((packed)) {
-    unsigned char magic[4];   // "MOBJ"
-    unsigned int version;     // 2
+    unsigned char magic[4]; // "MOBJ"
+    unsigned int version;   // 2
     unsigned int org;
     unsigned int entry_off;
     unsigned int text_size;
@@ -79,7 +79,7 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     unsigned int section; // SEC_*
     unsigned int offset;
-    unsigned int type;    // MOBJ_RELOC_*
+    unsigned int type; // MOBJ_RELOC_*
     unsigned int sym_index;
     int addend;
 } mobj_reloc_t;
@@ -160,27 +160,32 @@ typedef struct {
     unsigned int entry_off;
 
     unsigned char *payload;
-    unsigned int payload_size;     // text+rodata+data
+    unsigned int payload_size; // text+rodata+data
     unsigned int bss_size;
 
-    unsigned int sec_base[4];      // local section offsets in payload
+    unsigned int sec_base[4]; // local section offsets in payload
 
     mobj_sym_t *syms;
     unsigned int sym_count;
     mobj_reloc_t *rels;
     unsigned int rel_count;
 
-    unsigned int image_off;        // offset in final load image
+    unsigned int image_off; // offset in final load image
 } input_t;
 
 static int streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
 static int sym_name_eq_loose(const char *a, const char *b) {
-    if (!a || !b) return 0;
-    if (strcmp(a, b) == 0) return 1;
-    if (a[0] == '$' && strcmp(a + 1, b) == 0) return 1;
-    if (b[0] == '$' && strcmp(a, b + 1) == 0) return 1;
-    if (a[0] == '$' && b[0] == '$' && strcmp(a + 1, b + 1) == 0) return 1;
+    if (!a || !b)
+        return 0;
+    if (strcmp(a, b) == 0)
+        return 1;
+    if (a[0] == '$' && strcmp(a + 1, b) == 0)
+        return 1;
+    if (b[0] == '$' && strcmp(a, b + 1) == 0)
+        return 1;
+    if (a[0] == '$' && b[0] == '$' && strcmp(a + 1, b + 1) == 0)
+        return 1;
     return 0;
 }
 
@@ -190,7 +195,8 @@ static const char *sym_strip_dollar(const char *s) {
 
 static void path_copy(char *dst, int cap, const char *src) {
     int i = 0;
-    if (cap <= 0) return;
+    if (cap <= 0)
+        return;
     while (src[i] && i < cap - 1) {
         dst[i] = src[i];
         i++;
@@ -212,7 +218,8 @@ static void ar_member_name(const ar_hdr_t *ah, char *out, int out_cap) {
     int j = 0;
     for (int i = 0; i < 16 && j + 1 < out_cap; i++) {
         char c = ah->name[i];
-        if (c == '/' || c == ' ' || c == '\0') break;
+        if (c == '/' || c == ' ' || c == '\0')
+            break;
         out[j++] = c;
     }
     if (j == 0 && out_cap >= 2) {
@@ -234,21 +241,31 @@ static void set_input_path(input_t *in, const char *file, const char *member) {
 
 static int parse_int_local(const char *s, int *out) {
     int sign = 1, i = 0, base = 10, v = 0;
-    if (s[0] == '-') { sign = -1; i++; }
-    else if (s[0] == '+') { i++; }
+    if (s[0] == '-') {
+        sign = -1;
+        i++;
+    } else if (s[0] == '+') {
+        i++;
+    }
     if (s[i] == '0' && (s[i + 1] == 'x' || s[i + 1] == 'X')) {
         base = 16;
         i += 2;
     }
-    if (!s[i]) return 0;
+    if (!s[i])
+        return 0;
     for (; s[i]; i++) {
         char c = s[i];
         int d;
-        if (c >= '0' && c <= '9') d = c - '0';
-        else if (c >= 'a' && c <= 'f') d = 10 + (c - 'a');
-        else if (c >= 'A' && c <= 'F') d = 10 + (c - 'A');
-        else return 0;
-        if (d >= base) return 0;
+        if (c >= '0' && c <= '9')
+            d = c - '0';
+        else if (c >= 'a' && c <= 'f')
+            d = 10 + (c - 'a');
+        else if (c >= 'A' && c <= 'F')
+            d = 10 + (c - 'A');
+        else
+            return 0;
+        if (d >= base)
+            return 0;
         v = v * base + d;
     }
     *out = v * sign;
@@ -267,10 +284,8 @@ static void wr32(unsigned char *p, unsigned int v) {
 }
 
 static unsigned int rd32(const unsigned char *p) {
-    return (unsigned int)p[0]
-        | ((unsigned int)p[1] << 8)
-        | ((unsigned int)p[2] << 16)
-        | ((unsigned int)p[3] << 24);
+    return (unsigned int)p[0] | ((unsigned int)p[1] << 8) |
+           ((unsigned int)p[2] << 16) | ((unsigned int)p[3] << 24);
 }
 
 static int parse_u32_dec_field(const char *s, int n, unsigned int *out) {
@@ -278,12 +293,15 @@ static int parse_u32_dec_field(const char *s, int n, unsigned int *out) {
     int seen = 0;
     for (int i = 0; i < n; i++) {
         char c = s[i];
-        if (c == ' ' || c == '\t') continue;
-        if (c < '0' || c > '9') return 0;
+        if (c == ' ' || c == '\t')
+            continue;
+        if (c < '0' || c > '9')
+            return 0;
         seen = 1;
         v = v * 10u + (unsigned int)(c - '0');
     }
-    if (!seen) return 0;
+    if (!seen)
+        return 0;
     *out = v;
     return 1;
 }
@@ -293,29 +311,39 @@ static int is_mobj_magic(const unsigned char *b, unsigned int n) {
 }
 
 static int is_elf_rel_object(const unsigned char *b, unsigned int n) {
-    if (n < sizeof(elf32_ehdr_t)) return 0;
+    if (n < sizeof(elf32_ehdr_t))
+        return 0;
     const elf32_ehdr_t *eh = (const elf32_ehdr_t *)b;
     if (eh->e_ident[0] != ELF_MAGIC0 || eh->e_ident[1] != ELF_MAGIC1 ||
-        eh->e_ident[2] != ELF_MAGIC2 || eh->e_ident[3] != ELF_MAGIC3) return 0;
-    if (eh->e_ident[4] != ELFCLASS32 || eh->e_ident[5] != ELFDATA2LSB) return 0;
-    if (eh->e_type != ELF_ET_REL || eh->e_machine != ELF_EM_386) return 0;
+        eh->e_ident[2] != ELF_MAGIC2 || eh->e_ident[3] != ELF_MAGIC3)
+        return 0;
+    if (eh->e_ident[4] != ELFCLASS32 || eh->e_ident[5] != ELFDATA2LSB)
+        return 0;
+    if (eh->e_type != ELF_ET_REL || eh->e_machine != ELF_EM_386)
+        return 0;
     return 1;
 }
 
 static int is_ar_archive(const unsigned char *b, unsigned int n) {
-    static const char sig[8] = { '!', '<', 'a', 'r', 'c', 'h', '>', '\n' };
-    if (n < 8) return 0;
+    static const char sig[8] = {'!', '<', 'a', 'r', 'c', 'h', '>', '\n'};
+    if (n < 8)
+        return 0;
     for (int i = 0; i < 8; i++) {
-        if ((char)b[i] != sig[i]) return 0;
+        if ((char)b[i] != sig[i])
+            return 0;
     }
     return 1;
 }
 
 static int sec_kind_from_elf(const elf32_shdr_t *sh) {
-    if (!(sh->sh_flags & ELF_SHF_ALLOC)) return -1;
-    if (sh->sh_type == ELF_SHT_NOBITS) return (int)SEC_BSS;
-    if (sh->sh_flags & ELF_SHF_EXECINSTR) return (int)SEC_TEXT;
-    if (sh->sh_flags & ELF_SHF_WRITE) return (int)SEC_DATA;
+    if (!(sh->sh_flags & ELF_SHF_ALLOC))
+        return -1;
+    if (sh->sh_type == ELF_SHT_NOBITS)
+        return (int)SEC_BSS;
+    if (sh->sh_flags & ELF_SHF_EXECINSTR)
+        return (int)SEC_TEXT;
+    if (sh->sh_flags & ELF_SHF_WRITE)
+        return (int)SEC_DATA;
     return (int)SEC_RODATA;
 }
 
@@ -327,8 +355,10 @@ static int parse_elf_rel_input(input_t *in) {
         print("\n");
         return 0;
     }
-    unsigned int sht_end = eh->e_shoff + (unsigned int)eh->e_shnum * (unsigned int)sizeof(elf32_shdr_t);
-    if (eh->e_shoff >= in->size || sht_end > in->size || sht_end < eh->e_shoff) {
+    unsigned int sht_end = eh->e_shoff + (unsigned int)eh->e_shnum *
+                                             (unsigned int)sizeof(elf32_shdr_t);
+    if (eh->e_shoff >= in->size || sht_end > in->size ||
+        sht_end < eh->e_shoff) {
         print("ld86: truncated ELF section table: ");
         print(in->path);
         print("\n");
@@ -338,7 +368,8 @@ static int parse_elf_rel_input(input_t *in) {
     const elf32_shdr_t *shdrs = (const elf32_shdr_t *)(in->buf + eh->e_shoff);
     unsigned int shnum = eh->e_shnum;
     int *sh_kind = (int *)malloc(shnum * sizeof(int));
-    unsigned int *sh_off_in_kind = (unsigned int *)malloc(shnum * sizeof(unsigned int));
+    unsigned int *sh_off_in_kind =
+        (unsigned int *)malloc(shnum * sizeof(unsigned int));
     if (!sh_kind || !sh_off_in_kind) {
         print("ld86: out of memory\n");
         return 0;
@@ -354,7 +385,8 @@ static int parse_elf_rel_input(input_t *in) {
     for (unsigned int i = 0; i < shnum; i++) {
         const elf32_shdr_t *sh = &shdrs[i];
         int kind = sec_kind_from_elf(sh);
-        if (kind < 0) continue;
+        if (kind < 0)
+            continue;
         unsigned int al = sh->sh_addralign ? sh->sh_addralign : 1u;
         kind_size[kind] = align_up(kind_size[kind], al);
         sh_off_in_kind[i] = kind_size[kind];
@@ -368,23 +400,31 @@ static int parse_elf_rel_input(input_t *in) {
     in->sec_base[SEC_TEXT] = 0;
     in->sec_base[SEC_RODATA] = kind_size[SEC_TEXT];
     in->sec_base[SEC_DATA] = kind_size[SEC_TEXT] + kind_size[SEC_RODATA];
-    in->sec_base[SEC_BSS] = kind_size[SEC_TEXT] + kind_size[SEC_RODATA] + kind_size[SEC_DATA];
-    in->payload_size = kind_size[SEC_TEXT] + kind_size[SEC_RODATA] + kind_size[SEC_DATA];
+    in->sec_base[SEC_BSS] =
+        kind_size[SEC_TEXT] + kind_size[SEC_RODATA] + kind_size[SEC_DATA];
+    in->payload_size =
+        kind_size[SEC_TEXT] + kind_size[SEC_RODATA] + kind_size[SEC_DATA];
     in->bss_size = kind_size[SEC_BSS];
-    in->payload = (unsigned char *)malloc(in->payload_size ? in->payload_size : 1);
+    in->payload =
+        (unsigned char *)malloc(in->payload_size ? in->payload_size : 1);
     if (!in->payload) {
         print("ld86: out of memory\n");
         return 0;
     }
-    if (in->payload_size) memset(in->payload, 0, in->payload_size);
+    if (in->payload_size)
+        memset(in->payload, 0, in->payload_size);
 
     for (unsigned int i = 0; i < shnum; i++) {
         const elf32_shdr_t *sh = &shdrs[i];
         int kind = sh_kind[i];
-        if (kind < 0 || kind > (int)SEC_DATA) continue;
-        if (sh->sh_type == ELF_SHT_NOBITS) continue;
-        if (sh->sh_type != ELF_SHT_PROGBITS) continue;
-        if (sh->sh_offset + sh->sh_size > in->size || sh->sh_offset + sh->sh_size < sh->sh_offset) {
+        if (kind < 0 || kind > (int)SEC_DATA)
+            continue;
+        if (sh->sh_type == ELF_SHT_NOBITS)
+            continue;
+        if (sh->sh_type != ELF_SHT_PROGBITS)
+            continue;
+        if (sh->sh_offset + sh->sh_size > in->size ||
+            sh->sh_offset + sh->sh_size < sh->sh_offset) {
             print("ld86: truncated ELF section data: ");
             print(in->path);
             print("\n");
@@ -413,26 +453,30 @@ static int parse_elf_rel_input(input_t *in) {
     unsigned int strtab_size = 0;
     if (symtab_index >= 0) {
         const elf32_shdr_t *symsh = &shdrs[symtab_index];
-        if (symsh->sh_entsize != sizeof(elf32_sym_t) || symsh->sh_size % sizeof(elf32_sym_t) != 0) {
+        if (symsh->sh_entsize != sizeof(elf32_sym_t) ||
+            symsh->sh_size % sizeof(elf32_sym_t) != 0) {
             print("ld86: bad ELF symtab: ");
             print(in->path);
             print("\n");
             return 0;
         }
-        if (symsh->sh_offset + symsh->sh_size > in->size || symsh->sh_offset + symsh->sh_size < symsh->sh_offset) {
+        if (symsh->sh_offset + symsh->sh_size > in->size ||
+            symsh->sh_offset + symsh->sh_size < symsh->sh_offset) {
             print("ld86: truncated ELF symtab: ");
             print(in->path);
             print("\n");
             return 0;
         }
-        if (symsh->sh_link >= shnum || shdrs[symsh->sh_link].sh_type != ELF_SHT_STRTAB) {
+        if (symsh->sh_link >= shnum ||
+            shdrs[symsh->sh_link].sh_type != ELF_SHT_STRTAB) {
             print("ld86: bad ELF strtab link: ");
             print(in->path);
             print("\n");
             return 0;
         }
         const elf32_shdr_t *strsh = &shdrs[symsh->sh_link];
-        if (strsh->sh_offset + strsh->sh_size > in->size || strsh->sh_offset + strsh->sh_size < strsh->sh_offset) {
+        if (strsh->sh_offset + strsh->sh_size > in->size ||
+            strsh->sh_offset + strsh->sh_size < strsh->sh_offset) {
             print("ld86: truncated ELF strtab: ");
             print(in->path);
             print("\n");
@@ -442,7 +486,8 @@ static int parse_elf_rel_input(input_t *in) {
         in->sym_count = symsh->sh_size / (unsigned int)sizeof(elf32_sym_t);
         strtab = (const char *)(in->buf + strsh->sh_offset);
         strtab_size = strsh->sh_size;
-        in->syms = (mobj_sym_t *)malloc(in->sym_count * (unsigned int)sizeof(mobj_sym_t));
+        in->syms = (mobj_sym_t *)malloc(in->sym_count *
+                                        (unsigned int)sizeof(mobj_sym_t));
         if (!in->syms) {
             print("ld86: out of memory\n");
             return 0;
@@ -454,21 +499,27 @@ static int parse_elf_rel_input(input_t *in) {
             unsigned int name_off = es->st_name;
             if (name_off < strtab_size) {
                 int k = 0;
-                while (k < 63 && name_off + (unsigned int)k < strtab_size && strtab[name_off + (unsigned int)k]) {
+                while (k < 63 && name_off + (unsigned int)k < strtab_size &&
+                       strtab[name_off + (unsigned int)k]) {
                     ms->name[k] = strtab[name_off + (unsigned int)k];
                     k++;
                 }
                 ms->name[k] = 0;
             }
             unsigned int bind = (unsigned int)(es->st_info >> 4);
-            if (bind == ELF_STB_GLOBAL || bind == ELF_STB_WEAK) ms->flags |= MOBJ_SYM_GLOBAL;
+            if (bind == ELF_STB_GLOBAL || bind == ELF_STB_WEAK)
+                ms->flags |= MOBJ_SYM_GLOBAL;
             ms->section = SEC_UNDEF;
             ms->value_off = 0;
-            if (es->st_shndx == ELF_SHN_UNDEF) continue;
-            if (es->st_shndx == ELF_SHN_ABS) continue;
-            if (es->st_shndx >= shnum) continue;
+            if (es->st_shndx == ELF_SHN_UNDEF)
+                continue;
+            if (es->st_shndx == ELF_SHN_ABS)
+                continue;
+            if (es->st_shndx >= shnum)
+                continue;
             int kind = sh_kind[es->st_shndx];
-            if (kind < 0) continue;
+            if (kind < 0)
+                continue;
             ms->section = (unsigned int)kind;
             ms->value_off = sh_off_in_kind[es->st_shndx] + es->st_value;
         }
@@ -477,11 +528,15 @@ static int parse_elf_rel_input(input_t *in) {
     unsigned int rel_count = 0;
     for (unsigned int i = 0; i < shnum; i++) {
         const elf32_shdr_t *sh = &shdrs[i];
-        if (sh->sh_type != ELF_SHT_REL) continue;
-        if (sh->sh_info >= shnum) continue;
+        if (sh->sh_type != ELF_SHT_REL)
+            continue;
+        if (sh->sh_info >= shnum)
+            continue;
         int kind = sh_kind[sh->sh_info];
-        if (kind < 0 || kind > (int)SEC_DATA) continue;
-        if (sh->sh_entsize != sizeof(elf32_rel_t) || sh->sh_size % sizeof(elf32_rel_t) != 0) {
+        if (kind < 0 || kind > (int)SEC_DATA)
+            continue;
+        if (sh->sh_entsize != sizeof(elf32_rel_t) ||
+            sh->sh_size % sizeof(elf32_rel_t) != 0) {
             print("ld86: bad ELF reloc table: ");
             print(in->path);
             print("\n");
@@ -497,7 +552,8 @@ static int parse_elf_rel_input(input_t *in) {
             print("\n");
             return 0;
         }
-        in->rels = (mobj_reloc_t *)malloc(rel_count * (unsigned int)sizeof(mobj_reloc_t));
+        in->rels = (mobj_reloc_t *)malloc(rel_count *
+                                          (unsigned int)sizeof(mobj_reloc_t));
         if (!in->rels) {
             print("ld86: out of memory\n");
             return 0;
@@ -505,17 +561,22 @@ static int parse_elf_rel_input(input_t *in) {
         unsigned int rw = 0;
         for (unsigned int i = 0; i < shnum; i++) {
             const elf32_shdr_t *sh = &shdrs[i];
-            if (sh->sh_type != ELF_SHT_REL) continue;
-            if (sh->sh_info >= shnum) continue;
+            if (sh->sh_type != ELF_SHT_REL)
+                continue;
+            if (sh->sh_info >= shnum)
+                continue;
             int kind = sh_kind[sh->sh_info];
-            if (kind < 0 || kind > (int)SEC_DATA) continue;
-            if (sh->sh_offset + sh->sh_size > in->size || sh->sh_offset + sh->sh_size < sh->sh_offset) {
+            if (kind < 0 || kind > (int)SEC_DATA)
+                continue;
+            if (sh->sh_offset + sh->sh_size > in->size ||
+                sh->sh_offset + sh->sh_size < sh->sh_offset) {
                 print("ld86: truncated ELF reloc data: ");
                 print(in->path);
                 print("\n");
                 return 0;
             }
-            const elf32_rel_t *rels = (const elf32_rel_t *)(in->buf + sh->sh_offset);
+            const elf32_rel_t *rels =
+                (const elf32_rel_t *)(in->buf + sh->sh_offset);
             unsigned int rc = sh->sh_size / (unsigned int)sizeof(elf32_rel_t);
             for (unsigned int j = 0; j < rc; j++) {
                 unsigned int rtype = rels[j].r_info & 0xFFu;
@@ -534,7 +595,8 @@ static int parse_elf_rel_input(input_t *in) {
                     print("\n");
                     return 0;
                 }
-                unsigned int off = sh_off_in_kind[sh->sh_info] + rels[j].r_offset;
+                unsigned int off =
+                    sh_off_in_kind[sh->sh_info] + rels[j].r_offset;
                 unsigned int sec_lim = kind_size[kind];
                 if (off + 4 > sec_lim || off + 4 < off) {
                     print("ld86: ELF relocation out of section range: ");
@@ -546,14 +608,16 @@ static int parse_elf_rel_input(input_t *in) {
                 mobj_reloc_t *mr = &in->rels[rw++];
                 mr->section = (unsigned int)kind;
                 mr->offset = off;
-                mr->type = (rtype == ELF_R_386_32) ? MOBJ_RELOC_ABS32 : MOBJ_RELOC_REL32;
+                mr->type = (rtype == ELF_R_386_32) ? MOBJ_RELOC_ABS32
+                                                   : MOBJ_RELOC_REL32;
                 mr->sym_index = rsym;
                 {
                     int add = (int)rd32(in->payload + place);
                     // ELF REL uses S + A - P for PC32, while ld86's internal
                     // REL32 path applies against (P+4). Shift by +4 so both
                     // models converge.
-                    if (rtype == ELF_R_386_PC32) add += 4;
+                    if (rtype == ELF_R_386_PC32)
+                        add += 4;
                     mr->addend = add;
                 }
             }
@@ -567,16 +631,20 @@ static int parse_elf_rel_input(input_t *in) {
 }
 
 static void usage(void) {
-    print("usage: ld86 [-base addr] [-entry addr] [-o out.elf] <in1.obj|bin> [in2.obj|bin ...] [out.elf]\n");
+    print("usage: ld86 [-base addr] [-entry addr] [-o out.elf] <in1.obj|bin> "
+          "[in2.obj|bin ...] [out.elf]\n");
     print("phase-2: object/binary linker to ELF32 (single PT_LOAD)\n");
 }
 
-static unsigned char *read_whole_file(const char *path, unsigned int *out_size) {
+static unsigned char *read_whole_file(const char *path,
+                                      unsigned int *out_size) {
     stat_t st;
-    if (stat(path, &st) < 0 || st.size == 0 || st.size > MAX_IN_BYTES) return 0;
+    if (stat(path, &st) < 0 || st.size == 0 || st.size > MAX_IN_BYTES)
+        return 0;
 
     int fd = open(path, O_RDONLY);
-    if (fd < 0) return 0;
+    if (fd < 0)
+        return 0;
 
     unsigned char *buf = (unsigned char *)malloc(st.size);
     if (!buf) {
@@ -585,7 +653,8 @@ static unsigned char *read_whole_file(const char *path, unsigned int *out_size) 
     }
     int rn = fd_read(fd, buf, st.size);
     close(fd);
-    if (rn != (int)st.size) return 0;
+    if (rn != (int)st.size)
+        return 0;
     *out_size = st.size;
     return buf;
 }
@@ -629,7 +698,8 @@ static int parse_input(input_t *in) {
             in->sec_base[SEC_TEXT] = 0;
             in->sec_base[SEC_RODATA] = h->text_size;
             in->sec_base[SEC_DATA] = h->text_size + h->rodata_size;
-            in->sec_base[SEC_BSS] = h->text_size + h->rodata_size + h->data_size;
+            in->sec_base[SEC_BSS] =
+                h->text_size + h->rodata_size + h->data_size;
             return 1;
         }
         if (ver == 2) {
@@ -641,11 +711,19 @@ static int parse_input(input_t *in) {
             }
             mobj_header_v2_t *h = (mobj_header_v2_t *)in->buf;
             unsigned int filesz = h->text_size + h->rodata_size + h->data_size;
-            unsigned int sym_bytes = h->sym_count * (unsigned int)sizeof(mobj_sym_t);
-            unsigned int rel_bytes = h->reloc_count * (unsigned int)sizeof(mobj_reloc_t);
-            if (h->sym_count && sym_bytes / (unsigned int)sizeof(mobj_sym_t) != h->sym_count) return 0;
-            if (h->reloc_count && rel_bytes / (unsigned int)sizeof(mobj_reloc_t) != h->reloc_count) return 0;
-            unsigned int need = (unsigned int)sizeof(mobj_header_v2_t) + filesz + sym_bytes + rel_bytes;
+            unsigned int sym_bytes =
+                h->sym_count * (unsigned int)sizeof(mobj_sym_t);
+            unsigned int rel_bytes =
+                h->reloc_count * (unsigned int)sizeof(mobj_reloc_t);
+            if (h->sym_count &&
+                sym_bytes / (unsigned int)sizeof(mobj_sym_t) != h->sym_count)
+                return 0;
+            if (h->reloc_count &&
+                rel_bytes / (unsigned int)sizeof(mobj_reloc_t) !=
+                    h->reloc_count)
+                return 0;
+            unsigned int need = (unsigned int)sizeof(mobj_header_v2_t) +
+                                filesz + sym_bytes + rel_bytes;
             if (need > in->size) {
                 print("ld86: bad v2 object size: ");
                 print(in->path);
@@ -661,7 +739,8 @@ static int parse_input(input_t *in) {
             in->sec_base[SEC_TEXT] = 0;
             in->sec_base[SEC_RODATA] = h->text_size;
             in->sec_base[SEC_DATA] = h->text_size + h->rodata_size;
-            in->sec_base[SEC_BSS] = h->text_size + h->rodata_size + h->data_size;
+            in->sec_base[SEC_BSS] =
+                h->text_size + h->rodata_size + h->data_size;
             in->sym_count = h->sym_count;
             in->rel_count = h->reloc_count;
             in->syms = (mobj_sym_t *)(in->payload + filesz);
@@ -675,7 +754,8 @@ static int parse_input(input_t *in) {
     }
 
     if (is_elf_rel_object(in->buf, in->size)) {
-        if (!parse_elf_rel_input(in)) return 0;
+        if (!parse_elf_rel_input(in))
+            return 0;
         return 1;
     }
     in->payload = in->buf;
@@ -687,17 +767,20 @@ static int parse_input(input_t *in) {
     return 1;
 }
 
-static int resolve_symbol_addr(input_t *inputs, int input_count,
-                               int owner_idx, unsigned int sym_idx,
-                               unsigned int ref_section, unsigned int ref_offset,
-                               unsigned int base, unsigned int *out_addr) {
+static int resolve_symbol_addr(input_t *inputs, int input_count, int owner_idx,
+                               unsigned int sym_idx, unsigned int ref_section,
+                               unsigned int ref_offset, unsigned int base,
+                               unsigned int *out_addr) {
     input_t *owner = &inputs[owner_idx];
-    if (sym_idx >= owner->sym_count) return 0;
+    if (sym_idx >= owner->sym_count)
+        return 0;
     mobj_sym_t *s = &owner->syms[sym_idx];
 
     if (s->section != SEC_UNDEF) {
-        if (s->section > SEC_BSS) return 0;
-        *out_addr = base + owner->image_off + owner->sec_base[s->section] + s->value_off;
+        if (s->section > SEC_BSS)
+            return 0;
+        *out_addr = base + owner->image_off + owner->sec_base[s->section] +
+                    s->value_off;
         return 1;
     }
 
@@ -706,13 +789,18 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
     int found_input = -1;
     for (int i = 0; i < input_count; i++) {
         input_t *cand = &inputs[i];
-        if (!cand->is_obj || cand->obj_version < 2) continue;
+        if (!cand->is_obj || cand->obj_version < 2)
+            continue;
         for (unsigned int j = 0; j < cand->sym_count; j++) {
             mobj_sym_t *cs = &cand->syms[j];
-            if (cs->section == SEC_UNDEF) continue;
-            if (!(cs->flags & MOBJ_SYM_GLOBAL)) continue;
-            if (!sym_name_eq_loose(cs->name, s->name)) continue;
-            unsigned int addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
+            if (cs->section == SEC_UNDEF)
+                continue;
+            if (!(cs->flags & MOBJ_SYM_GLOBAL))
+                continue;
+            if (!sym_name_eq_loose(cs->name, s->name))
+                continue;
+            unsigned int addr = base + cand->image_off +
+                                cand->sec_base[cs->section] + cs->value_off;
             if (found) {
                 // Allow multiple loose-name aliases within the same object
                 // (e.g. "$print" and "print" in libc.o).
@@ -740,13 +828,17 @@ static int resolve_symbol_addr(input_t *inputs, int input_count,
         const char *want = sym_strip_dollar(s->name);
         for (int i = 0; i < input_count && !found; i++) {
             input_t *cand = &inputs[i];
-            if (!cand->is_obj || cand->obj_version < 2) continue;
+            if (!cand->is_obj || cand->obj_version < 2)
+                continue;
             for (unsigned int j = 0; j < cand->sym_count; j++) {
                 mobj_sym_t *cs = &cand->syms[j];
-                if (cs->section == SEC_UNDEF) continue;
-                if (strcmp(sym_strip_dollar(cs->name), want) != 0) continue;
+                if (cs->section == SEC_UNDEF)
+                    continue;
+                if (strcmp(sym_strip_dollar(cs->name), want) != 0)
+                    continue;
                 found = 1;
-                found_addr = base + cand->image_off + cand->sec_base[cs->section] + cs->value_off;
+                found_addr = base + cand->image_off +
+                             cand->sec_base[cs->section] + cs->value_off;
                 found_input = i;
                 break;
             }
@@ -780,7 +872,10 @@ void _start(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (streq(a, "-o")) {
-            if (i + 1 >= argc) { usage(); exit(1); }
+            if (i + 1 >= argc) {
+                usage();
+                exit(1);
+            }
             out = argv[++i];
             continue;
         }
@@ -791,7 +886,8 @@ void _start(int argc, char **argv) {
                 exit(1);
             }
             base = (unsigned int)v;
-            if (!entry_set) entry = base;
+            if (!entry_set)
+                entry = base;
             continue;
         }
         if (streq(a, "-entry") || streq(a, "--entry")) {
@@ -867,7 +963,9 @@ void _start(int argc, char **argv) {
                     exit(1);
                 }
                 int is_special = 0;
-                if (ah->name[0] == '/' || (ah->name[0] == '#' && ah->name[1] == '1')) is_special = 1;
+                if (ah->name[0] == '/' ||
+                    (ah->name[0] == '#' && ah->name[1] == '1'))
+                    is_special = 1;
                 if (!is_special && msz > 0) {
                     if (input_count >= MAX_INPUTS) {
                         print("ld86: too many expanded inputs\n");
@@ -883,18 +981,23 @@ void _start(int argc, char **argv) {
                     }
                     memcpy(inputs[input_count].buf, buf + data_off, msz);
                     inputs[input_count].size = msz;
-                    if (!parse_input(&inputs[input_count])) exit(1);
+                    if (!parse_input(&inputs[input_count]))
+                        exit(1);
                     inputs[input_count].image_off = total_file;
                     total_file += inputs[input_count].payload_size;
-                    total_mem += inputs[input_count].payload_size + inputs[input_count].bss_size;
-                    if (!entry_set && !chosen_entry && inputs[input_count].is_obj) {
-                        entry = base + inputs[input_count].image_off + inputs[input_count].entry_off;
+                    total_mem += inputs[input_count].payload_size +
+                                 inputs[input_count].bss_size;
+                    if (!entry_set && !chosen_entry &&
+                        inputs[input_count].is_obj) {
+                        entry = base + inputs[input_count].image_off +
+                                inputs[input_count].entry_off;
                         chosen_entry = 1;
                     }
                     input_count++;
                 }
                 off = data_off + msz;
-                if (off & 1u) off++;
+                if (off & 1u)
+                    off++;
             }
         } else {
             if (input_count >= MAX_INPUTS) {
@@ -904,14 +1007,17 @@ void _start(int argc, char **argv) {
             set_input_path(&inputs[input_count], pos[i], 0);
             inputs[input_count].buf = buf;
             inputs[input_count].size = sz;
-            if (!parse_input(&inputs[input_count])) exit(1);
+            if (!parse_input(&inputs[input_count]))
+                exit(1);
 
             inputs[input_count].image_off = total_file;
             total_file += inputs[input_count].payload_size;
-            total_mem += inputs[input_count].payload_size + inputs[input_count].bss_size;
+            total_mem +=
+                inputs[input_count].payload_size + inputs[input_count].bss_size;
 
             if (!entry_set && !chosen_entry && inputs[input_count].is_obj) {
-                entry = base + inputs[input_count].image_off + inputs[input_count].entry_off;
+                entry = base + inputs[input_count].image_off +
+                        inputs[input_count].entry_off;
                 chosen_entry = 1;
             }
             input_count++;
@@ -923,22 +1029,26 @@ void _start(int argc, char **argv) {
         exit(1);
     }
 
-    unsigned char *image = (unsigned char *)malloc(total_file > 0 ? total_file : 1);
+    unsigned char *image =
+        (unsigned char *)malloc(total_file > 0 ? total_file : 1);
     if (!image) {
         print("ld86: out of memory\n");
         exit(1);
     }
-    if (total_file) memset(image, 0, total_file);
+    if (total_file)
+        memset(image, 0, total_file);
 
     for (int i = 0; i < input_count; i++) {
         if (inputs[i].payload_size > 0) {
-            memcpy(image + inputs[i].image_off, inputs[i].payload, inputs[i].payload_size);
+            memcpy(image + inputs[i].image_off, inputs[i].payload,
+                   inputs[i].payload_size);
         }
     }
 
     for (int i = 0; i < input_count; i++) {
         input_t *in = &inputs[i];
-        if (!in->is_obj || in->obj_version < 2 || in->rel_count == 0) continue;
+        if (!in->is_obj || in->obj_version < 2 || in->rel_count == 0)
+            continue;
 
         for (unsigned int rix = 0; rix < in->rel_count; rix++) {
             mobj_reloc_t *r = &in->rels[rix];
@@ -975,7 +1085,8 @@ void _start(int argc, char **argv) {
 
     const unsigned int page = 0x1000;
     const unsigned int phoff = sizeof(elf32_ehdr_t);
-    const unsigned int code_off = align_up(sizeof(elf32_ehdr_t) + sizeof(elf32_phdr_t), page);
+    const unsigned int code_off =
+        align_up(sizeof(elf32_ehdr_t) + sizeof(elf32_phdr_t), page);
     const unsigned int out_sz = code_off + total_file;
 
     unsigned char *obuf = (unsigned char *)malloc(out_sz);
@@ -1018,7 +1129,8 @@ void _start(int argc, char **argv) {
     ph->p_flags = 7;
     ph->p_align = page;
 
-    if (total_file) memcpy(obuf + code_off, image, total_file);
+    if (total_file)
+        memcpy(obuf + code_off, image, total_file);
 
     int ofd = open(out, O_WRONLY | O_CREAT | O_TRUNC);
     if (ofd < 0) {

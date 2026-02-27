@@ -4,10 +4,10 @@
 #include "lib.h"
 
 typedef struct {
-  uint8_t *buf;
-  uint32_t capacity;
-  uint32_t head;
-  uint32_t tail;
+    uint8_t *buf;
+    uint32_t capacity;
+    uint32_t head;
+    uint32_t tail;
 } kring_u8_t;
 
 void kring_u8_init(kring_u8_t *r, uint8_t *storage, uint32_t capacity);

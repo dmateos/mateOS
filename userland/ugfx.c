@@ -202,16 +202,18 @@ static const unsigned char font8x8[95][8] = {
     {0x6E, 0x3B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 };
 
-static unsigned short rgb888_to_565(unsigned int r, unsigned int g, unsigned int b) {
+static unsigned short rgb888_to_565(unsigned int r, unsigned int g,
+                                    unsigned int b) {
     return (unsigned short)(((r & 0xF8u) << 8) | ((g & 0xFCu) << 3) | (b >> 3));
 }
 
 static void ugfx_init_palette565(void) {
-    if (palette565_init) return;
+    if (palette565_init)
+        return;
 
     static const unsigned char cga_palette[16][3] = {
-        { 0,  0,  0}, { 0,  0, 42}, { 0, 42,  0}, { 0, 42, 42},
-        {42,  0,  0}, {42,  0, 42}, {42, 21,  0}, {42, 42, 42},
+        {0, 0, 0},    {0, 0, 42},   {0, 42, 0},   {0, 42, 42},
+        {42, 0, 0},   {42, 0, 42},  {42, 21, 0},  {42, 42, 42},
         {21, 21, 21}, {21, 21, 63}, {21, 63, 21}, {21, 63, 63},
         {63, 21, 21}, {63, 21, 63}, {63, 63, 21}, {63, 63, 63},
     };
@@ -252,13 +254,15 @@ static inline void fb_write_idx(int x, int y, unsigned char color) {
 }
 
 static inline unsigned char fb_read_idx(int x, int y) {
-    if (ugfx_bpp == 16) return 0;
+    if (ugfx_bpp == 16)
+        return 0;
     return framebuffer[y * ugfx_width + x];
 }
 
 int ugfx_init(void) {
     framebuffer = gfx_init();
-    if (!framebuffer) return -1;
+    if (!framebuffer)
+        return -1;
 
     unsigned int info = gfx_info();
     {
@@ -273,11 +277,12 @@ int ugfx_init(void) {
         } else {
             // Backward-compatible parse for older kernels.
             ugfx_bpp = 8;
-            ugfx_width  = (int)(info >> 16);
+            ugfx_width = (int)(info >> 16);
             ugfx_height = (int)(info & 0xFFFF);
         }
     }
-    if (ugfx_bpp == 16) ugfx_init_palette565();
+    if (ugfx_bpp == 16)
+        ugfx_init_palette565();
 
     return 0;
 }
@@ -288,20 +293,24 @@ void ugfx_exit(void) {
 }
 
 void ugfx_pixel(int x, int y, unsigned char color) {
-    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return;
+    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height)
+        return;
     fb_write_idx(x, y, color);
 }
 
 unsigned char ugfx_read_pixel(int x, int y) {
-    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height) return 0;
+    if (x < 0 || x >= ugfx_width || y < 0 || y >= ugfx_height)
+        return 0;
     return fb_read_idx(x, y);
 }
 
 void ugfx_rect(int x, int y, int w, int h, unsigned char color) {
     for (int row = y; row < y + h; row++) {
-        if (row < 0 || row >= ugfx_height) continue;
+        if (row < 0 || row >= ugfx_height)
+            continue;
         for (int col = x; col < x + w; col++) {
-            if (col < 0 || col >= ugfx_width) continue;
+            if (col < 0 || col >= ugfx_width)
+                continue;
             fb_write_idx(col, row, color);
         }
     }
@@ -329,7 +338,8 @@ void ugfx_clear(unsigned char color) {
 }
 
 void ugfx_hline(int x, int y, int w, unsigned char color) {
-    if (y < 0 || y >= ugfx_height) return;
+    if (y < 0 || y >= ugfx_height)
+        return;
     for (int i = 0; i < w; i++) {
         int cx = x + i;
         if (cx >= 0 && cx < ugfx_width) {
@@ -339,7 +349,8 @@ void ugfx_hline(int x, int y, int w, unsigned char color) {
 }
 
 void ugfx_vline(int x, int y, int h, unsigned char color) {
-    if (x < 0 || x >= ugfx_width) return;
+    if (x < 0 || x >= ugfx_width)
+        return;
     for (int i = 0; i < h; i++) {
         int cy = y + i;
         if (cy >= 0 && cy < ugfx_height) {
@@ -349,7 +360,8 @@ void ugfx_vline(int x, int y, int h, unsigned char color) {
 }
 
 void ugfx_char(int x, int y, char c, unsigned char fg) {
-    if (c < 32 || c > 126) return;
+    if (c < 32 || c > 126)
+        return;
     const unsigned char *glyph = font8x8[c - 32];
     for (int row = 0; row < 8; row++) {
         unsigned char bits = glyph[row];
@@ -375,8 +387,8 @@ void ugfx_string(int x, int y, const char *str, unsigned char fg) {
     }
 }
 
-void ugfx_string_bg(int x, int y, const char *str,
-                     unsigned char fg, unsigned char bg) {
+void ugfx_string_bg(int x, int y, const char *str, unsigned char fg,
+                    unsigned char bg) {
     int cx = x;
     while (*str) {
         if (*str == '\n') {
@@ -393,18 +405,21 @@ void ugfx_string_bg(int x, int y, const char *str,
 
 // Buffer-mode drawing functions (for windowed child apps)
 
-void ugfx_buf_pixel(unsigned char *buf, int bw, int bh,
-                    int x, int y, unsigned char color) {
-    if (x < 0 || x >= bw || y < 0 || y >= bh) return;
+void ugfx_buf_pixel(unsigned char *buf, int bw, int bh, int x, int y,
+                    unsigned char color) {
+    if (x < 0 || x >= bw || y < 0 || y >= bh)
+        return;
     buf[y * bw + x] = color;
 }
 
-void ugfx_buf_rect(unsigned char *buf, int bw, int bh,
-                   int x, int y, int w, int h, unsigned char color) {
+void ugfx_buf_rect(unsigned char *buf, int bw, int bh, int x, int y, int w,
+                   int h, unsigned char color) {
     for (int row = y; row < y + h; row++) {
-        if (row < 0 || row >= bh) continue;
+        if (row < 0 || row >= bh)
+            continue;
         for (int col = x; col < x + w; col++) {
-            if (col < 0 || col >= bw) continue;
+            if (col < 0 || col >= bw)
+                continue;
             buf[row * bw + col] = color;
         }
     }
@@ -415,9 +430,10 @@ void ugfx_buf_clear(unsigned char *buf, int bw, int bh, unsigned char color) {
         buf[i] = color;
 }
 
-void ugfx_buf_char(unsigned char *buf, int bw, int bh,
-                   int x, int y, char c, unsigned char fg) {
-    if (c < 32 || c > 126) return;
+void ugfx_buf_char(unsigned char *buf, int bw, int bh, int x, int y, char c,
+                   unsigned char fg) {
+    if (c < 32 || c > 126)
+        return;
     const unsigned char *glyph = font8x8[c - 32];
     for (int row = 0; row < 8; row++) {
         unsigned char bits = glyph[row];
@@ -429,8 +445,8 @@ void ugfx_buf_char(unsigned char *buf, int bw, int bh,
     }
 }
 
-void ugfx_buf_string(unsigned char *buf, int bw, int bh,
-                     int x, int y, const char *str, unsigned char fg) {
+void ugfx_buf_string(unsigned char *buf, int bw, int bh, int x, int y,
+                     const char *str, unsigned char fg) {
     int cx = x;
     while (*str) {
         if (*str == '\n') {
@@ -444,9 +460,10 @@ void ugfx_buf_string(unsigned char *buf, int bw, int bh,
     }
 }
 
-void ugfx_buf_hline(unsigned char *buf, int bw, int bh,
-                    int x, int y, int w, unsigned char color) {
-    if (y < 0 || y >= bh) return;
+void ugfx_buf_hline(unsigned char *buf, int bw, int bh, int x, int y, int w,
+                    unsigned char color) {
+    if (y < 0 || y >= bh)
+        return;
     for (int i = 0; i < w; i++) {
         int cx = x + i;
         if (cx >= 0 && cx < bw)
@@ -455,11 +472,13 @@ void ugfx_buf_hline(unsigned char *buf, int bw, int bh,
 }
 
 void ugfx_present(const unsigned char *buf, int bw, int bh) {
-    if (!framebuffer || !buf) return;
+    if (!framebuffer || !buf)
+        return;
 
     int w = (bw < ugfx_width) ? bw : ugfx_width;
     int h = (bh < ugfx_height) ? bh : ugfx_height;
-    if (w <= 0 || h <= 0) return;
+    if (w <= 0 || h <= 0)
+        return;
 
     if (ugfx_bpp == 16) {
         unsigned short *fb16 = (unsigned short *)framebuffer;
@@ -479,9 +498,7 @@ void ugfx_present(const unsigned char *buf, int bw, int bh) {
     }
 }
 
-unsigned char ugfx_getkey(void) {
-    return getkey(0);
-}
+unsigned char ugfx_getkey(void) { return getkey(0); }
 
 unsigned char ugfx_waitkey(void) {
     unsigned char key;

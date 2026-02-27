@@ -1,5 +1,5 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 void _start(int argc, char **argv) {
     if (argc < 2) {
@@ -10,13 +10,26 @@ void _start(int argc, char **argv) {
             exit(1);
         }
         char buf[16];
-        print("ip   "); format_ip4(ip_be, buf); print(buf); print("\n");
-        print("mask "); format_ip4(mask_be, buf); print(buf); print("\n");
-        print("gw   "); format_ip4(gw_be, buf); print(buf); print("\n");
+        print("ip   ");
+        format_ip4(ip_be, buf);
+        print(buf);
+        print("\n");
+        print("mask ");
+        format_ip4(mask_be, buf);
+        print(buf);
+        print("\n");
+        print("gw   ");
+        format_ip4(gw_be, buf);
+        print(buf);
+        print("\n");
         unsigned int rx = 0, tx = 0;
         if (net_stats(&rx, &tx) == 0) {
-            print("rxpk "); print_num((int)rx); print("\n");
-            print("txpk "); print_num((int)tx); print("\n");
+            print("rxpk ");
+            print_num((int)rx);
+            print("\n");
+            print("txpk ");
+            print_num((int)tx);
+            print("\n");
         }
         exit(0);
     }
@@ -34,13 +47,16 @@ void _start(int argc, char **argv) {
 
     unsigned int ip_be, mask_be, gw_be;
     if (parse_ip4(argv[1], &ip_be) != 0) {
-        print("ifconfig: invalid ip\n"); exit(1);
+        print("ifconfig: invalid ip\n");
+        exit(1);
     }
     if (parse_ip4(argv[2], &mask_be) != 0) {
-        print("ifconfig: invalid mask\n"); exit(1);
+        print("ifconfig: invalid mask\n");
+        exit(1);
     }
     if (parse_ip4(argv[3], &gw_be) != 0) {
-        print("ifconfig: invalid gateway\n"); exit(1);
+        print("ifconfig: invalid gateway\n");
+        exit(1);
     }
     net_cfg(ip_be, mask_be, gw_be);
     print("ifconfig ok\n");

@@ -1,7 +1,7 @@
 // Windowed multitasking test: updates once per second.
-#include "ugfx.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
+#include "ugfx.h"
 
 #define W 320
 #define H 120
@@ -19,11 +19,13 @@ static void draw_frame(int sec) {
     ugfx_buf_string(buf, W, H, 8, 40, "Seconds:", 14);
     ugfx_buf_rect(buf, W, H, 70, 40, 64, 10, 1);
     ugfx_buf_string(buf, W, H, 70, 40, num, 15);
-    ugfx_buf_string(buf, W, H, 8, 60, "Run multiple instances to test scheduling.", 7);
+    ugfx_buf_string(buf, W, H, 8, 60,
+                    "Run multiple instances to test scheduling.", 7);
 }
 
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
     int wid = win_create(W, H, "Sleep");
     if (wid < 0) {
         print("error: requires window manager\n");
@@ -34,7 +36,8 @@ void _start(int argc, char **argv) {
     int sec = 0;
     while (1) {
         int k = win_getkey(wid);
-        if (k == 27 || k == 'q' || k == 'Q') break;
+        if (k == 27 || k == 'q' || k == 'Q')
+            break;
 
         draw_frame(sec);
         win_write(wid, buf, sizeof(buf));

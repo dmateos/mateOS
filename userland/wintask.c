@@ -1,6 +1,6 @@
-#include "ugfx.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
+#include "ugfx.h"
 
 #define W 500
 #define H 350
@@ -10,23 +10,23 @@
 #define STATUS_H 14
 #define ROW_H 10
 
-#define COL_BG        237
-#define COL_TITLE     75
-#define COL_TITLE_2   117
+#define COL_BG 237
+#define COL_TITLE 75
+#define COL_TITLE_2 117
 #define COL_TITLE_TXT 255
-#define COL_HDR_BG    239
-#define COL_HDR_TXT   252
-#define COL_ROW_A     238
-#define COL_ROW_B     240
-#define COL_ROW_TXT   251
-#define COL_SEL_BG    31
-#define COL_SEL_TXT   255
-#define COL_RUN_TXT   120
-#define COL_STATUS    236
+#define COL_HDR_BG 239
+#define COL_HDR_TXT 252
+#define COL_ROW_A 238
+#define COL_ROW_B 240
+#define COL_ROW_TXT 251
+#define COL_SEL_BG 31
+#define COL_SEL_TXT 255
+#define COL_RUN_TXT 120
+#define COL_STATUS 236
 #define COL_STATUS_TXT 250
 #define COL_CPU_BAR_BG 242
 #define COL_CPU_BAR_FG 81
-#define COL_GRAPH_BG   235
+#define COL_GRAPH_BG 235
 #define COL_GRAPH_GRID 239
 #define COL_GRAPH_LINE 74
 #define COL_GRAPH_FILL 31
@@ -67,7 +67,8 @@ static void copy_status(const char *s) {
 
 static int parse_u32_after(const char *s, const char *key, unsigned int *out) {
     const char *p = strstr(s, key);
-    if (!p) return -1;
+    if (!p)
+        return -1;
     p += strlen(key);
     unsigned int v = 0;
     int any = 0;
@@ -76,7 +77,8 @@ static int parse_u32_after(const char *s, const char *key, unsigned int *out) {
         p++;
         any = 1;
     }
-    if (!any) return -1;
+    if (!any)
+        return -1;
     *out = v;
     return 0;
 }
@@ -84,37 +86,45 @@ static int parse_u32_after(const char *s, const char *key, unsigned int *out) {
 static void refresh_mem_stats(void) {
     char mem[256];
     int fd = open("kmeminfo.mos", O_RDONLY);
-    if (fd < 0) return;
+    if (fd < 0)
+        return;
     int n = fd_read(fd, mem, sizeof(mem) - 1);
     close(fd);
-    if (n <= 0) return;
+    if (n <= 0)
+        return;
     mem[n] = '\0';
 
     unsigned int total = 0, used = 0;
     if (parse_u32_after(mem, "PMM: total=", &total) == 0 &&
-        parse_u32_after(mem, " used=", &used) == 0 &&
-        total > 0) {
+        parse_u32_after(mem, " used=", &used) == 0 && total > 0) {
         pmm_total_frames = total;
         pmm_used_frames = used;
         mem_used_pct = (int)((used * 100u) / total);
-        if (mem_used_pct < 0) mem_used_pct = 0;
-        if (mem_used_pct > 100) mem_used_pct = 100;
+        if (mem_used_pct < 0)
+            mem_used_pct = 0;
+        if (mem_used_pct > 100)
+            mem_used_pct = 100;
     }
 }
 
 static int state_running(unsigned int st) { return st == 1; }
 
 static const char *state_name(unsigned int st) {
-    if (st == 0) return "READY";
-    if (st == 1) return "RUN";
-    if (st == 2) return "BLK";
-    if (st == 3) return "TERM";
+    if (st == 0)
+        return "READY";
+    if (st == 1)
+        return "RUN";
+    if (st == 2)
+        return "BLK";
+    if (st == 3)
+        return "TERM";
     return "?";
 }
 
 static int sample_find(int pid) {
     for (int i = 0; i < MAX_TASKS_VIEW; i++) {
-        if (samples[i].pid == pid) return i;
+        if (samples[i].pid == pid)
+            return i;
     }
     return -1;
 }
@@ -133,8 +143,10 @@ static int sample_alloc(int pid) {
 
 static void sample_update(const taskinfo_entry_t *t, unsigned int delta_total) {
     int si = sample_find((int)t->id);
-    if (si < 0) si = sample_alloc((int)t->id);
-    if (si < 0) return;
+    if (si < 0)
+        si = sample_alloc((int)t->id);
+    if (si < 0)
+        return;
 
     if (delta_total == 0) {
         samples[si].runtime_prev = t->runtime_ticks;
@@ -146,8 +158,10 @@ static void sample_update(const taskinfo_entry_t *t, unsigned int delta_total) {
     unsigned int cur = t->runtime_ticks;
     unsigned int delta_task = (cur >= prev) ? (cur - prev) : 0;
     int pct = (int)((delta_task * 100u) / delta_total);
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
+    if (pct < 0)
+        pct = 0;
+    if (pct > 100)
+        pct = 100;
 
     samples[si].runtime_prev = cur;
     samples[si].cpu_pct = pct;
@@ -155,7 +169,8 @@ static void sample_update(const taskinfo_entry_t *t, unsigned int delta_total) {
 
 static int sample_cpu_percent(int pid) {
     int si = sample_find(pid);
-    if (si < 0) return 0;
+    if (si < 0)
+        return 0;
     return samples[si].cpu_pct;
 }
 
@@ -167,8 +182,10 @@ static void refresh_tasks(void) {
     }
 
     task_count = tasklist(tasks, MAX_TASKS_VIEW);
-    if (task_count < 0) task_count = 0;
-    if (selected >= task_count) selected = (task_count > 0) ? (task_count - 1) : 0;
+    if (task_count < 0)
+        task_count = 0;
+    if (selected >= task_count)
+        selected = (task_count > 0) ? (task_count - 1) : 0;
 
     for (int i = 0; i < task_count; i++) {
         sample_update(&tasks[i], delta_total);
@@ -178,17 +195,21 @@ static void refresh_tasks(void) {
     running_count = 0;
     for (int i = 0; i < task_count; i++) {
         int pct = sample_cpu_percent((int)tasks[i].id);
-        if (tasks[i].id != 0) cpu_total_pct += pct;
-        if (state_running(tasks[i].state)) running_count++;
+        if (tasks[i].id != 0)
+            cpu_total_pct += pct;
+        if (state_running(tasks[i].state))
+            running_count++;
     }
-    if (cpu_total_pct > 100) cpu_total_pct = 100;
+    if (cpu_total_pct > 100)
+        cpu_total_pct = 100;
     refresh_mem_stats();
     if (cpu_hist_len < (int)sizeof(cpu_hist)) {
         cpu_hist[cpu_hist_len++] = (unsigned char)cpu_total_pct;
     } else {
         cpu_hist[cpu_hist_pos] = (unsigned char)cpu_total_pct;
         cpu_hist_pos++;
-        if (cpu_hist_pos >= (int)sizeof(cpu_hist)) cpu_hist_pos = 0;
+        if (cpu_hist_pos >= (int)sizeof(cpu_hist))
+            cpu_hist_pos = 0;
     }
 
     prev_total_ticks = now_ticks;
@@ -196,22 +217,30 @@ static void refresh_tasks(void) {
 
 static int visible_rows(void) {
     int rows = (H - TITLE_H - STATS_H - STATUS_H - ROW_H - 8) / ROW_H;
-    if (rows < 1) rows = 1;
+    if (rows < 1)
+        rows = 1;
     return rows;
 }
 
 static void keep_selection_visible(void) {
     int rows = visible_rows();
-    if (selected < view_top) view_top = selected;
-    if (selected >= view_top + rows) view_top = selected - rows + 1;
-    if (view_top < 0) view_top = 0;
-    if (task_count > rows && view_top > task_count - rows) view_top = task_count - rows;
-    if (task_count <= rows) view_top = 0;
+    if (selected < view_top)
+        view_top = selected;
+    if (selected >= view_top + rows)
+        view_top = selected - rows + 1;
+    if (view_top < 0)
+        view_top = 0;
+    if (task_count > rows && view_top > task_count - rows)
+        view_top = task_count - rows;
+    if (task_count <= rows)
+        view_top = 0;
 }
 
 static const char *ring_name(unsigned int ring) {
-    if (ring == 0) return "K";
-    if (ring == 3) return "U";
+    if (ring == 0)
+        return "K";
+    if (ring == 3)
+        return "U";
     return "?";
 }
 
@@ -227,21 +256,28 @@ static void draw_num(int x, int y, int n, unsigned char c) {
 
 static void draw_cpu_bar(int x, int y, int pct, int selected_row) {
     int w = 20;
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    ugfx_buf_rect(buf, W, H, x, y + 1, w, 6, selected_row ? 233 : COL_CPU_BAR_BG);
+    if (pct < 0)
+        pct = 0;
+    if (pct > 100)
+        pct = 100;
+    ugfx_buf_rect(buf, W, H, x, y + 1, w, 6,
+                  selected_row ? 233 : COL_CPU_BAR_BG);
     int fill = (pct * (w - 2)) / 100;
     if (fill > 0) {
-        ugfx_buf_rect(buf, W, H, x + 1, y + 2, fill, 4, selected_row ? COL_TITLE_2 : COL_CPU_BAR_FG);
+        ugfx_buf_rect(buf, W, H, x + 1, y + 2, fill, 4,
+                      selected_row ? COL_TITLE_2 : COL_CPU_BAR_FG);
     }
 }
 
 static void draw_meter(int x, int y, int w, int pct, unsigned char fill_col) {
-    if (pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
+    if (pct < 0)
+        pct = 0;
+    if (pct > 100)
+        pct = 100;
     ugfx_buf_rect(buf, W, H, x, y, w, 6, COL_CPU_BAR_BG);
     int fill = (pct * (w - 2)) / 100;
-    if (fill > 0) ugfx_buf_rect(buf, W, H, x + 1, y + 1, fill, 4, fill_col);
+    if (fill > 0)
+        ugfx_buf_rect(buf, W, H, x + 1, y + 1, fill, 4, fill_col);
 }
 
 static void draw_stats_panel(void) {
@@ -284,21 +320,27 @@ static void draw_stats_panel(void) {
     ugfx_buf_hline(buf, W, H, gx, gy + gh - 1, gw, 233);
     for (int i = 0; i < gw - 2; i++) {
         int idx;
-        if (cpu_hist_len <= 0) break;
+        if (cpu_hist_len <= 0)
+            break;
         if (cpu_hist_len < (int)sizeof(cpu_hist)) {
             idx = cpu_hist_len - 1 - i;
-            if (idx < 0) break;
+            if (idx < 0)
+                break;
         } else {
             idx = cpu_hist_pos - 1 - i;
-            while (idx < 0) idx += (int)sizeof(cpu_hist);
+            while (idx < 0)
+                idx += (int)sizeof(cpu_hist);
         }
         int pct = (int)cpu_hist[idx];
-        if (pct < 0) pct = 0;
-        if (pct > 100) pct = 100;
+        if (pct < 0)
+            pct = 0;
+        if (pct > 100)
+            pct = 100;
         int bar_h = (pct * (gh - 2)) / 100;
         int px = gx + gw - 2 - i;
         if (bar_h > 0) {
-            ugfx_buf_rect(buf, W, H, px, gy + gh - 1 - bar_h, 1, bar_h, COL_GRAPH_FILL);
+            ugfx_buf_rect(buf, W, H, px, gy + gh - 1 - bar_h, 1, bar_h,
+                          COL_GRAPH_FILL);
             ugfx_buf_pixel(buf, W, H, px, gy + gh - 1 - bar_h, COL_GRAPH_LINE);
         }
     }
@@ -329,11 +371,13 @@ static void redraw(void) {
 
     for (int i = 0; i < rows; i++) {
         int ti = view_top + i;
-        if (ti >= task_count) break;
+        if (ti >= task_count)
+            break;
         int y = y0 + i * ROW_H;
         int sel = (ti == selected);
         unsigned char tc = COL_ROW_TXT;
-        ugfx_buf_rect(buf, W, H, 0, y - 1, W, ROW_H, (i & 1) ? COL_ROW_A : COL_ROW_B);
+        ugfx_buf_rect(buf, W, H, 0, y - 1, W, ROW_H,
+                      (i & 1) ? COL_ROW_A : COL_ROW_B);
         if (sel) {
             ugfx_buf_rect(buf, W, H, 0, y - 1, W, ROW_H, COL_SEL_BG);
             ugfx_buf_hline(buf, W, H, 0, y - 1, W, COL_TITLE_2);
@@ -361,7 +405,8 @@ static void redraw(void) {
 }
 
 static void kill_selected(void) {
-    if (task_count <= 0 || selected < 0 || selected >= task_count) return;
+    if (task_count <= 0 || selected < 0 || selected >= task_count)
+        return;
 
     int pid = (int)tasks[selected].id;
     if (pid == 0 || pid == self_pid) {
@@ -370,12 +415,15 @@ static void kill_selected(void) {
     }
 
     int rc = kill(pid);
-    if (rc == 0) copy_status("Task killed");
-    else copy_status("kill() failed");
+    if (rc == 0)
+        copy_status("Task killed");
+    else
+        copy_status("kill() failed");
 }
 
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
 
     wid = win_create(W, H, "Task Manager");
     if (wid < 0) {
@@ -392,11 +440,17 @@ void _start(int argc, char **argv) {
     while (1) {
         int k = win_getkey(wid);
         if (k > 0) {
-            if (k == 'q' || k == 27) break;
-            if ((k == 'w' || k == 'W' || k == KEY_UP) && selected > 0) selected--;
-            if ((k == 's' || k == 'S' || k == KEY_DOWN) && selected + 1 < task_count) selected++;
-            if (k == 'k' || k == 'K') kill_selected();
-            if (k == 'r' || k == 'R') copy_status("Refreshed");
+            if (k == 'q' || k == 27)
+                break;
+            if ((k == 'w' || k == 'W' || k == KEY_UP) && selected > 0)
+                selected--;
+            if ((k == 's' || k == 'S' || k == KEY_DOWN) &&
+                selected + 1 < task_count)
+                selected++;
+            if (k == 'k' || k == 'K')
+                kill_selected();
+            if (k == 'r' || k == 'R')
+                copy_status("Refreshed");
             refresh_tasks();
             keep_selection_visible();
             redraw();

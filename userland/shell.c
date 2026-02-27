@@ -1,6 +1,6 @@
-#include "syscalls.h"
 #include "cmd_shared.h"
 #include "libc.h"
+#include "syscalls.h"
 
 // Wait for a keypress (blocking via yield loop)
 static unsigned char waitkey(void) {
@@ -52,7 +52,8 @@ static struct {
 static int bg_count = 0;
 
 static void bg_add(int pid, const char *name) {
-    if (bg_count >= MAX_BGJOBS) return;
+    if (bg_count >= MAX_BGJOBS)
+        return;
     bg_jobs[bg_count].pid = pid;
     int i;
     for (i = 0; name[i] && i < 31; i++)
@@ -109,28 +110,31 @@ static int parse_argv(char *line, const char **argv, int max_args) {
     char *p = line;
     while (*p && argc < max_args) {
         // Skip leading spaces
-        while (*p == ' ') p++;
-        if (*p == '\0') break;
+        while (*p == ' ')
+            p++;
+        if (*p == '\0')
+            break;
         argv[argc++] = p;
         // Find end of token
-        while (*p && *p != ' ') p++;
-        if (*p) *p++ = '\0';
+        while (*p && *p != ' ')
+            p++;
+        if (*p)
+            *p++ = '\0';
     }
     return argc;
 }
 
 void _start(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
+    (void)argv;
     print("mateOS shell v0.1\n");
     print("Type 'help' for commands.\n\n");
 
     char line[128];
-    cmd_io_t io = {
-        .print = print,
-        .print_num = print_num,
-        .clear = cmd_clear,
-        .exit_help = "Exit shell"
-    };
+    cmd_io_t io = {.print = print,
+                   .print_num = print_num,
+                   .clear = cmd_clear,
+                   .exit_help = "Exit shell"};
 
     while (1) {
         // Check for finished background jobs before showing prompt
@@ -146,11 +150,12 @@ void _start(int argc, char **argv) {
         }
         int len = readline(line, sizeof(line));
 
-        if (len == 0) continue;
+        if (len == 0)
+            continue;
 
         // Check for 'jobs' builtin
-        if (len == 4 && line[0] == 'j' && line[1] == 'o' &&
-            line[2] == 'b' && line[3] == 's') {
+        if (len == 4 && line[0] == 'j' && line[1] == 'o' && line[2] == 'b' &&
+            line[3] == 's') {
             bg_check();
             cmd_jobs();
             continue;
@@ -161,8 +166,10 @@ void _start(int argc, char **argv) {
             (line[2] == ' ' || line[2] == '\0')) {
             const char *dir = (line[2] == ' ') ? line + 3 : "/";
             // Skip leading whitespace
-            while (*dir == ' ') dir++;
-            if (*dir == '\0') dir = "/";
+            while (*dir == ' ')
+                dir++;
+            if (*dir == '\0')
+                dir = "/";
             if (chdir(dir) < 0) {
                 print("cd: no such directory: ");
                 print(dir);
@@ -203,25 +210,33 @@ void _start(int argc, char **argv) {
             }
         }
 
-        if (len == 0) continue;
+        if (len == 0)
+            continue;
 
         // Parse command line into argv tokens
         const char *args[16];
         int ac = parse_argv(line, args, 16);
-        if (ac == 0) continue;
+        if (ac == 0)
+            continue;
 
         // Auto-append .elf for legacy CLI commands; fall back to .wlf.
         char progname[64];
         const char *cmd = args[0];
         int cmdlen = strlen(cmd);
         int has_ext = (cmdlen >= 4 && cmd[cmdlen - 4] == '.' &&
-                       ((cmd[cmdlen - 3] == 'e' && cmd[cmdlen - 2] == 'l' && cmd[cmdlen - 1] == 'f') ||
-                        (cmd[cmdlen - 3] == 'w' && cmd[cmdlen - 2] == 'l' && cmd[cmdlen - 1] == 'f')));
+                       ((cmd[cmdlen - 3] == 'e' && cmd[cmdlen - 2] == 'l' &&
+                         cmd[cmdlen - 1] == 'f') ||
+                        (cmd[cmdlen - 3] == 'w' && cmd[cmdlen - 2] == 'l' &&
+                         cmd[cmdlen - 1] == 'f')));
         if (!has_ext) {
             int i;
-            for (i = 0; i < 59 && cmd[i]; i++) progname[i] = cmd[i];
-            progname[i++] = '.'; progname[i++] = 'e';
-            progname[i++] = 'l'; progname[i++] = 'f'; progname[i] = '\0';
+            for (i = 0; i < 59 && cmd[i]; i++)
+                progname[i] = cmd[i];
+            progname[i++] = '.';
+            progname[i++] = 'e';
+            progname[i++] = 'l';
+            progname[i++] = 'f';
+            progname[i] = '\0';
             args[0] = progname;
         }
 
@@ -229,9 +244,13 @@ void _start(int argc, char **argv) {
         int child = spawn_argv(args[0], args, ac);
         if (child < 0 && !has_ext) {
             int i;
-            for (i = 0; i < 59 && cmd[i]; i++) progname[i] = cmd[i];
-            progname[i++] = '.'; progname[i++] = 'w';
-            progname[i++] = 'l'; progname[i++] = 'f'; progname[i] = '\0';
+            for (i = 0; i < 59 && cmd[i]; i++)
+                progname[i] = cmd[i];
+            progname[i++] = '.';
+            progname[i++] = 'w';
+            progname[i++] = 'l';
+            progname[i++] = 'f';
+            progname[i] = '\0';
             args[0] = progname;
             child = spawn_argv(args[0], args, ac);
         }

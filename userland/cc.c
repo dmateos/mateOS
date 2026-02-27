@@ -1,5 +1,5 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 #define MAX_INPUTS 16
 #define IN_C 1
@@ -15,13 +15,15 @@ static void usage(void) {
 }
 
 static char lower_ch(char c) {
-    if (c >= 'A' && c <= 'Z') return (char)(c - 'A' + 'a');
+    if (c >= 'A' && c <= 'Z')
+        return (char)(c - 'A' + 'a');
     return c;
 }
 
 static int starts_with(const char *s, const char *pfx) {
     while (*pfx) {
-        if (*s++ != *pfx++) return 0;
+        if (*s++ != *pfx++)
+            return 0;
     }
     return 1;
 }
@@ -29,10 +31,12 @@ static int starts_with(const char *s, const char *pfx) {
 static int ends_with_ci(const char *s, const char *sfx) {
     int ls = strlen(s);
     int lx = strlen(sfx);
-    if (lx > ls) return 0;
+    if (lx > ls)
+        return 0;
     const char *a = s + (ls - lx);
     for (int i = 0; i < lx; i++) {
-        if (lower_ch(a[i]) != lower_ch(sfx[i])) return 0;
+        if (lower_ch(a[i]) != lower_ch(sfx[i]))
+            return 0;
     }
     return 1;
 }
@@ -41,8 +45,7 @@ static int is_cc_temp_name(const char *name) {
     // Match cc_<digits>[ _<digits> ].(asm|obj|bin) temp files.
     int i = 0;
     if ((name[0] == 'c' || name[0] == 'C') &&
-        (name[1] == 'c' || name[1] == 'C') &&
-        name[2] == '_') {
+        (name[1] == 'c' || name[1] == 'C') && name[2] == '_') {
         i = 3;
     } else {
         return 0;
@@ -52,7 +55,8 @@ static int is_cc_temp_name(const char *name) {
         i++;
         have_digit = 1;
     }
-    if (!have_digit) return 0;
+    if (!have_digit)
+        return 0;
     if (name[i] == '_') {
         i++;
         have_digit = 0;
@@ -60,9 +64,12 @@ static int is_cc_temp_name(const char *name) {
             i++;
             have_digit = 1;
         }
-        if (!have_digit) return 0;
+        if (!have_digit)
+            return 0;
     }
-    if (!(ends_with_ci(name, ".asm") || ends_with_ci(name, ".obj") || ends_with_ci(name, ".bin"))) return 0;
+    if (!(ends_with_ci(name, ".asm") || ends_with_ci(name, ".obj") ||
+          ends_with_ci(name, ".bin")))
+        return 0;
     return 1;
 }
 
@@ -129,8 +136,10 @@ static int require_nonempty_file(const char *path, const char *stage_name) {
 }
 
 static void cleanup_tmp_files(const char *a, const char *b) {
-    if (a && a[0]) unlink(a);
-    if (b && b[0]) unlink(b);
+    if (a && a[0])
+        unlink(a);
+    if (b && b[0])
+        unlink(b);
 }
 
 static int ensure_runtime_inputs(void) {
@@ -138,27 +147,37 @@ static int ensure_runtime_inputs(void) {
     static const char *libc_obj = "libc.o";
     static const char *sys_obj = "syscalls.o";
     stat_t st;
-    if (stat(crt0_obj, &st) != 0 || st.size == 0) return -1;
-    if (stat(libc_obj, &st) != 0 || st.size == 0) return -1;
-    if (stat(sys_obj, &st) != 0 || st.size == 0) return -1;
+    if (stat(crt0_obj, &st) != 0 || st.size == 0)
+        return -1;
+    if (stat(libc_obj, &st) != 0 || st.size == 0)
+        return -1;
+    if (stat(sys_obj, &st) != 0 || st.size == 0)
+        return -1;
     return 0;
 }
 
 static int infer_input_kind(const char *path) {
-    if (ends_with_ci(path, ".c")) return IN_C;
-    if (ends_with_ci(path, ".o") || ends_with_ci(path, ".obj")) return IN_OBJ;
-    if (ends_with_ci(path, ".a")) return IN_LIB;
+    if (ends_with_ci(path, ".c"))
+        return IN_C;
+    if (ends_with_ci(path, ".o") || ends_with_ci(path, ".obj"))
+        return IN_OBJ;
+    if (ends_with_ci(path, ".a"))
+        return IN_LIB;
     return 0;
 }
 
-static void derive_out_from_input(const char *in, const char *ext, char *out, int out_cap) {
+static void derive_out_from_input(const char *in, const char *ext, char *out,
+                                  int out_cap) {
     memset(out, 0, (unsigned int)out_cap);
     append_str(out, out_cap, in);
-    if (ends_with_ci(out, ".c") || ends_with_ci(out, ".o") || ends_with_ci(out, ".a") || ends_with_ci(out, ".obj")) {
+    if (ends_with_ci(out, ".c") || ends_with_ci(out, ".o") ||
+        ends_with_ci(out, ".a") || ends_with_ci(out, ".obj")) {
         int n = strlen(out);
         int cut = 0;
-        if (ends_with_ci(out, ".obj")) cut = 4;
-        else cut = 2;
+        if (ends_with_ci(out, ".obj"))
+            cut = 4;
+        else
+            cut = 2;
         out[n - cut] = '\0';
     }
     append_str(out, out_cap, ext);
@@ -248,8 +267,10 @@ void _start(int argc, char **argv) {
     if (!output) {
         if (input_count == 1) {
             const char *ext = ".elf";
-            if (opt_c) ext = ".o";
-            else if (opt_S) ext = ".asm";
+            if (opt_c)
+                ext = ".o";
+            else if (opt_S)
+                ext = ".asm";
             derive_out_from_input(inputs[0], ext, out_buf, sizeof(out_buf));
             output = out_buf;
         } else {
@@ -283,24 +304,22 @@ void _start(int argc, char **argv) {
     cleanup_stale_cc_temps();
 
     for (int i = 0; i < input_count; i++) {
-        if (input_kind[i] != IN_C) continue;
-        const char *a1[] = {
-            "smallerc.elf",
-            "-seg32",
-            "-no-leading-underscore",
-            inputs[i],
-            app_asm_tmp[i],
-            0
-        };
+        if (input_kind[i] != IN_C)
+            continue;
+        const char *a1[] = {"smallerc.elf",           "-seg32",
+                            "-no-leading-underscore", inputs[i],
+                            app_asm_tmp[i],           0};
         if (run_stage("smallerc.elf", a1, 5) != 0) {
             if (!keep_temps) {
-                for (int j = 0; j < input_count; j++) cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
+                for (int j = 0; j < input_count; j++)
+                    cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
             }
             exit(1);
         }
         if (require_nonempty_file(app_asm_tmp[i], "smallerc") != 0) {
             if (!keep_temps) {
-                for (int j = 0; j < input_count; j++) cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
+                for (int j = 0; j < input_count; j++)
+                    cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
             }
             exit(1);
         }
@@ -309,13 +328,16 @@ void _start(int argc, char **argv) {
         for (int i = 0; i < input_count; i++) {
             char final_asm[160];
             const char *dst = 0;
-            if (output && input_count == 1) dst = output;
+            if (output && input_count == 1)
+                dst = output;
             else {
-                derive_out_from_input(inputs[i], ".asm", final_asm, sizeof(final_asm));
+                derive_out_from_input(inputs[i], ".asm", final_asm,
+                                      sizeof(final_asm));
                 dst = final_asm;
             }
             if (strcmp(app_asm_tmp[i], dst) != 0) {
-                if (unlink(dst) < 0) { /* ignore missing */ }
+                if (unlink(dst) < 0) { /* ignore missing */
+                }
                 int infd = open(app_asm_tmp[i], O_RDONLY);
                 int outfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC);
                 if (infd < 0 || outfd < 0) {
@@ -326,32 +348,40 @@ void _start(int argc, char **argv) {
                 int rn;
                 while ((rn = fd_read(infd, buf, sizeof(buf))) > 0) {
                     if (fd_write(outfd, buf, (unsigned int)rn) != rn) {
-                        close(infd); close(outfd);
+                        close(infd);
+                        close(outfd);
                         print("cc: asm copy failed\n");
                         exit(1);
                     }
                 }
-                close(infd); close(outfd);
+                close(infd);
+                close(outfd);
                 unlink(app_asm_tmp[i]);
             }
-            if (require_nonempty_file(dst, "asm output") != 0) exit(1);
+            if (require_nonempty_file(dst, "asm output") != 0)
+                exit(1);
         }
         print("cc: built asm output\n");
         exit(0);
     }
 
     for (int i = 0; i < input_count; i++) {
-        if (input_kind[i] != IN_C) continue;
-        const char *a2[] = { "as86.elf", "-f", "obj", "--org", "0x700000", "-o", app_obj_tmp[i], app_asm_tmp[i], 0 };
+        if (input_kind[i] != IN_C)
+            continue;
+        const char *a2[] = {"as86.elf",     "-f",           "obj",
+                            "--org",        "0x700000",     "-o",
+                            app_obj_tmp[i], app_asm_tmp[i], 0};
         if (run_stage("as86.elf", a2, 8) != 0) {
             if (!keep_temps) {
-                for (int j = 0; j < input_count; j++) cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
+                for (int j = 0; j < input_count; j++)
+                    cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
             }
             exit(1);
         }
         if (require_nonempty_file(app_obj_tmp[i], "as86(app)") != 0) {
             if (!keep_temps) {
-                for (int j = 0; j < input_count; j++) cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
+                for (int j = 0; j < input_count; j++)
+                    cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
             }
             exit(1);
         }
@@ -360,13 +390,16 @@ void _start(int argc, char **argv) {
         for (int i = 0; i < input_count; i++) {
             char final_obj[160];
             const char *dst = 0;
-            if (output && input_count == 1) dst = output;
+            if (output && input_count == 1)
+                dst = output;
             else {
-                derive_out_from_input(inputs[i], ".o", final_obj, sizeof(final_obj));
+                derive_out_from_input(inputs[i], ".o", final_obj,
+                                      sizeof(final_obj));
                 dst = final_obj;
             }
             if (strcmp(app_obj_tmp[i], dst) != 0) {
-                if (unlink(dst) < 0) { /* ignore missing */ }
+                if (unlink(dst) < 0) { /* ignore missing */
+                }
                 int infd = open(app_obj_tmp[i], O_RDONLY);
                 int outfd = open(dst, O_WRONLY | O_CREAT | O_TRUNC);
                 if (infd < 0 || outfd < 0) {
@@ -377,16 +410,20 @@ void _start(int argc, char **argv) {
                 int rn;
                 while ((rn = fd_read(infd, buf, sizeof(buf))) > 0) {
                     if (fd_write(outfd, buf, (unsigned int)rn) != rn) {
-                        close(infd); close(outfd);
+                        close(infd);
+                        close(outfd);
                         print("cc: object copy failed\n");
                         exit(1);
                     }
                 }
-                close(infd); close(outfd);
+                close(infd);
+                close(outfd);
                 unlink(app_obj_tmp[i]);
             }
-            if (!keep_temps) unlink(app_asm_tmp[i]);
-            if (require_nonempty_file(dst, "object output") != 0) exit(1);
+            if (!keep_temps)
+                unlink(app_asm_tmp[i]);
+            if (require_nonempty_file(dst, "object output") != 0)
+                exit(1);
         }
         print("cc: built object output\n");
         exit(0);
@@ -394,7 +431,8 @@ void _start(int argc, char **argv) {
 
     if (ensure_runtime_inputs() != 0) {
         if (!keep_temps) {
-            for (int i = 0; i < input_count; i++) cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
+            for (int i = 0; i < input_count; i++)
+                cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
         }
         print("cc: missing runtime objects (crt0.o/libc.o/syscalls.o)\n");
         exit(1);
@@ -408,27 +446,31 @@ void _start(int argc, char **argv) {
         // Keep crt0 first so ld86 default entry points at $_start.
         a4[n++] = "crt0.o";
         for (int i = 0; i < input_count; i++) {
-            if (input_kind[i] == IN_C) a4[n++] = app_obj_tmp[i];
-            else a4[n++] = inputs[i];
+            if (input_kind[i] == IN_C)
+                a4[n++] = app_obj_tmp[i];
+            else
+                a4[n++] = inputs[i];
         }
         a4[n++] = "libc.o";
         a4[n++] = "syscalls.o";
         a4[n] = 0;
         if (run_stage("ld86.elf", a4, n) != 0) {
             if (!keep_temps) {
-                for (int j = 0; j < input_count; j++) cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
+                for (int j = 0; j < input_count; j++)
+                    cleanup_tmp_files(app_asm_tmp[j], app_obj_tmp[j]);
             }
             exit(1);
         }
     }
 
     if (!keep_temps) {
-        for (int i = 0; i < input_count; i++) cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
-    }
-    else {
+        for (int i = 0; i < input_count; i++)
+            cleanup_tmp_files(app_asm_tmp[i], app_obj_tmp[i]);
+    } else {
         print("cc: temp files: ");
         for (int i = 0; i < input_count; i++) {
-            if (i) print(" ");
+            if (i)
+                print(" ");
             print(app_asm_tmp[i]);
             print(" ");
             print(app_obj_tmp[i]);

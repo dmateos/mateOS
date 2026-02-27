@@ -8,25 +8,25 @@
 #define VFS_MAX_FILESYSTEMS 4
 
 // File types
-#define VFS_FILE    0
-#define VFS_DIR     1
+#define VFS_FILE 0
+#define VFS_DIR 1
 
 // Open flags
-#define O_RDONLY    0
-#define O_WRONLY    1
-#define O_RDWR      2
-#define O_CREAT     4
-#define O_TRUNC     8
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR 2
+#define O_CREAT 4
+#define O_TRUNC 8
 
 // Seek whence
-#define SEEK_SET    0
-#define SEEK_CUR    1
-#define SEEK_END    2
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
 
 // Stat result
 typedef struct {
     uint32_t size;
-    uint32_t type;    // VFS_FILE or VFS_DIR
+    uint32_t type; // VFS_FILE or VFS_DIR
 } vfs_stat_t;
 
 // Filesystem operations - each FS backend implements these
@@ -49,7 +49,7 @@ typedef struct {
     int in_use;
     int fs_id;
     int fs_handle;
-    int open_flags;   // O_RDONLY / O_WRONLY / O_RDWR (access mode from open())
+    int open_flags; // O_RDONLY / O_WRONLY / O_RDWR (access mode from open())
     char debug_path[VFS_PATH_MAX];
 } vfs_fd_t;
 
@@ -61,9 +61,9 @@ typedef struct {
 // Init / register
 void vfs_init(void);
 int vfs_register_fs(const vfs_fs_ops_t *ops);
-int vfs_register_virtual_file(const char *name,
-                              uint32_t (*size_fn)(void),
-                              int (*read_fn)(uint32_t offset, void *buf, uint32_t len));
+int vfs_register_virtual_file(const char *name, uint32_t (*size_fn)(void),
+                              int (*read_fn)(uint32_t offset, void *buf,
+                                             uint32_t len));
 int vfs_get_registered_fs_count(void);
 const char *vfs_get_registered_fs_name(int idx);
 int vfs_get_virtual_file_count(void);

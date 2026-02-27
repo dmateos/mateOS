@@ -1,23 +1,23 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 static const char *file_ext(const char *name) {
     const char *dot = 0;
     for (int i = 0; name[i]; i++) {
-        if (name[i] == '.') dot = name + i + 1;
+        if (name[i] == '.')
+            dot = name + i + 1;
     }
     return dot ? dot : "";
 }
 
-static int cmp_alpha(const char *a, const char *b) {
-    return strcmp(a, b);
-}
+static int cmp_alpha(const char *a, const char *b) { return strcmp(a, b); }
 
 static int cmp_ext_grouped(const char *a, const char *b) {
     const char *ea = file_ext(a);
     const char *eb = file_ext(b);
     int ec = strcmp(ea, eb);
-    if (ec != 0) return ec;
+    if (ec != 0)
+        return ec;
     return strcmp(a, b);
 }
 
@@ -32,7 +32,8 @@ static int max_name_len(char names[][32], int count) {
     int max = 0;
     for (int i = 0; i < count; i++) {
         int n = strlen(names[i]);
-        if (n > max) max = n;
+        if (n > max)
+            max = n;
     }
     return max;
 }
@@ -40,12 +41,13 @@ static int max_name_len(char names[][32], int count) {
 static void print_padded(const char *s, int width) {
     int n = strlen(s);
     print(s);
-    for (int i = n; i < width; i++) print(" ");
+    for (int i = n; i < width; i++)
+        print(" ");
 }
 
 void _start(int argc, char **argv) {
     int by_ext = 0;
-    const char *path = 0;  // NULL = use cwd via readdir
+    const char *path = 0; // NULL = use cwd via readdir
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "--ext") == 0) {
@@ -60,12 +62,14 @@ void _start(int argc, char **argv) {
 
     if (path) {
         // List a specific directory
-        while (count < 256 && readdir_path(path, (unsigned int)count, names[count]) > 0) {
+        while (count < 256 &&
+               readdir_path(path, (unsigned int)count, names[count]) > 0) {
             count++;
         }
     } else {
         // List current working directory (uses cwd via kernel)
-        while (count < 256 && readdir((unsigned int)count, names[count], sizeof(names[count])) > 0) {
+        while (count < 256 && readdir((unsigned int)count, names[count],
+                                      sizeof(names[count])) > 0) {
             count++;
         }
     }
@@ -82,25 +86,33 @@ void _start(int argc, char **argv) {
 
     if (count > 0) {
         int name_w = max_name_len(names, count) + 2;
-        if (name_w < 12) name_w = 12;
-        if (name_w > 30) name_w = 30;
+        if (name_w < 12)
+            name_w = 12;
+        if (name_w > 30)
+            name_w = 30;
 
         int cols = 3;
-        while (cols > 1 && cols * name_w > 78) cols--;
-        if (cols < 1) cols = 1;
+        while (cols > 1 && cols * name_w > 78)
+            cols--;
+        if (cols < 1)
+            cols = 1;
         int rows = (count + cols - 1) / cols;
 
         for (int r = 0; r < rows; r++) {
             print("  ");
             for (int c = 0; c < cols; c++) {
-                int idx = c * rows + r;  // Fill columns vertically.
-                if (idx >= count) continue;
-                if (c == cols - 1) print(names[idx]);
-                else print_padded(names[idx], name_w);
+                int idx = c * rows + r; // Fill columns vertically.
+                if (idx >= count)
+                    continue;
+                if (c == cols - 1)
+                    print(names[idx]);
+                else
+                    print_padded(names[idx], name_w);
             }
             print("\n");
         }
     }
-    if (count == 0) print("  (no files)\n");
+    if (count == 0)
+        print("  (no files)\n");
     exit(0);
 }

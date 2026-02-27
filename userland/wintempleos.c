@@ -1,6 +1,6 @@
-#include "ugfx.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
+#include "ugfx.h"
 
 #define W 500
 #define H 350
@@ -8,14 +8,10 @@
 static unsigned char buf[W * H];
 
 static const char *oracle_lines[] = {
-    "IN THE BEGINNING WAS THE TASK",
-    "BLESSED ARE THE LOW LATENCIES",
-    "SEEK AND YE SHALL OPEN",
-    "THE KERNEL SAW IT WAS GOOD",
-    "INTERRUPTS SHALL AWAKEN THEE",
-    "ALL GLORY TO THE SCHEDULER",
-    "HEAP IS VANITY; STACK IS DUST"
-};
+    "IN THE BEGINNING WAS THE TASK", "BLESSED ARE THE LOW LATENCIES",
+    "SEEK AND YE SHALL OPEN",        "THE KERNEL SAW IT WAS GOOD",
+    "INTERRUPTS SHALL AWAKEN THEE",  "ALL GLORY TO THE SCHEDULER",
+    "HEAP IS VANITY; STACK IS DUST"};
 
 static unsigned int rng_state = 0xC0FFEEu;
 
@@ -51,16 +47,20 @@ static void draw_plasma(unsigned int t, int rainbow) {
     }
 }
 
-static void draw_ui(const char *line, int rainbow, int miracle, int oracle_idx) {
+static void draw_ui(const char *line, int rainbow, int miracle,
+                    int oracle_idx) {
     ugfx_buf_rect(buf, W, H, 8, 8, W - 16, 54, 0);
     ugfx_buf_string(buf, W, H, 16, 14, "wintempleos.wlf", 15);
     ugfx_buf_string(buf, W, H, 16, 26, line, 14);
 
     ugfx_buf_rect(buf, W, H, 8, H - 26, W - 16, 18, 0);
-    ugfx_buf_string(buf, W, H, 12, H - 22, "Q/Esc quit  H oracle  R rainbow  M miracle", 7);
+    ugfx_buf_string(buf, W, H, 12, H - 22,
+                    "Q/Esc quit  H oracle  R rainbow  M miracle", 7);
 
-    if (rainbow) ugfx_buf_string(buf, W, H, W - 116, 14, "RAINBOW", 10);
-    if (miracle) ugfx_buf_string(buf, W, H, W - 116, 26, "MIRACLE", 12);
+    if (rainbow)
+        ugfx_buf_string(buf, W, H, W - 116, 14, "RAINBOW", 10);
+    if (miracle)
+        ugfx_buf_string(buf, W, H, W - 116, 26, "MIRACLE", 12);
 
     ugfx_buf_rect(buf, W, H, 8, 70, W - 16, 24, 0);
     ugfx_buf_string(buf, W, H, 16, 76, "oracle #", 11);
@@ -87,11 +87,15 @@ void _start(int argc, char **argv) {
 
     while (1) {
         int k = win_getkey(wid);
-        if (k == 27 || k == 'q' || k == 'Q') break;
-        if (k == 'r' || k == 'R') rainbow = !rainbow;
-        if (k == 'm' || k == 'M') miracle = !miracle;
+        if (k == 27 || k == 'q' || k == 'Q')
+            break;
+        if (k == 'r' || k == 'R')
+            rainbow = !rainbow;
+        if (k == 'm' || k == 'M')
+            miracle = !miracle;
         if (k == 'h' || k == 'H') {
-            oracle_idx = (int)(rng_next() % (sizeof(oracle_lines) / sizeof(oracle_lines[0])));
+            oracle_idx = (int)(rng_next() % (sizeof(oracle_lines) /
+                                             sizeof(oracle_lines[0])));
         }
 
         draw_plasma(tick, rainbow);

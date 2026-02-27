@@ -1,5 +1,5 @@
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
 
 void _start(int argc, char **argv) {
     if (argc < 3) {

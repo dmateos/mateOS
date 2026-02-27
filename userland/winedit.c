@@ -1,9 +1,9 @@
 // Window text editor - simple text editor for mateOS WM
 // Supports opening files from argv or Ctrl+O, saving with Ctrl+S
 
-#include "ugfx.h"
-#include "syscalls.h"
 #include "libc.h"
+#include "syscalls.h"
+#include "ugfx.h"
 
 #define W 500
 #define H 350
@@ -21,9 +21,9 @@
 #define CTRL_N 14
 
 /* Editor modes */
-#define MODE_EDIT   0
-#define MODE_OPEN   1  /* typing filename to open */
-#define MODE_SAVEAS 2  /* typing filename for save-as */
+#define MODE_EDIT 0
+#define MODE_OPEN 1   /* typing filename to open */
+#define MODE_SAVEAS 2 /* typing filename for save-as */
 
 static unsigned char buf[W * H];
 static char text[MAX_TEXT];
@@ -34,7 +34,7 @@ static int input_len = 0;
 static int mode = MODE_EDIT;
 static char status[80];
 static int wid = -1;
-static int dirty = 0;           /* unsaved changes flag */
+static int dirty = 0; /* unsaved changes flag */
 
 static void set_status(const char *msg) {
     int i = 0;
@@ -59,17 +59,27 @@ static int str_copy(char *dst, const char *src, int max) {
 static void build_title(char *out, int max) {
     const char *prefix = "Editor";
     int i = 0;
-    while (prefix[i] && i < max - 1) { out[i] = prefix[i]; i++; }
+    while (prefix[i] && i < max - 1) {
+        out[i] = prefix[i];
+        i++;
+    }
     if (filepath[0]) {
-        if (i < max - 1) out[i++] = ' ';
-        if (i < max - 1) out[i++] = '-';
-        if (i < max - 1) out[i++] = ' ';
+        if (i < max - 1)
+            out[i++] = ' ';
+        if (i < max - 1)
+            out[i++] = '-';
+        if (i < max - 1)
+            out[i++] = ' ';
         int j = 0;
-        while (filepath[j] && i < max - 1) { out[i++] = filepath[j++]; }
+        while (filepath[j] && i < max - 1) {
+            out[i++] = filepath[j++];
+        }
     }
     if (dirty) {
-        if (i < max - 1) out[i++] = ' ';
-        if (i < max - 1) out[i++] = '*';
+        if (i < max - 1)
+            out[i++] = ' ';
+        if (i < max - 1)
+            out[i++] = '*';
     }
     out[i] = '\0';
 }
@@ -90,8 +100,10 @@ static void redraw(void) {
         if (text[i] == '\n' || x + 8 > W - 4) {
             x = 4;
             y += 10;
-            if (y + 8 > TEXT_BOT) break;
-            if (text[i] == '\n') continue;
+            if (y + 8 > TEXT_BOT)
+                break;
+            if (text[i] == '\n')
+                continue;
         }
         ugfx_buf_char(buf, W, H, x, y, text[i], 0);
         x += 8;
@@ -128,13 +140,15 @@ static void flush(void) {
 /* Load file contents into the text buffer */
 static int load_file(const char *path) {
     int fd = open(path, O_RDONLY);
-    if (fd < 0) return -1;
+    if (fd < 0)
+        return -1;
 
     text_len = 0;
     while (text_len < MAX_TEXT - 1) {
         int n = fd_read(fd, text + text_len,
-                      (unsigned int)(MAX_TEXT - 1 - text_len));
-        if (n <= 0) break;
+                        (unsigned int)(MAX_TEXT - 1 - text_len));
+        if (n <= 0)
+            break;
         text_len += n;
     }
     text[text_len] = '\0';
@@ -145,13 +159,17 @@ static int load_file(const char *path) {
 /* Save text buffer to file */
 static int save_file(const char *path) {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC);
-    if (fd < 0) return -1;
+    if (fd < 0)
+        return -1;
 
     int written = 0;
     while (written < text_len) {
-        int n = fd_write(fd, text + written,
-                       (unsigned int)(text_len - written));
-        if (n <= 0) { close(fd); return -1; }
+        int n =
+            fd_write(fd, text + written, (unsigned int)(text_len - written));
+        if (n <= 0) {
+            close(fd);
+            return -1;
+        }
         written += n;
     }
     close(fd);
@@ -195,7 +213,8 @@ static void do_new(void) {
 /* Check if filepath ends with ".c" */
 static int is_c_file(void) {
     int len = 0;
-    while (filepath[len]) len++;
+    while (filepath[len])
+        len++;
     return (len >= 2 && filepath[len - 2] == '.' && filepath[len - 1] == 'c');
 }
 
@@ -220,18 +239,19 @@ static void do_compile(void) {
     // Build output name: replace .c with .elf
     char outname[MAX_PATH];
     int len = 0;
-    while (filepath[len]) len++;
+    while (filepath[len])
+        len++;
     if (len >= MAX_PATH - 3) {
         set_status("Path too long");
         return;
     }
-    memcpy(outname, filepath, (unsigned int)(len - 1));  // copy up to '.'
+    memcpy(outname, filepath, (unsigned int)(len - 1)); // copy up to '.'
     outname[len - 1] = 'e';
-    outname[len]     = 'l';
+    outname[len] = 'l';
     outname[len + 1] = 'f';
     outname[len + 2] = '\0';
 
-    const char *args[] = { "tcc.elf", filepath, "-o", outname };
+    const char *args[] = {"tcc.elf", filepath, "-o", outname};
     int child = spawn_argv(args[0], args, 4);
     if (child < 0) {
         set_status("tcc not found");
@@ -243,7 +263,8 @@ static void do_compile(void) {
         set_status("Compiled: ");
         // Append output name to status
         int slen = 0;
-        while (status[slen]) slen++;
+        while (status[slen])
+            slen++;
         int i = 0;
         while (outname[i] && slen < (int)sizeof(status) - 1)
             status[slen++] = outname[i++];
@@ -327,7 +348,7 @@ void _start(int argc, char **argv) {
                 int changed = 0;
 
                 if (key == 27) {
-                    break;  /* ESC to quit */
+                    break; /* ESC to quit */
                 } else if (key == CTRL_O) {
                     mode = MODE_OPEN;
                     input_buf[0] = '\0';

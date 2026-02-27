@@ -1,3 +1,1 @@
-int helper(void) {
-    return 42;
-}
+int helper(void) { return 42; }
