@@ -3,6 +3,7 @@
 #include "lib.h"
 #include "proc/task.h"
 #include "arch/i686/paging.h"
+#include "arch/i686/cpu.h"
 #include "memlayout.h"
 
 static ramfs_file_t files[RAMFS_MAX_FILES];
@@ -191,8 +192,7 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
     // Disable interrupts during the bounce copy to prevent preemption —
     // the static bounce buffer is shared and would be corrupted if another
     // task's ramfs_vfs_read ran between the two memcpy calls.
-    uint32_t eflags;
-    __asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags));
+    uint32_t irq = cpu_irq_save();
     while (done < len) {
       uint32_t chunk = len - done;
       if (chunk > BOUNCE_SZ) chunk = BOUNCE_SZ;
@@ -205,8 +205,7 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
 
       done += chunk;
     }
-    // Restore interrupt flag
-    __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
+    cpu_irq_restore(irq);
   } else {
     memcpy(buf, (void *)src_addr, len);
   }

@@ -5,6 +5,7 @@
 #include "proc/pmm.h"
 #include "arch/i686/util.h"
 #include "arch/i686/interrupts.h"
+#include "arch/i686/cpu.h"
 #include "arch/i686/pci.h"
 #include "arch/i686/timer.h"
 #include "io/window.h"
@@ -329,25 +330,23 @@ static uint32_t vgen_version(char *dst, uint32_t cap) {
 // between gen() and memcpy — otherwise a concurrent .mos read overwrites it.
 static int vfile_read_from_generated(vgen_fn_t gen, uint32_t offset, void *buf, uint32_t len) {
     if (!buf || len == 0) return 0;
-    uint32_t eflags;
-    __asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags));
+    uint32_t irq = cpu_irq_save();
     uint32_t total = gen(vgen_buf, sizeof(vgen_buf));
     if (offset >= total) {
-        __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
+        cpu_irq_restore(irq);
         return 0;
     }
     uint32_t remaining = total - offset;
     if (len > remaining) len = remaining;
     memcpy(buf, vgen_buf + offset, len);
-    __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
+    cpu_irq_restore(irq);
     return (int)len;
 }
 
 static uint32_t vfile_size_from_generated(vgen_fn_t gen) {
-    uint32_t eflags;
-    __asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags));
+    uint32_t irq = cpu_irq_save();
     uint32_t sz = gen(vgen_buf, sizeof(vgen_buf));
-    __asm__ volatile("pushl %0; popfl" : : "r"(eflags));
+    cpu_irq_restore(irq);
     return sz;
 }
 
