@@ -1,7 +1,7 @@
 #ifndef _TASK_H
 #define _TASK_H
 
-#include "arch/i686/paging.h"
+#include "arch/arch.h"
 #include "fs/vfs.h"
 #include "lib.h"
 
@@ -13,44 +13,9 @@ typedef enum {
     TASK_TERMINATED = 3
 } task_state_t;
 
-// CPU registers saved during context switch (kernel mode)
-typedef struct {
-    // Pushed by pusha
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t esp_dummy; // Ignored by popa
-    uint32_t ebx;
-    uint32_t edx;
-    uint32_t ecx;
-    uint32_t eax;
-
-    // Pushed by interrupt handler
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-} __attribute__((packed)) cpu_state_t;
-
-// Extended CPU state for user mode (includes user SS and ESP for ring
-// transition)
-typedef struct {
-    // Pushed by pusha
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t esp_dummy; // Ignored by popa
-    uint32_t ebx;
-    uint32_t edx;
-    uint32_t ecx;
-    uint32_t eax;
-
-    // Pushed by CPU on interrupt from user mode
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-    uint32_t user_esp; // Only present on ring transition (user->kernel)
-    uint32_t user_ss;  // Only present on ring transition (user->kernel)
-} __attribute__((packed)) cpu_state_user_t;
+// cpu_state_t, cpu_state_user_t, and iret_frame_t live in
+// arch/i686/interrupts.h — they describe the x86 interrupt/context-switch
+// stack frame layout and are included via arch/arch.h.
 
 // Task Control Block
 #define TASK_NAME_MAX 32

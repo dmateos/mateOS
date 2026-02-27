@@ -6,6 +6,9 @@
 
 #define IO_KB_DATA 0x60
 
+// QEMU ISA debug-exit device port (isa-debug-exit,iobase=0xF4)
+#define QEMU_DEBUG_EXIT_PORT 0xF4
+
 // Serial port (COM1)
 #define SERIAL_COM1 0x3F8
 

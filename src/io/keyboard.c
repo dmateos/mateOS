@@ -1,7 +1,5 @@
 #include "keyboard.h"
-#include "arch/i686/interrupts.h"
-#include "arch/i686/io.h"
-#include "arch/i686/legacytty.h"
+#include "arch/arch.h"
 #include "console.h"
 #include "utils/kring.h"
 

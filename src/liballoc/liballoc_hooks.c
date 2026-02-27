@@ -1,6 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "arch/i686/cpu.h"
+#include "arch/arch.h"
 #include "memlayout.h"
 #include "liballoc_hooks.h"
 

@@ -8,6 +8,10 @@
 #define VGA_HEIGHT 200
 #define VGA_FB ((uint8_t *)0xA0000)
 
+// VGA framebuffer physical address range (Mode 13h)
+#define VGA_MODE13H_FB_START 0xA0000u
+#define VGA_MODE13H_FB_END   0xB0000u
+
 // VGA ports
 #define VGA_MISC_WRITE 0x3C2
 #define VGA_MISC_READ 0x3CC

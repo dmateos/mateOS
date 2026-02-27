@@ -1,5 +1,5 @@
 #include "window.h"
-#include "arch/i686/cpu.h"
+#include "arch/arch.h"
 #include "liballoc/liballoc_1_1.h"
 #include "utils/slot_table.h"
 #include <stddef.h>

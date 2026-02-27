@@ -1,7 +1,5 @@
 #include "task.h"
-#include "arch/i686/cpu.h"
-#include "arch/i686/paging.h"
-#include "arch/i686/tss.h"
+#include "arch/arch.h"
 #include "fs/vfs.h"
 #include "io/window.h"
 #include "lib.h"
@@ -121,8 +119,8 @@ task_t *task_create(const char *name, void (*entry)(void)) {
 
     // Push initial CPU state (what the interrupt handler expects)
     // These will be popped by iret
-    *(--sp) = 0x202;                        // EFLAGS (IF=1, reserved bit 1 = 1)
-    *(--sp) = 0x08;                         // CS (kernel code segment)
+    *(--sp) = ARCH_EFLAGS_DEFAULT;          // EFLAGS (IF=1, reserved bit 1 = 1)
+    *(--sp) = KERNEL_CODE_SEG;              // CS (kernel code segment)
     *(--sp) = (uint32_t)task_entry_wrapper; // EIP - start at wrapper
 
     // Pushed by pusha (in reverse order since stack grows down)
@@ -324,8 +322,8 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     // User mode iret frame
     *(--sp) = USER_DATA_SEL; // SS
     *(--sp) = user_esp;      // ESP (points at argc on user stack)
-    *(--sp) = 0x202;         // EFLAGS (IF=1)
-    *(--sp) = USER_CODE_SEL; // CS
+    *(--sp) = ARCH_EFLAGS_DEFAULT; // EFLAGS (IF=1)
+    *(--sp) = USER_CODE_SEL;       // CS
     *(--sp) = elf_entry;     // EIP - directly at ELF entry point
 
     // Pushed by pusha

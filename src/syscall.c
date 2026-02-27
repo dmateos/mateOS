@@ -1,13 +1,5 @@
 #include "syscall.h"
-#include "arch/i686/cpu.h"
-#include "arch/i686/interrupts.h"
-#include "arch/i686/io.h"
-#include "arch/i686/mouse.h"
-#include "arch/i686/paging.h"
-#include "arch/i686/pci.h"
-#include "arch/i686/timer.h"
-#include "arch/i686/util.h"
-#include "arch/i686/vga.h"
+#include "arch/arch.h"
 #include "fs/ramfs.h"
 #include "fs/vfs.h"
 #include "io/keyboard.h"
@@ -67,14 +59,7 @@ static uint32_t gfx_owner_pid = 0; // Task ID that owns graphics mode
 // Forward declaration for interrupt registration
 extern void isr128(void);
 
-// iret frame layout - what iret pops from the stack
-typedef struct {
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-    uint32_t esp; // Only present for ring transitions (user->kernel)
-    uint32_t ss;  // Only present for ring transitions
-} __attribute__((packed)) iret_frame_t;
+// iret_frame_t is defined in arch/i686/interrupts.h, included via arch/arch.h
 
 // Write to console or window text buffer (if stdout redirected)
 static int sys_do_write(int fd, const char *buf, size_t len) {
@@ -362,10 +347,10 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
 
     // Modify the iret frame to jump to ELF entry with new stack
     frame->eip = entry;
-    frame->cs = 0x1B;      // User code segment (RPL=3)
-    frame->eflags = 0x202; // IF=1, reserved bit 1
+    frame->cs = USER_CODE_SEL;
+    frame->eflags = ARCH_EFLAGS_DEFAULT;
     frame->esp = USER_STACK_TOP_PAGE_VADDR + 0x1000; // Top of user stack
-    frame->ss = 0x23; // User data segment (RPL=3)
+    frame->ss = USER_DATA_SEL;
 
     return 0;
 }
@@ -373,7 +358,7 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
 // Enter graphics mode — try BGA (Bochs VGA) for 1024x768, else Mode 13h
 static uint32_t sys_do_gfx_init(void) {
     if (user_gfx_active) {
-        return user_gfx_bga ? bga_fb_addr : 0xA0000;
+        return user_gfx_bga ? bga_fb_addr : VGA_MODE13H_FB_START;
     }
 
     // Try BGA mode (QEMU -vga std)
@@ -420,7 +405,7 @@ static uint32_t sys_do_gfx_init(void) {
     // Fallback: Mode 13h
     vga_enter_mode13h();
 
-    for (uint32_t addr = 0xA0000; addr < 0xB0000; addr += 0x1000) {
+    for (uint32_t addr = VGA_MODE13H_FB_START; addr < VGA_MODE13H_FB_END; addr += 0x1000) {
         paging_set_user(addr);
     }
 
@@ -435,7 +420,7 @@ static uint32_t sys_do_gfx_init(void) {
     }
     mouse_set_bounds(320, 200);
 
-    return 0xA0000;
+    return VGA_MODE13H_FB_START;
 }
 
 // Return to text mode — only the gfx owner can do this
@@ -684,7 +669,7 @@ static uint32_t sys_do_sbrk(int32_t increment) {
 static uint32_t sys_do_getticks(void) { return get_tick_count(); }
 
 static int sys_do_debug_exit(uint32_t code) {
-    outb(0xF4, (uint8_t)(code & 0xFFu));
+    outb(QEMU_DEBUG_EXIT_PORT, (uint8_t)(code & 0xFFu));
     return 0;
 }
 

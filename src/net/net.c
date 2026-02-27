@@ -1,6 +1,5 @@
 #include "net.h"
-#include "arch/i686/cpu.h"
-#include "arch/i686/timer.h"
+#include "arch/arch.h"
 #include "drivers/rtl8139.h"
 #include "lib.h"
 #include "proc/task.h"

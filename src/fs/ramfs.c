@@ -1,6 +1,5 @@
 #include "ramfs.h"
-#include "arch/i686/cpu.h"
-#include "arch/i686/paging.h"
+#include "arch/arch.h"
 #include "lib.h"
 #include "memlayout.h"
 #include "proc/task.h"

@@ -1,5 +1,5 @@
 #include "lib.h"
-#include "arch/i686/legacytty.h"
+#include "arch/arch.h"
 
 #define KLOG_MAX_LINES 1024
 #define KLOG_LINE_MAX 160

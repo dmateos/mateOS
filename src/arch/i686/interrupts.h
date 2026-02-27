@@ -3,6 +3,55 @@
 
 #include "lib.h"
 
+// CPU registers saved during context switch (kernel mode).
+// Layout must match the pusha + iret frame built in interrupts_asm.S.
+typedef struct {
+    // Pushed by pusha
+    uint32_t edi;
+    uint32_t esi;
+    uint32_t ebp;
+    uint32_t esp_dummy; // Ignored by popa
+    uint32_t ebx;
+    uint32_t edx;
+    uint32_t ecx;
+    uint32_t eax;
+
+    // Pushed by interrupt handler
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+} __attribute__((packed)) cpu_state_t;
+
+// Extended CPU state for user mode (includes user SS and ESP for ring
+// transition)
+typedef struct {
+    // Pushed by pusha
+    uint32_t edi;
+    uint32_t esi;
+    uint32_t ebp;
+    uint32_t esp_dummy; // Ignored by popa
+    uint32_t ebx;
+    uint32_t edx;
+    uint32_t ecx;
+    uint32_t eax;
+
+    // Pushed by CPU on interrupt from user mode
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+    uint32_t user_esp; // Only present on ring transition (user->kernel)
+    uint32_t user_ss;  // Only present on ring transition (user->kernel)
+} __attribute__((packed)) cpu_state_user_t;
+
+// iret frame layout — what iret pops from the stack on ring transition
+typedef struct {
+    uint32_t eip;
+    uint32_t cs;
+    uint32_t eflags;
+    uint32_t esp; // Only present for ring transitions (user->kernel)
+    uint32_t ss;  // Only present for ring transitions
+} __attribute__((packed)) iret_frame_t;
+
 typedef struct idt_entry {
     uint16_t base_low;
     uint16_t selector;

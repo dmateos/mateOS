@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+// Default EFLAGS for new tasks: IF=1 (interrupts enabled), reserved bit 1 set
+#define ARCH_EFLAGS_DEFAULT 0x202u
+
 static inline void cpu_halt(void) { __asm__ volatile("hlt"); }
 
 static inline void cpu_enable_interrupts(void) { __asm__ volatile("sti"); }

@@ -1,10 +1,6 @@
 #include "vfs_proc.h"
 
-#include "arch/i686/cpu.h"
-#include "arch/i686/interrupts.h"
-#include "arch/i686/pci.h"
-#include "arch/i686/timer.h"
-#include "arch/i686/util.h"
+#include "arch/arch.h"
 #include "io/window.h"
 #include "liballoc/liballoc_hooks.h"
 #include "net/net.h"
