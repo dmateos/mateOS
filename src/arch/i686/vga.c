@@ -39,7 +39,7 @@ static uint8_t saved_plane3[VGA_PLANE_SIZE];
 static int state_saved = 0;
 
 static void vga_save_state(void) {
-    volatile uint8_t *vmem = (volatile uint8_t *)0xA0000;
+    volatile uint8_t *vmem = (volatile uint8_t *)0xC00A0000;
 
     // Save Miscellaneous register
     saved_misc = inb(VGA_MISC_READ);
@@ -131,7 +131,7 @@ static void vga_restore_state(void) {
     if (!state_saved)
         return;
 
-    volatile uint8_t *vmem = (volatile uint8_t *)0xA0000;
+    volatile uint8_t *vmem = (volatile uint8_t *)0xC00A0000;
 
     // Write Miscellaneous register
     outb(VGA_MISC_WRITE, saved_misc);

@@ -1,8 +1,12 @@
 #include "pmm.h"
 
+// Dynamic end address and frame count (set by pmm_init)
+uint32_t PMM_END = 0x2000000u;   // Default 32MB
+uint32_t PMM_FRAME_COUNT = 6144; // Default (32MB - 8MB) / 4KB
+
 // Bitmap: 1 bit per frame, 1 = used, 0 = free
-// 6144 frames / 8 bits per byte = 768 bytes
-static uint8_t frame_bitmap[PMM_FRAME_COUNT / 8];
+// Sized for maximum 128MB: 30720 frames / 8 = 3840 bytes
+static uint8_t frame_bitmap[PMM_MAX_FRAME_COUNT / 8];
 
 static inline uint32_t frame_index(uint32_t physical_addr) {
     return (physical_addr - PMM_START) / PMM_FRAME_SIZE;
@@ -24,7 +28,19 @@ static inline void bitmap_clear(uint32_t index) {
     frame_bitmap[index / 8] &= ~(1 << (index % 8));
 }
 
-void pmm_init(void) {
+void pmm_init(uint32_t ram_top) {
+    // Clamp to valid range
+    if (ram_top < PMM_START + PMM_FRAME_SIZE)
+        ram_top = PMM_START + PMM_FRAME_SIZE;
+    if (ram_top > PMM_MAX_END)
+        ram_top = PMM_MAX_END;
+
+    // Align down to frame boundary
+    ram_top &= ~(PMM_FRAME_SIZE - 1u);
+
+    PMM_END = ram_top;
+    PMM_FRAME_COUNT = (PMM_END - PMM_START) / PMM_FRAME_SIZE;
+
     // Mark all frames as free
     memset(frame_bitmap, 0, sizeof(frame_bitmap));
     printf("PMM initialized: %d frames (%dMB) from 0x%x to 0x%x\n",

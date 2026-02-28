@@ -40,9 +40,6 @@ void init_paging(page_directory_t *page_dir, page_table_t *page_tables);
 uint32_t get_cr2(void);
 uint32_t get_cr3(void);
 
-// Mark a page as user-accessible in the kernel page tables
-void paging_set_user(uint32_t virtual_addr);
-
 // Get current page tables for modification
 page_table_t *paging_get_tables(void);
 

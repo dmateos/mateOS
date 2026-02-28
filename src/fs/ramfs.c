@@ -200,12 +200,14 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
     int dst_in_user_region =
         (dst >= USER_REGION_START && dst < USER_REGION_END);
     int on_current_user_cr3 =
-        cur && cur->page_dir && get_cr3() == (uint32_t)cur->page_dir;
+        cur && cur->page_dir &&
+        get_cr3() == KVIRT_TO_PHYS((uint32_t)cur->page_dir);
     if (dst_in_user_region && on_current_user_cr3) {
         enum { BOUNCE_SZ = 4096 };
         static uint8_t bounce[BOUNCE_SZ];
         uint32_t done = 0;
-        uint32_t restore_cr3 = get_cr3();
+        // Save the current task's page_dir for restore (it's a virtual ptr)
+        page_directory_t *restore_dir = cur->page_dir;
         // Disable interrupts during the bounce copy to prevent preemption —
         // the static bounce buffer is shared and would be corrupted if another
         // task's ramfs_vfs_read ran between the two memcpy calls.
@@ -218,7 +220,7 @@ static int ramfs_vfs_read(int handle, void *buf, uint32_t len) {
             paging_switch(paging_get_kernel_dir());
             memcpy(bounce, (void *)(src_addr + done), chunk);
 
-            paging_switch((page_directory_t *)restore_cr3);
+            paging_switch(restore_dir);
             memcpy((uint8_t *)buf + done, bounce, chunk);
 
             done += chunk;

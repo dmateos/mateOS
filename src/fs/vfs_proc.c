@@ -36,6 +36,14 @@ static uint32_t vgen_meminfo(char *dst, uint32_t cap) {
     append_hex_u32(dst, cap, &len, KERNEL_VIRTUAL_BASE);
     append_cstr(dst, cap, &len, "\n");
 
+    append_cstr(dst, cap, &len, "RAM: ");
+    append_dec_u32(dst, cap, &len, PMM_END / (1024 * 1024));
+    append_cstr(dst, cap, &len, " MB detected (PMM range ");
+    append_hex_u32(dst, cap, &len, PMM_START);
+    append_cstr(dst, cap, &len, "-");
+    append_hex_u32(dst, cap, &len, PMM_END);
+    append_cstr(dst, cap, &len, ")\n");
+
     append_cstr(dst, cap, &len, "PMM: total=");
     append_dec_u32(dst, cap, &len, total);
     append_cstr(dst, cap, &len, " used=");
@@ -43,6 +51,21 @@ static uint32_t vgen_meminfo(char *dst, uint32_t cap) {
     append_cstr(dst, cap, &len, " free=");
     append_dec_u32(dst, cap, &len, free_frames);
     append_cstr(dst, cap, &len, " frames (4KB each)\n");
+
+    append_cstr(dst, cap, &len, "PMM: ");
+    append_dec_u32(dst, cap, &len, (free_frames * 4));
+    append_cstr(dst, cap, &len, " KB free / ");
+    append_dec_u32(dst, cap, &len, (total * 4));
+    append_cstr(dst, cap, &len, " KB total\n");
+
+    append_cstr(dst, cap, &len, "User VA: ");
+    append_hex_u32(dst, cap, &len, USER_REGION_START);
+    append_cstr(dst, cap, &len, "-");
+    append_hex_u32(dst, cap, &len, USER_REGION_END);
+    append_cstr(dst, cap, &len, " (~");
+    append_dec_u32(dst, cap, &len,
+                   (USER_REGION_END - USER_REGION_START) / (1024 * 1024));
+    append_cstr(dst, cap, &len, " MB)\n");
 
     append_cstr(dst, cap, &len, "Heap: start=");
     append_hex_u32(dst, cap, &len, hstart);

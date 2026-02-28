@@ -4,13 +4,21 @@
 #include "lib.h"
 
 // Physical frame allocator
-// Manages 4KB frames from 8MB to 32MB (6144 frames)
-#define PMM_START 0x800000    // 8MB - below is kernel/heap/boot
-#define PMM_END 0x2000000     // 32MB
-#define PMM_FRAME_SIZE 0x1000 // 4KB
-#define PMM_FRAME_COUNT ((PMM_END - PMM_START) / PMM_FRAME_SIZE) // 6144
+// Manages 4KB frames from PMM_START up to a dynamically detected end.
+// Maximum supported: 128MB (PMM_MAX_END).
+#define PMM_START 0x800000u       // 8MB - below is kernel/heap/boot
+#define PMM_MAX_END 0x8000000u    // 128MB cap
+#define PMM_FRAME_SIZE 0x1000u    // 4KB
 
-void pmm_init(void);
+// Maximum possible frames (used to size the static bitmap)
+#define PMM_MAX_FRAME_COUNT ((PMM_MAX_END - PMM_START) / PMM_FRAME_SIZE) // 30720
+
+// Actual end address (set at init time)
+extern uint32_t PMM_END;
+// Actual frame count (set at init time)
+extern uint32_t PMM_FRAME_COUNT;
+
+void pmm_init(uint32_t ram_top);
 void pmm_reserve_region(uint32_t start_addr, uint32_t size_bytes);
 
 // Allocate a single 4KB frame, returns physical address or 0 on failure

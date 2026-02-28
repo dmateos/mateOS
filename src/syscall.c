@@ -141,7 +141,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
                st.size);
         return 0;
     }
-    data = (void *)temp_frames_base;
+    data = (void *)PHYS_TO_KVIRT(temp_frames_base);
     size = st.size;
 
     vfs_fd_table_t tmp;
@@ -226,8 +226,8 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
             uint32_t phys = 0;
 
             if (page_dir->tables[dir_idx] & PAGE_PRESENT) {
-                page_table_t *pt =
-                    (page_table_t *)(page_dir->tables[dir_idx] & ~0xFFF);
+                page_table_t *pt = (page_table_t *)PHYS_TO_KVIRT(
+                    page_dir->tables[dir_idx] & ~0xFFF);
                 if (pt->pages[table_idx] & PAGE_PRESENT) {
                     uint32_t pte = pt->pages[table_idx];
                     // Only reuse pages that were already mapped as user pages
@@ -247,7 +247,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
                     pmm_free_frames(temp_frames_base, temp_frames_count);
                     return 0;
                 }
-                memset((void *)phys, 0, 0x1000);
+                memset((void *)PHYS_TO_KVIRT(phys), 0, 0x1000);
                 if (paging_map_page(page_dir, page_vaddr, phys,
                                     PAGE_PRESENT | PAGE_WRITE | PAGE_USER) <
                     0) {
@@ -264,8 +264,8 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
             if (copy_start < copy_end) {
                 uint32_t dst_offset = copy_start - page_vaddr;
                 uint32_t src_offset = copy_start - vaddr;
-                memcpy((void *)(phys + dst_offset), src + src_offset,
-                       copy_end - copy_start);
+                memcpy((void *)(PHYS_TO_KVIRT(phys) + dst_offset),
+                       src + src_offset, copy_end - copy_start);
             }
         }
     }
@@ -281,7 +281,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
             pmm_free_frames(temp_frames_base, temp_frames_count);
             return 0;
         }
-        memset((void *)phys, 0, 0x1000);
+        memset((void *)PHYS_TO_KVIRT(phys), 0, 0x1000);
         if (paging_map_page(page_dir, stack_base + (i * 0x1000u), phys,
                             PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
             printf("[exec] failed to map stack page %d\n", (int)i);
@@ -405,8 +405,19 @@ static uint32_t sys_do_gfx_init(void) {
     // Fallback: Mode 13h
     vga_enter_mode13h();
 
-    for (uint32_t addr = VGA_MODE13H_FB_START; addr < VGA_MODE13H_FB_END; addr += 0x1000) {
-        paging_set_user(addr);
+    // Map VGA Mode 13h framebuffer into kernel dir (for propagation to new
+    // processes) and into the current task's address space.
+    paging_map_vbe(VGA_MODE13H_FB_START, VGA_MODE13H_FB_END - VGA_MODE13H_FB_START);
+    {
+        task_t *cur = task_current();
+        if (cur && cur->page_dir) {
+            for (uint32_t addr = VGA_MODE13H_FB_START;
+                 addr < VGA_MODE13H_FB_END; addr += 0x1000) {
+                paging_map_page(cur->page_dir, addr, addr,
+                                PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+            }
+            paging_switch(cur->page_dir);
+        }
     }
 
     keyboard_buffer_init();
@@ -654,7 +665,7 @@ static uint32_t sys_do_sbrk(int32_t increment) {
         uint32_t phys = pmm_alloc_frame();
         if (!phys)
             return (uint32_t)-1;
-        memset((void *)phys, 0, 0x1000u);
+        memset((void *)PHYS_TO_KVIRT(phys), 0, 0x1000u);
         if (paging_map_page(current->page_dir, va, phys,
                             PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
             pmm_free_frame(phys);

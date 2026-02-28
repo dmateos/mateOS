@@ -12,7 +12,7 @@
 
 #define R_NUM       R_386_NUM
 
-#define ELF_START_ADDR 0x00700000
+#define ELF_START_ADDR 0x00400000
 #define ELF_PAGE_SIZE  0x1000
 
 #if defined CONFIG_TCC_PIC

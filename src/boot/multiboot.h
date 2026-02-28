@@ -77,6 +77,19 @@ typedef struct {
     uint16_t vbe_interface_len;
 } __attribute__((packed)) multiboot_info_t;
 
+// Multiboot memory map entry (as provided by BIOS via bootloader).
+// The `size` field precedes the struct in memory and is NOT included in the
+// struct itself — each entry is accessed at offset (mmap_addr + running_offset),
+// advancing by (entry->size + 4) bytes.
+typedef struct {
+    uint32_t size;      // Size of this entry (excluding the size field itself)
+    uint32_t base_low;  // Base address (low 32 bits)
+    uint32_t base_high; // Base address (high 32 bits)
+    uint32_t len_low;   // Length (low 32 bits)
+    uint32_t len_high;  // Length (high 32 bits)
+    uint32_t type;      // 1 = available RAM, other = reserved
+} __attribute__((packed)) multiboot_memory_map_t;
+
 // Parse multiboot info and initialize modules
 void multiboot_init(uint32_t magic, multiboot_info_t *mbi);
 
@@ -90,5 +103,10 @@ uint32_t multiboot_get_vbe_height(void);
 uint32_t multiboot_get_vbe_pitch(void);  // Bytes per scanline
 uint32_t multiboot_get_vbe_bpp(void);    // Bits per pixel
 const char *multiboot_get_cmdline(void); // Kernel command line or NULL
+
+// Detect usable RAM top from multiboot memory map.
+// Returns highest usable address (capped at cap_bytes), or 0 if mmap
+// unavailable.
+uint32_t multiboot_detect_ram_top(uint32_t cap_bytes);
 
 #endif

@@ -86,6 +86,8 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     kprintf("[boot] paging init ok\n");
 
     // Parse multiboot info (if provided by bootloader)
+    // The bootloader passes a physical pointer; convert to higher-half VA.
+    multiboot_info = (multiboot_info_t *)PHYS_TO_KVIRT((uint32_t)multiboot_info);
     printf("\n");
     multiboot_init(multiboot_magic, multiboot_info);
     const char *cmdline = multiboot_get_cmdline();
@@ -96,13 +98,19 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
         kprintf("[boot] serial mirror enabled\n");
     }
 
+    // Detect RAM size from multiboot memory map (cap at 128MB)
+    uint32_t ram_top = multiboot_detect_ram_top(0x8000000u);
+    if (!ram_top)
+        ram_top = 0x2000000u; // Fallback: 32MB
+
     // Initialize physical memory manager early (needed to relocate initrd)
-    pmm_init();
-    kprintf("[boot] pmm init ok\n");
+    pmm_init(ram_top);
+    kprintf("[boot] pmm init ok — %d MB RAM, %d frames (0x%x-0x%x)\n",
+            ram_top / (1024 * 1024), PMM_FRAME_COUNT, PMM_START, PMM_END);
 
     // Initialize ramfs from initrd module.
-    // The initrd may overlap the kernel heap (0x400000-0x600000).  If so,
-    // copy it into PMM frames first so ramfs pointers stay valid.
+    // The initrd may overlap the kernel heap (phys 0x400000-0x600000).
+    // If so, copy it into PMM frames first so ramfs pointers stay valid.
     multiboot_module_t *initrd = multiboot_get_initrd();
     if (initrd) {
         uint32_t initrd_start = initrd->mod_start;
@@ -119,19 +127,20 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
             uint32_t nframes = (initrd_size + 0xFFF) / 0x1000;
             uint32_t copy_base = pmm_alloc_frames(nframes);
             if (copy_base) {
-                memcpy((void *)copy_base, (void *)initrd_start, initrd_size);
+                memcpy((void *)PHYS_TO_KVIRT(copy_base),
+                       (void *)PHYS_TO_KVIRT(initrd_start), initrd_size);
                 kprintf("[boot] initrd relocated: 0x%x -> 0x%x (%d bytes, %d "
                         "frames)\n",
                         initrd_start, copy_base, initrd_size, nframes);
-                ramfs_init((void *)copy_base, initrd_size);
+                ramfs_init((void *)PHYS_TO_KVIRT(copy_base), initrd_size);
             } else {
                 kprintf("[boot] WARNING: failed to allocate %d frames for "
                         "initrd copy\n",
                         nframes);
-                ramfs_init((void *)initrd_start, initrd_size);
+                ramfs_init((void *)PHYS_TO_KVIRT(initrd_start), initrd_size);
             }
         } else {
-            ramfs_init((void *)initrd_start, initrd_size);
+            ramfs_init((void *)PHYS_TO_KVIRT(initrd_start), initrd_size);
         }
     } else {
         ramfs_init(NULL, 0);
@@ -181,6 +190,18 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     mouse_init();
     register_interrupt_handler(0x2C, mouse_irq_handler);
     pic_unmask_irq(12);
+
+    // Print boot summary with RAM and PMM stats
+    {
+        uint32_t pmm_total, pmm_used, pmm_free;
+        pmm_get_stats(&pmm_total, &pmm_used, &pmm_free);
+        kprintf("[boot] RAM: %d MB | PMM: %d/%d frames free (%d MB avail)\n",
+                ram_top / (1024 * 1024), pmm_free, pmm_total,
+                (pmm_free * 0x1000) / (1024 * 1024));
+        kprintf("[boot] user VA: 0x%x-0x%x (~%d MB)\n", USER_REGION_START,
+                USER_REGION_END,
+                (USER_REGION_END - USER_REGION_START) / (1024 * 1024));
+    }
 
     // Boot message
     console_init();

@@ -3,9 +3,8 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Start at 0x700000 (7MB) - within the 8MB identity-mapped region,
-       above the heap (0x400000-0x600000) */
-    . = 0x00700000;
+    /* Start at 0x400000 (4MB) — standard ELF base address for user programs */
+    . = 0x00400000;
 
     .text : {
         *(.text*)

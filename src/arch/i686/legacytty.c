@@ -1,9 +1,10 @@
 #include "legacytty.h"
 #include "io.h"
 #include "lib.h"
+#include "memlayout.h"
 #include "vga.h"
 
-static uint16_t *terminal_buffer = (uint16_t *)0xB8000;
+static uint16_t *terminal_buffer = (uint16_t *)PHYS_TO_KVIRT(0xB8000);
 
 /* Hardware text mode color constants. */
 enum vga_color {
@@ -105,7 +106,7 @@ void init_term(void) {
     terminal_row = 0;
     terminal_column = 0;
     terminal_color = vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
-    terminal_buffer = (uint16_t *)0xB8000;
+    terminal_buffer = (uint16_t *)PHYS_TO_KVIRT(0xB8000);
     cursor_line = 0;
     total_lines = 1; // We start with line 0 allocated
     scroll_offset = 0;

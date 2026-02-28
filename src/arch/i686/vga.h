@@ -6,7 +6,7 @@
 // Mode 13h constants
 #define VGA_WIDTH 320
 #define VGA_HEIGHT 200
-#define VGA_FB ((uint8_t *)0xA0000)
+#define VGA_FB ((uint8_t *)0xC00A0000)
 
 // VGA framebuffer physical address range (Mode 13h)
 #define VGA_MODE13H_FB_START 0xA0000u

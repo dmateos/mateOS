@@ -1,5 +1,6 @@
 #include "multiboot.h"
 #include "lib.h"
+#include "memlayout.h"
 
 static multiboot_info_t *multiboot_info = NULL;
 static multiboot_module_t *initrd_module = NULL;
@@ -34,11 +35,11 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
 
     // Check for boot loader name
     if (mbi->flags & MULTIBOOT_FLAG_LOADER) {
-        printf("  Bootloader: %s\n", (char *)mbi->boot_loader_name);
+        printf("  Bootloader: %s\n", (char *)PHYS_TO_KVIRT(mbi->boot_loader_name));
     }
 
     if (mbi->flags & MULTIBOOT_FLAG_CMDLINE) {
-        kernel_cmdline = (const char *)(uint32_t)mbi->cmdline;
+        kernel_cmdline = (const char *)PHYS_TO_KVIRT(mbi->cmdline);
         if (kernel_cmdline) {
             printf("  Cmdline: %s\n", kernel_cmdline);
         }
@@ -50,7 +51,7 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
                mbi->mods_addr);
 
         if (mbi->mods_count > 0) {
-            multiboot_module_t *mods = (multiboot_module_t *)mbi->mods_addr;
+            multiboot_module_t *mods = (multiboot_module_t *)PHYS_TO_KVIRT(mbi->mods_addr);
 
             for (uint32_t i = 0; i < mbi->mods_count; i++) {
                 printf("    Module %d: 0x%x - 0x%x (%d bytes)", i,
@@ -58,7 +59,7 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
                        mods[i].mod_end - mods[i].mod_start);
 
                 if (mods[i].string) {
-                    printf(" '%s'", (char *)mods[i].string);
+                    printf(" '%s'", (char *)PHYS_TO_KVIRT(mods[i].string));
                 }
                 printf("\n");
             }
@@ -77,7 +78,7 @@ void multiboot_init(uint32_t magic, multiboot_info_t *mbi) {
 
     // Check for VBE info
     if (mbi->flags & MULTIBOOT_FLAG_VBE) {
-        uint8_t *vbe = (uint8_t *)(uint32_t)mbi->vbe_mode_info;
+        uint8_t *vbe = (uint8_t *)PHYS_TO_KVIRT(mbi->vbe_mode_info);
         if (vbe) {
             vbe_fb_pitch = *(uint16_t *)(vbe + 16);
             vbe_fb_width = *(uint16_t *)(vbe + 18);
@@ -101,3 +102,37 @@ uint32_t multiboot_get_vbe_height(void) { return vbe_fb_height; }
 uint32_t multiboot_get_vbe_pitch(void) { return vbe_fb_pitch; }
 uint32_t multiboot_get_vbe_bpp(void) { return vbe_fb_bpp; }
 const char *multiboot_get_cmdline(void) { return kernel_cmdline; }
+
+uint32_t multiboot_detect_ram_top(uint32_t cap_bytes) {
+    if (!multiboot_info || !(multiboot_info->flags & MULTIBOOT_FLAG_MMAP))
+        return 0;
+
+    uint32_t mmap_addr = PHYS_TO_KVIRT(multiboot_info->mmap_addr);
+    uint32_t mmap_end = mmap_addr + multiboot_info->mmap_length;
+    uint32_t ram_top = 0;
+
+    uint32_t offset = mmap_addr;
+    while (offset < mmap_end) {
+        multiboot_memory_map_t *entry = (multiboot_memory_map_t *)offset;
+
+        if (entry->type == 1 && entry->base_high == 0) {
+            // Available RAM, 32-bit addressable
+            uint32_t end = entry->base_low + entry->len_low;
+            // Handle overflow (len_high != 0 means > 4GB, skip)
+            if (entry->len_high == 0 && end > entry->base_low) {
+                if (end > ram_top)
+                    ram_top = end;
+            }
+        }
+
+        // Advance by (size + 4) — the 4 is for the size field itself
+        offset += entry->size + 4;
+    }
+
+    if (ram_top > cap_bytes)
+        ram_top = cap_bytes;
+
+    printf("  RAM detected: %d MB (top=0x%x)\n", ram_top / (1024 * 1024),
+           ram_top);
+    return ram_top;
+}

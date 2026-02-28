@@ -238,7 +238,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     //   argc
     //   ESP points here on entry
 
-    uint8_t *page = (uint8_t *)stack_phys;
+    uint8_t *page = (uint8_t *)PHYS_TO_KVIRT(stack_phys);
     uint32_t str_off = 0x1000; // start from top, grow down
 
     // Step 1: Copy arg strings to top of stack page (top-down)
@@ -492,19 +492,20 @@ static void task_terminate(task_t *task, int code) {
     }
 
     // Free user address-space resources from kernel address space.
-    // Save caller's CR3 so we can restore it after destroying the target's
-    // address space.  When killing a *different* task from userland, the caller
-    // still needs its own page directory active when the syscall returns.
-    uint32_t saved_cr3 = get_cr3();
+    // Save caller's page directory so we can restore it after destroying
+    // the target's address space. When killing a *different* task from
+    // userland, the caller still needs its own page directory active.
+    page_directory_t *saved_dir = current_task ? current_task->page_dir : NULL;
     paging_switch(paging_get_kernel_dir());
     if (task->page_dir) {
         paging_destroy_address_space(task->page_dir);
         task->page_dir = NULL;
     }
-    // Restore caller's CR3 (unless the terminated task *is* the current task,
-    // in which case its page_dir was just destroyed — keep kernel CR3).
-    if (task != current_task) {
-        paging_switch((page_directory_t *)saved_cr3);
+    // Restore caller's page directory (unless the terminated task *is* the
+    // current task, in which case its page_dir was just destroyed — keep
+    // kernel CR3).
+    if (task != current_task && saved_dir) {
+        paging_switch(saved_dir);
     }
 
     task->stack = NULL;
