@@ -14,9 +14,9 @@ FAT16_IMG = fat16_test.img
 DOOM_WAD = assets/DOOM1.WAD
 KERNEL_VERSION_FILE = $(SRCDIR)/version.h
 VERSION_MAJOR ?= 0
-VERSION_MINOR ?= 1
+VERSION_MINOR ?= 2
 VERSION_PATCH ?= 0
-VERSION_ABI ?= 1
+VERSION_ABI ?= 2
 
 # Rust configuration
 RUST_TARGET = rust/i686-unknown-none.json

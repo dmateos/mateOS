@@ -15,8 +15,9 @@ Inspired by experimenting with a simple OS on the 6502.
 ### Core System
 - **Protected Mode** - Full 32-bit protected mode with GDT (6 segments)
 - **Interrupts** - IDT with 256 entries, exception and IRQ handling via PIC
-- **Paging** - Identity-mapped 32MB with per-process page directories
-- **Physical Memory Manager** - Bitmap-based allocator for 4KB frames (8-32MB range, 6144 frames)
+- **Higher-Half Kernel** - Kernel mapped at 0xC0000000+, user processes own VA 0x00400000-0xBFFFFFFF (~3 GB)
+- **Paging** - Higher-half mapped kernel (no identity map), per-process page directories with on-demand page table allocation
+- **Physical Memory Manager** - Bitmap-based allocator for 4KB frames, auto-detects RAM via multiboot memory map (up to 128 MB)
 - **Heap Allocator** - Dynamic kernel allocation via liballoc (`KERNEL_HEAP_START..KERNEL_HEAP_END` in `src/memlayout.h`)
 
 ### Multitasking
@@ -121,7 +122,7 @@ make cc-smoke                # Headless compiler smoke test (autorun cctest)
 - Version fields can be overridden at build time:
 
 ```bash
-make VERSION_MAJOR=0 VERSION_MINOR=2 VERSION_PATCH=0 VERSION_ABI=2
+make VERSION_MAJOR=0 VERSION_MINOR=3 VERSION_PATCH=0 VERSION_ABI=3
 ```
 
 ```bash
@@ -326,7 +327,7 @@ curl http://localhost:8080/os
 The VFS exposes synthetic read-only `.mos` files that provide runtime system information:
 
 - `/kcpuinfo.mos` — CPUID vendor, family, model, stepping, feature flags
-- `/kmeminfo.mos` — PMM total/used/free frames, heap start/end/current, bytes used/free
+- `/kmeminfo.mos` — Detected RAM, PMM range/total/used/free frames, user VA range, heap start/end/current, bytes used/free
 - `/kirq.mos` — IRQ table (vector, masked status, handler presence)
 - `/kpci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
 - `/kuptime.mos` — ticks, uptime seconds, and pretty uptime format
@@ -435,7 +436,7 @@ I/O and display:
 
 ### `src/boot/`
 Boot:
-- `multiboot.c/h` - Multiboot info parsing, initrd detection
+- `multiboot.c/h` - Multiboot info parsing, initrd detection, RAM auto-detection via memory map
 
 ### `src/utils/`
 Shared kernel utilities:
@@ -455,7 +456,7 @@ x86 architecture-specific code:
 - `interrupts.c/h` - IDT setup, exception/IRQ handlers
 - `interrupts_asm.S` - Low-level interrupt stubs, syscall entry, context switch
 - `tss.c/h` - Task State Segment for ring transitions
-- `paging.c/h` - Page directory/table management, per-process address spaces, COW for shared tables
+- `paging.c/h` - Higher-half page directory/table management, per-process address spaces, on-demand page table allocation
 - `pci.c/h` - PCI bus 0 enumeration (vendor/device ID, class, BARs, IRQ)
 - `timer.c/h` - PIT timer driver (100Hz)
 - `vga.c/h` - BGA/VGA graphics driver
@@ -510,7 +511,7 @@ User-space programs:
 - `ugfx.c/h` - Userland graphics library (pixel, rect, text, buffer ops)
 - `syscalls.c/h` - Syscall wrappers (int 0x80; IDs 1-52)
 - `cmd_shared.c/h` - Shared shell builtins (help, clear, exit)
-- `user.ld` - Linker script (loads at 0x700000)
+- `user.ld` - Linker script (loads at 0x400000)
 
 ### `userland/smallerc/`
 SmallerC port workspace:
@@ -546,27 +547,35 @@ Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` 
 | 0x20 (0x23) | User data | 3 |
 | 0x28 | TSS | - |
 
-**Memory Map:**
+**Physical Memory Map:**
 | Range | Usage |
 |-------|-------|
-| 0x000000 - 0x0FFFFF | Low memory (BIOS, VGA at 0xA0000) |
-| 0x100000 - 0x1FFFFF | Kernel code and data |
-| 0x200000 - 0x26FFFF | Kernel BSS, GDT, IDT, page tables, TSS |
+| 0x000000 - 0x0FFFFF | Low memory (BIOS, VGA MMIO) |
+| 0x100000 - 0x1FFFFF | Kernel code and data (LMA) |
+| 0x200000 - 0x3FFFFF | Kernel BSS, GDT, IDT, page tables (32), TSS |
 | 0x400000 - 0x5FFFFF | Kernel heap (liballoc) |
-| 0x700000 - 0x7FFFFF | User code region (per-process, virtual) |
-| 0x7E1000 - 0x7FFFFF | User stack (16 pages, per-process, virtual) |
-| 0x800000 - 0x1FFFFFF | PMM-managed physical frames (24MB) |
-| 0xA0000 - 0xAFFFF | VGA framebuffer (Mode 13h) |
-| 0xFD000000+ | BGA linear framebuffer (PCI BAR0, mapped at runtime) |
+| 0x800000 - up to 0x7FFFFFF | PMM-managed physical frames (auto-detected, max 128MB) |
+
+**Virtual Address Map (Higher-Half Kernel):**
+| Range | Usage |
+|-------|-------|
+| 0x00400000 - 0xBFFFFFFF | User address space (~3 GB, per-process page tables) |
+| 0x00400000+ | User code/data (ELF load address) |
+| 0xBFFF0000 - 0xBFFFFFFF | User stack (16 pages, 64 KB, per-process) |
+| 0xC0000000 - 0xC7FFFFFF | Higher-half kernel mapping (phys 0-128MB) |
+| 0xC0400000 - 0xC05FFFFF | Kernel heap (liballoc) |
+| 0xC00A0000 - 0xC00AFFFF | VGA framebuffer (Mode 13h, via PHYS_TO_KVIRT) |
+| 0xC00B8000 | VGA text buffer (via PHYS_TO_KVIRT) |
+| 0xFD000000+ | BGA linear framebuffer (PCI BAR0, identity-mapped at runtime) |
 
 **Paging:**
-- 8 page tables identity-map 0-32MB for kernel access
-- Per-process page directories share kernel page tables (0-7)
-- Page table 1 (0x400000-0x7FFFFF) is copied per-process: heap entries shared, user code entries (0x700000+) are private
-- User stack is pre-mapped at `USER_STACK_BASE_VADDR..USER_STACK_TOP_PAGE_VADDR+0xFFF` (currently 16 pages)
-- Copy-on-write: when a process maps pages into shared kernel page tables (e.g. large BSS), the table is privately copied first
+- Higher-half kernel: 32 page tables map phys 0-128MB at VA 0xC0000000+ (PDE entries 768-799)
+- No identity map — user processes own the entire lower 3 GB (VA 0x00400000-0xBFFFFFFF)
+- Per-process page directories share only higher-half kernel entries; user page tables (PDE 0-767) are allocated on demand
+- User code loads at 0x00400000, user stack at 0xBFFF0000-0xBFFFFFFF (16 pages, 64 KB)
+- All kernel physical dereferences use `PHYS_TO_KVIRT()` / `KVIRT_TO_PHYS()` macros
 - ELF segments loaded into PMM frames, mapped at virtual addresses in process page directory
-- BGA framebuffer pages identity-mapped into graphics-owning process
+- BGA/VBE framebuffer pages mapped into both kernel dir (for propagation) and per-process
 - CR3 swapped on every context switch
 
 **Syscall Convention:**
