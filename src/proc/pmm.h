@@ -5,13 +5,16 @@
 
 // Physical frame allocator
 // Manages 4KB frames from PMM_START up to a dynamically detected end.
-// Maximum supported: 128MB (PMM_MAX_END).
-#define PMM_START 0x800000u       // 8MB - below is kernel/heap/boot
-#define PMM_MAX_END 0x8000000u    // 128MB cap
-#define PMM_FRAME_SIZE 0x1000u    // 4KB
+// Maximum supported: 1GB (PMM_MAX_END) — limited by higher-half VA space.
+// The kernel higher-half (0xC0000000-0xFFFFFFFF) can map at most 1GB of
+// physical RAM via the PHYS_TO_KVIRT linear offset.
+#define PMM_START 0x800000u        // 8MB - below is kernel/heap/boot
+#define PMM_MAX_END 0x40000000u    // 1GB cap (higher-half VA limit)
+#define PMM_FRAME_SIZE 0x1000u     // 4KB
 
 // Maximum possible frames (used to size the static bitmap)
-#define PMM_MAX_FRAME_COUNT ((PMM_MAX_END - PMM_START) / PMM_FRAME_SIZE) // 30720
+// (1GB - 8MB) / 4KB = 261120 frames, bitmap = 32640 bytes
+#define PMM_MAX_FRAME_COUNT ((PMM_MAX_END - PMM_START) / PMM_FRAME_SIZE)
 
 // Actual end address (set at init time)
 extern uint32_t PMM_END;

@@ -6,8 +6,9 @@
 // Assembly functions to manipulate control registers
 extern void enable_paging(uint32_t page_directory_physical);
 
-// Number of page tables we use (each covers 4MB, 32 = 128MB)
-#define NUM_PAGE_TABLES 32
+// Number of page tables we use (each covers 4MB, 256 = 1GB)
+// Covers the full higher-half range: PDE 768-1023 (0xC0000000-0xFFFFFFFF)
+#define NUM_PAGE_TABLES 256
 // Store pointers for later modification
 static page_directory_t *current_page_dir = NULL;
 static page_table_t *current_page_tables = NULL;
@@ -63,7 +64,11 @@ void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
             pt->pages[i] = physical_addr | PAGE_PRESENT | PAGE_WRITE;
         }
 
-        uint32_t pde_entry = pt_phys | PAGE_PRESENT | PAGE_WRITE;
+        // PAGE_USER on the PDE is harmless: actual user access requires
+        // PAGE_USER on the PTE too (which kernel PTEs don't have).
+        // Setting it here lets paging_map_vbe() identity-map the VBE/BGA
+        // framebuffer into these PDE slots without needing to update PDE flags.
+        uint32_t pde_entry = pt_phys | PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
 
         // Higher-half map only: entry 768+t (VA 0xC0000000 + t*4MB)
         // No identity map — user processes own VA 0-0xBFFFFFFF.

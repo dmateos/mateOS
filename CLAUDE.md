@@ -99,11 +99,11 @@ Shell and winterm try `.elf` first, then `.wlf` fallback. The initrd packs both 
 | Region | Address | Notes |
 |--------|---------|-------|
 | Kernel code | 0x100000-0x1FFFFF | Loaded by multiboot |
-| Kernel BSS/tables | 0x200000-0x26FFFF | GDT, IDT, page tables, TSS |
-| Kernel heap | 0x400000-0x5FFFFF | 2MB, liballoc bump allocator |
-| User code | 0x700000-0x7FFFFF | Per-process, private page tables |
-| User stack | 0x7E1000-0x7FFFFF | 16 pages (64KB), top-down |
-| PMM frames | 0x800000-0x1FFFFFF | 6144 frames, bitmap allocator |
+| Kernel BSS/tables | 0x200000-0x4FFFFF | GDT, IDT, 256 page tables, TSS |
+| Kernel heap | 0x500000-0x6FFFFF | 2MB, liballoc bump allocator |
+| User code | 0x400000+ (virtual) | Per-process, private page tables |
+| User stack | 0xBFFF0000-0xBFFFFFFF (virtual) | 16 pages (64KB), top-down |
+| PMM frames | 0x800000-up to 1GB | Auto-detected, bitmap allocator |
 
 ### Key Limits
 
@@ -112,7 +112,7 @@ Shell and winterm try `.elf` first, then `.wlf` fallback. The initrd packs both 
 - VFS_MAX_FDS_PER_TASK: 16
 - MAX_WINDOWS: 16 (WM slots)
 - FAT16_MAX_OPEN: 16
-- PMM frames: 6144 (24MB)
+- PMM frames: up to 1GB (auto-detected)
 
 ### Syscall Convention
 

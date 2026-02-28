@@ -5,7 +5,7 @@ uint32_t PMM_END = 0x2000000u;   // Default 32MB
 uint32_t PMM_FRAME_COUNT = 6144; // Default (32MB - 8MB) / 4KB
 
 // Bitmap: 1 bit per frame, 1 = used, 0 = free
-// Sized for maximum 128MB: 30720 frames / 8 = 3840 bytes
+// Sized for maximum 1GB: 261120 frames / 8 = 32640 bytes
 static uint8_t frame_bitmap[PMM_MAX_FRAME_COUNT / 8];
 
 static inline uint32_t frame_index(uint32_t physical_addr) {

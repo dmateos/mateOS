@@ -17,16 +17,18 @@
 .long CHECKSUM
 
 /*
- * Boot page directory and page table live in BSS (higher-half VMA).
+ * Boot page directory and page tables live in BSS (higher-half VMA).
  * We reference them with (symbol - KERNEL_VIRTUAL_BASE) before paging is on.
- * boot_page_table identity-maps the first 4MB (enough for the trampoline).
- * boot_page_dir maps it at both entry 0 (identity) and entry 768 (higher-half).
+ * Two page tables identity-map the first 8MB (enough for kernel + BSS).
+ * boot_page_dir maps them at both entries 0-1 (identity) and 768-769 (higher-half).
  */
 .section .bss
 .align 4096
 boot_page_dir:
 .skip 4096
-boot_page_table:
+boot_page_table0:
+.skip 4096
+boot_page_table1:
 .skip 4096
 
 .align 16
@@ -59,30 +61,53 @@ _start:
 	mov $(stack_top - KERNEL_VIRTUAL_BASE), %esp
 
 	/*
-	 * Build boot_page_table: identity-map first 4MB (1024 * 4KB pages).
+	 * Build boot_page_table0: identity-map first 4MB (1024 * 4KB pages).
 	 * Each PTE = physical_addr | PRESENT | WRITE (0x03).
 	 */
-	mov $(boot_page_table - KERNEL_VIRTUAL_BASE), %ebx
+	mov $(boot_page_table0 - KERNEL_VIRTUAL_BASE), %ebx
 	xor %ecx, %ecx           /* ecx = page index (0..1023) */
 1:
 	mov %ecx, %edx
 	shl $12, %edx             /* edx = page index * 4096 = physical addr */
 	or $0x03, %edx            /* present + writable */
-	mov %edx, (%ebx,%ecx,4)  /* boot_page_table[ecx] = edx */
+	mov %edx, (%ebx,%ecx,4)  /* boot_page_table0[ecx] = edx */
 	inc %ecx
 	cmp $1024, %ecx
 	jl 1b
 
 	/*
+	 * Build boot_page_table1: identity-map 4-8MB (pages 1024..2047).
+	 * Needed because kernel BSS (page tables) extends past 4MB.
+	 */
+	mov $(boot_page_table1 - KERNEL_VIRTUAL_BASE), %ebx
+	xor %ecx, %ecx           /* ecx = page index (0..1023) */
+2:
+	mov %ecx, %edx
+	add $1024, %edx           /* offset by 1024 pages (4MB) */
+	shl $12, %edx             /* edx = (1024 + index) * 4096 = physical addr */
+	or $0x03, %edx            /* present + writable */
+	mov %edx, (%ebx,%ecx,4)  /* boot_page_table1[ecx] = edx */
+	inc %ecx
+	cmp $1024, %ecx
+	jl 2b
+
+	/*
 	 * Set up boot_page_dir:
-	 *   Entry 0   -> boot_page_table (identity: VA 0-4MB = PA 0-4MB)
-	 *   Entry 768 -> boot_page_table (higher-half: VA 0xC0000000-0xC03FFFFF = PA 0-4MB)
+	 *   Entry 0   -> boot_page_table0 (identity: VA 0-4MB = PA 0-4MB)
+	 *   Entry 1   -> boot_page_table1 (identity: VA 4-8MB = PA 4-8MB)
+	 *   Entry 768 -> boot_page_table0 (higher-half: VA 0xC0000000+ = PA 0-4MB)
+	 *   Entry 769 -> boot_page_table1 (higher-half: VA 0xC0400000+ = PA 4-8MB)
 	 */
 	mov $(boot_page_dir - KERNEL_VIRTUAL_BASE), %ebx
-	mov $(boot_page_table - KERNEL_VIRTUAL_BASE), %edx
+	mov $(boot_page_table0 - KERNEL_VIRTUAL_BASE), %edx
 	or $0x03, %edx            /* present + writable */
 	mov %edx, 0(%ebx)         /* entry 0 */
 	mov %edx, (768*4)(%ebx)   /* entry 768 */
+
+	mov $(boot_page_table1 - KERNEL_VIRTUAL_BASE), %edx
+	or $0x03, %edx            /* present + writable */
+	mov %edx, 4(%ebx)         /* entry 1 */
+	mov %edx, (769*4)(%ebx)   /* entry 769 */
 
 	/* Load CR3 with physical address of page directory */
 	mov $(boot_page_dir - KERNEL_VIRTUAL_BASE), %ecx

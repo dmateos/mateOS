@@ -552,9 +552,9 @@ Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` 
 |-------|-------|
 | 0x000000 - 0x0FFFFF | Low memory (BIOS, VGA MMIO) |
 | 0x100000 - 0x1FFFFF | Kernel code and data (LMA) |
-| 0x200000 - 0x3FFFFF | Kernel BSS, GDT, IDT, page tables (32), TSS |
-| 0x400000 - 0x5FFFFF | Kernel heap (liballoc) |
-| 0x800000 - up to 0x7FFFFFF | PMM-managed physical frames (auto-detected, max 128MB) |
+| 0x200000 - 0x4FFFFF | Kernel BSS, GDT, IDT, page tables (256), TSS |
+| 0x500000 - 0x6FFFFF | Kernel heap (liballoc, 2 MB) |
+| 0x800000 - up to 0x3FFFFFFF | PMM-managed physical frames (auto-detected, up to 1 GB) |
 
 **Virtual Address Map (Higher-Half Kernel):**
 | Range | Usage |
@@ -562,14 +562,14 @@ Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` 
 | 0x00400000 - 0xBFFFFFFF | User address space (~3 GB, per-process page tables) |
 | 0x00400000+ | User code/data (ELF load address) |
 | 0xBFFF0000 - 0xBFFFFFFF | User stack (16 pages, 64 KB, per-process) |
-| 0xC0000000 - 0xC7FFFFFF | Higher-half kernel mapping (phys 0-128MB) |
-| 0xC0400000 - 0xC05FFFFF | Kernel heap (liballoc) |
+| 0xC0000000 - 0xFFFFFFFF | Higher-half kernel mapping (phys 0-1GB) |
+| 0xC0500000 - 0xC06FFFFF | Kernel heap (liballoc, 2 MB) |
 | 0xC00A0000 - 0xC00AFFFF | VGA framebuffer (Mode 13h, via PHYS_TO_KVIRT) |
 | 0xC00B8000 | VGA text buffer (via PHYS_TO_KVIRT) |
 | 0xFD000000+ | BGA linear framebuffer (PCI BAR0, identity-mapped at runtime) |
 
 **Paging:**
-- Higher-half kernel: 32 page tables map phys 0-128MB at VA 0xC0000000+ (PDE entries 768-799)
+- Higher-half kernel: 256 page tables map phys 0-1GB at VA 0xC0000000+ (PDE entries 768-1023)
 - No identity map — user processes own the entire lower 3 GB (VA 0x00400000-0xBFFFFFFF)
 - Per-process page directories share only higher-half kernel entries; user page tables (PDE 0-767) are allocated on demand
 - User code loads at 0x00400000, user stack at 0xBFFF0000-0xBFFFFFFF (16 pages, 64 KB)

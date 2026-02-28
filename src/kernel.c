@@ -98,8 +98,8 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
         kprintf("[boot] serial mirror enabled\n");
     }
 
-    // Detect RAM size from multiboot memory map (cap at 128MB)
-    uint32_t ram_top = multiboot_detect_ram_top(0x8000000u);
+    // Detect RAM size from multiboot memory map (cap at 1GB, higher-half limit)
+    uint32_t ram_top = multiboot_detect_ram_top(PMM_MAX_END);
     if (!ram_top)
         ram_top = 0x2000000u; // Fallback: 32MB
 

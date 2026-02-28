@@ -15,9 +15,10 @@ static gdt_ptr_t gp_ptr = {0};
 static idt_ptr_t idt_ptr = {0};
 
 // Page directory and tables must be 4KB (0x1000) aligned
-// 32 page tables map 0-128MB in the higher-half (kernel, heap, PMM frames)
+// 256 page tables map 0-1GB in the higher-half (kernel, heap, PMM frames)
+// 256 × 4KB = 1MB BSS — covers the full higher-half VA range (PDE 768-1023)
 static page_directory_t page_dir __attribute__((aligned(4096))) = {0};
-static page_table_t page_tables[32] __attribute__((aligned(4096))) = {0};
+static page_table_t page_tables[256] __attribute__((aligned(4096))) = {0};
 
 // Initial kernel stack for TSS (used when first interrupt comes from user mode)
 // This is a temporary stack; each task will have its own kernel stack
