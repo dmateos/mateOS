@@ -353,8 +353,8 @@ static int test_readdir(void) {
             found_test = 1;
 
         count++;
-        if (count > 20)
-            break; // Safety limit
+        if (count > 64)
+            break; // Safety limit (must exceed RAMFS_MAX_FILES)
     }
 
     if (count == 0) {

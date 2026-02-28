@@ -2,6 +2,7 @@
 #include "arch/i686/interrupts.h"
 #include "arch/i686/io.h"
 #include "arch/i686/pci.h"
+#include "memlayout.h"
 
 // ---- RTL8139 constants ----
 #define RTL_VENDOR_ID 0x10EC
@@ -61,7 +62,9 @@ void rtl8139_send(const uint8_t *data, uint16_t len) {
         return;
     int idx = tx_cur % TX_DESC_COUNT;
     memcpy(tx_buf[idx], data, len);
-    outl(rtl_io + RTL_TSAD0 + (idx * 4), (uint32_t)tx_buf[idx]);
+    // DMA needs physical address; tx_buf is in BSS at higher-half VMA
+    outl(rtl_io + RTL_TSAD0 + (idx * 4),
+         KVIRT_TO_PHYS((uint32_t)tx_buf[idx]));
     outl(rtl_io + RTL_TSD0 + (idx * 4), len);
     tx_cur = (tx_cur + 1) % TX_DESC_COUNT;
     tx_packets++;
@@ -158,7 +161,8 @@ void rtl8139_init(nic_rx_callback_t rx_cb) {
         rtl_mac[i] = inb(rtl_io + RTL_IDR0 + i);
     }
 
-    outl(rtl_io + RTL_RBSTART, (uint32_t)rx_buf);
+    // DMA needs physical address; rx_buf is in BSS at higher-half VMA
+    outl(rtl_io + RTL_RBSTART, KVIRT_TO_PHYS((uint32_t)rx_buf));
     rx_offset = 0;
     outw(rtl_io + RTL_CAPR, 0xFFF0);
 

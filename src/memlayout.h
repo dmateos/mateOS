@@ -3,8 +3,17 @@
 
 #include "lib.h"
 
-#define KERNEL_HEAP_START 0x00400000u
-#define KERNEL_HEAP_END 0x00600000u
+// Higher-half kernel: linked at VMA 0xC0200000, loaded at LMA 0x200000.
+// Physical 0-32MB is mapped at BOTH virtual 0-32MB (identity) AND
+// 0xC0000000-0xC1FFFFFF (higher-half). The identity map is retained so
+// PMM physical addresses, VGA MMIO, multiboot structs, etc. work unchanged.
+#define KERNEL_VIRTUAL_BASE 0xC0000000u
+#define KVIRT_TO_PHYS(v) ((v) - KERNEL_VIRTUAL_BASE)
+#define PHYS_TO_KVIRT(p) ((p) + KERNEL_VIRTUAL_BASE)
+
+// Kernel heap lives in the higher-half mapping
+#define KERNEL_HEAP_START 0xC0400000u
+#define KERNEL_HEAP_END 0xC0600000u
 
 #define USER_REGION_START 0x00700000u
 #define USER_REGION_END 0x00C00000u

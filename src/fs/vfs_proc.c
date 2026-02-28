@@ -3,6 +3,7 @@
 #include "arch/arch.h"
 #include "io/window.h"
 #include "liballoc/liballoc_hooks.h"
+#include "memlayout.h"
 #include "net/net.h"
 #include "proc/pmm.h"
 #include "proc/task.h"
@@ -30,6 +31,10 @@ static uint32_t vgen_meminfo(char *dst, uint32_t cap) {
     uint32_t htotal = hend - hstart;
     uint32_t hused = (hcur > hstart) ? (hcur - hstart) : 0;
     uint32_t hfree = (htotal > hused) ? (htotal - hused) : 0;
+
+    append_cstr(dst, cap, &len, "kernel_vbase=");
+    append_hex_u32(dst, cap, &len, KERNEL_VIRTUAL_BASE);
+    append_cstr(dst, cap, &len, "\n");
 
     append_cstr(dst, cap, &len, "PMM: total=");
     append_dec_u32(dst, cap, &len, total);

@@ -113,7 +113,8 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
         kprintf("[boot] pmm reserved initrd: 0x%x-0x%x\n", initrd_start,
                 initrd_start + initrd_size);
 
-        if (initrd_start + initrd_size > KERNEL_HEAP_START) {
+        // Compare against physical heap address (initrd is at physical addrs)
+        if (initrd_start + initrd_size > KVIRT_TO_PHYS(KERNEL_HEAP_START)) {
             // Initrd overlaps heap — relocate to PMM frames
             uint32_t nframes = (initrd_size + 0xFFF) / 0x1000;
             uint32_t copy_base = pmm_alloc_frames(nframes);

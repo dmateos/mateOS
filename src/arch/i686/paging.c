@@ -17,6 +17,9 @@ static page_table_t *current_page_tables = NULL;
 static uint32_t vbe_dir_indices[VBE_MAX_DIR_ENTRIES];
 static int vbe_dir_count = 0;
 
+// Higher-half page directory entry offset (0xC0000000 >> 22 = 768)
+#define HIGHER_HALF_PDE_START 768
+
 void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
     printf("Paging initialization starting\n");
 
@@ -24,25 +27,29 @@ void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
     current_page_dir = page_dir;
     current_page_tables = page_tables;
 
+    // page_dir and page_tables are at higher-half VMA (0xC0xxxxxx) since
+    // they live in BSS.  We need physical addresses for PDE entries.
+    uint32_t pd_phys = KVIRT_TO_PHYS((uint32_t)page_dir);
+
     // Verify alignment - page directory must be 4KB aligned
-    uint32_t pd_addr = (uint32_t)page_dir;
-    if (pd_addr & 0xFFF) {
-        printf("ERROR: Page directory not 4KB aligned (0x%x)\n", pd_addr);
+    if (pd_phys & 0xFFF) {
+        printf("ERROR: Page directory not 4KB aligned (0x%x)\n", pd_phys);
         return;
     }
 
     // Clear page directory
     memset(page_dir, 0, sizeof(page_directory_t));
 
-    // Set up page tables for identity mapping
-    // Table 0: 0x000000 - 0x3FFFFF (first 4MB - kernel, VGA, etc)
-    // Table 1: 0x400000 - 0x7FFFFF (second 4MB - heap region)
+    // Set up page tables for identity mapping AND higher-half mapping.
+    // Identity:    entries 0..7   -> phys 0-32MB at VA 0-32MB
+    // Higher-half: entries 768..775 -> phys 0-32MB at VA 0xC0000000-0xC1FFFFFF
+    // Both sets point to the same page tables.
     for (uint32_t t = 0; t < NUM_PAGE_TABLES; t++) {
         page_table_t *pt = &page_tables[t];
-        uint32_t pt_addr = (uint32_t)pt;
+        uint32_t pt_phys = KVIRT_TO_PHYS((uint32_t)pt);
 
-        if (pt_addr & 0xFFF) {
-            printf("ERROR: Page table %d not 4KB aligned (0x%x)\n", t, pt_addr);
+        if (pt_phys & 0xFFF) {
+            printf("ERROR: Page table %d not 4KB aligned (0x%x)\n", t, pt_phys);
             return;
         }
 
@@ -57,27 +64,26 @@ void init_paging(page_directory_t *page_dir, page_table_t *page_tables) {
             pt->pages[i] = physical_addr | PAGE_PRESENT | PAGE_WRITE;
         }
 
-        // Set up page directory entry to point to this page table
-        page_dir->tables[t] = pt_addr | PAGE_PRESENT | PAGE_WRITE;
+        uint32_t pde_entry = pt_phys | PAGE_PRESENT | PAGE_WRITE;
+
+        // Identity map: entry t (VA 0 + t*4MB)
+        page_dir->tables[t] = pde_entry;
+        // Higher-half map: entry 768+t (VA 0xC0000000 + t*4MB)
+        page_dir->tables[HIGHER_HALF_PDE_START + t] = pde_entry;
     }
 
-    printf("Identity mapped first %d MB\n", NUM_PAGE_TABLES * 4);
-    printf(
-        "[paging-map] kernel shared (identity): 0x00000000-0x%08x (%d MiB)\n",
-        (NUM_PAGE_TABLES * 0x400000) - 1, NUM_PAGE_TABLES * 4);
-    printf("[paging-map] table1 split: heap(shared)=0x%08x-0x%08x, "
-           "user(per-proc)=0x%08x-0x%08x\n",
-           KERNEL_HEAP_START, KERNEL_HEAP_END - 1, USER_REGION_START,
-           USER_REGION_END - 1);
-    printf("[paging-map] user stack default: 0x%08x-0x%08x (%d pages, "
-           "down-growth)\n",
-           USER_STACK_BASE_VADDR, USER_STACK_TOP_PAGE_VADDR + 0x0FFF,
-           USER_STACK_PAGES);
-    printf("Page directory at 0x%x\n", page_dir);
+    printf("Identity mapped first %d MB + higher-half at 0xC0000000\n",
+           NUM_PAGE_TABLES * 4);
+    printf("[paging-map] identity: 0x00000000-0x%x (%d MiB)\n",
+           (NUM_PAGE_TABLES * 0x400000) - 1, NUM_PAGE_TABLES * 4);
+    printf("[paging-map] user region: 0x%x-0x%x, stack: 0x%x-0x%x\n",
+           USER_REGION_START, USER_REGION_END - 1,
+           USER_STACK_BASE_VADDR, USER_STACK_TOP_PAGE_VADDR + 0x0FFF);
+    printf("Page directory at phys 0x%x\n", pd_phys);
     printf("Enabling paging...\n");
 
-    // Enable paging by loading CR3 and setting CR0.PG
-    enable_paging((uint32_t)page_dir);
+    // Enable paging by loading CR3 with physical address and setting CR0.PG
+    enable_paging(pd_phys);
 
     printf("Paging enabled successfully!\n");
     printf("CR3 = 0x%x\n", get_cr3());
@@ -162,9 +168,15 @@ page_directory_t *paging_create_address_space(void) {
     page_directory_t *new_dir = (page_directory_t *)pd_phys;
     memset(new_dir, 0, sizeof(page_directory_t));
 
-    // Copy kernel page directory entries (shared kernel page tables)
+    // Copy identity-map kernel page directory entries (shared kernel page tables)
     for (uint32_t i = 0; i < NUM_PAGE_TABLES; i++) {
         new_dir->tables[i] = current_page_dir->tables[i];
+    }
+
+    // Copy higher-half kernel page directory entries (same physical page tables)
+    for (uint32_t i = 0; i < NUM_PAGE_TABLES; i++) {
+        new_dir->tables[HIGHER_HALF_PDE_START + i] =
+            current_page_dir->tables[HIGHER_HALF_PDE_START + i];
     }
 
     // Copy VBE framebuffer page directory entries (if any)
@@ -222,7 +234,8 @@ int paging_map_page(page_directory_t *page_dir, uint32_t virtual_addr,
     } else if (page_dir != current_page_dir && dir_idx < NUM_PAGE_TABLES) {
         // Entry points to a shared kernel page table — make a private copy
         // before modifying, to avoid corrupting the kernel's identity mapping.
-        uint32_t kernel_pt = current_page_dir->tables[dir_idx] & ~0xFFF;
+        uint32_t kernel_pt =
+            current_page_dir->tables[dir_idx] & ~0xFFF;
         uint32_t cur_pt = page_dir->tables[dir_idx] & ~0xFFF;
         if (cur_pt == kernel_pt) {
             uint32_t new_pt = pmm_alloc_frame();
@@ -263,7 +276,12 @@ void paging_unmap_page(page_directory_t *page_dir, uint32_t virtual_addr) {
 
 // Switch to a different address space
 void paging_switch(page_directory_t *page_dir) {
-    uint32_t phys = (uint32_t)page_dir; // Identity-mapped, virt == phys
+    uint32_t phys = (uint32_t)page_dir;
+    // Kernel page directory is in BSS at higher-half VMA — convert to physical.
+    // PMM-allocated directories are already physical (below 0xC0000000).
+    if (phys >= KERNEL_VIRTUAL_BASE) {
+        phys = KVIRT_TO_PHYS(phys);
+    }
     __asm__ volatile("mov %0, %%cr3" : : "r"(phys) : "memory");
 }
 
@@ -278,7 +296,9 @@ void paging_destroy_address_space(page_directory_t *page_dir) {
         if (!(page_dir->tables[i] & PAGE_PRESENT))
             continue;
         uint32_t pt_phys = page_dir->tables[i] & ~0xFFF;
-        uint32_t kernel_pt = current_page_dir->tables[i] & ~0xFFF;
+        // Kernel PDE entries use physical address of page tables in BSS
+        uint32_t kernel_pt =
+            KVIRT_TO_PHYS((uint32_t)&current_page_tables[i]);
         if (pt_phys == kernel_pt)
             continue; // Still shared, don't free
 
@@ -301,9 +321,14 @@ void paging_destroy_address_space(page_directory_t *page_dir) {
     }
 
     // Free any additional page tables we allocated (beyond the shared kernel
-    // ones) Skip VBE/BGA directory entries (shared from kernel, must not be
-    // freed)
+    // ones). Skip VBE/BGA directory entries and higher-half entries (both shared
+    // from kernel, must not be freed).
     for (uint32_t i = NUM_PAGE_TABLES; i < 1024; i++) {
+        // Skip higher-half kernel entries (768..775) — shared, not ours
+        if (i >= HIGHER_HALF_PDE_START &&
+            i < HIGHER_HALF_PDE_START + NUM_PAGE_TABLES)
+            continue;
+
         if (page_dir->tables[i] & PAGE_PRESENT) {
             // Check if this is a VBE shared entry — skip if so
             int is_vbe = 0;

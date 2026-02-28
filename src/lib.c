@@ -104,10 +104,14 @@ void itoa(int num, char *buf, int base) {
         num = -num;
     }
 
-    while (num != 0) {
-        int rem = num % base;
+    // For non-decimal bases (hex, octal, etc.), treat as unsigned so
+    // addresses like 0xC0000000 print correctly instead of overflowing.
+    unsigned int unum = (unsigned int)num;
+
+    while (unum != 0) {
+        unsigned int rem = unum % (unsigned int)base;
         buf[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
-        num /= base;
+        unum /= (unsigned int)base;
     }
 
     if (is_negative) {
