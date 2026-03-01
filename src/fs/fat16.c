@@ -139,6 +139,24 @@ static void fat_cache_evict(uint32_t lba) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Readdir cache — avoids O(N²) rescanning for index-based readdir API.
+// On index==0 (or path change), scan the entire directory once and cache
+// all entry names. Subsequent readdir calls just index into the cache.
+// ---------------------------------------------------------------------------
+#define RDCACHE_MAX 128
+#define RDCACHE_NAME 13 // FAT16 8.3 → max 12 chars + NUL
+static struct {
+    char path[FAT16_MAX_PATH]; // cached directory path
+    char names[RDCACHE_MAX][RDCACHE_NAME];
+    int count;                 // number of cached entries
+    int valid;                 // cache is populated
+} rdcache;
+
+static void rdcache_invalidate(void) {
+    rdcache.valid = 0;
+}
+
 static int is_fat16_part_type(uint8_t type) {
     return (type == 0x04 || type == 0x06 || type == 0x0E);
 }
@@ -718,6 +736,7 @@ static int fat16_vfs_open(const char *path, int flags) {
             return -1;
         if (free_lba == 0)
             return -1;
+        rdcache_invalidate(); // new file being created
 
         uint8_t sec[FAT16_SECTOR_SIZE];
         if (ata_read_sector(free_lba, sec) < 0)
@@ -933,30 +952,31 @@ static int fat16_vfs_stat(const char *path, vfs_stat_t *st) {
     return 0;
 }
 
-// Enumerate entries in a directory. Supports root and subdirectories.
-// Skips '.', '..', volume labels, LFN entries, and deleted entries.
-static int fat16_vfs_readdir(const char *path, int index, char *buf,
-                             uint32_t size) {
-    if (!g_fat.mounted || !buf || size == 0 || index < 0)
-        return 0;
+// Scan a directory and collect all visible entry names into the rdcache.
+// Called once per directory; subsequent readdir calls index into the cache.
+static void fat16_readdir_fill_cache(const char *path, fat16_dir_loc_t dir) {
+    rdcache.count = 0;
+    rdcache.valid = 0;
 
-    fat16_dir_loc_t dir;
-    if (fat16_resolve_dir(path, &dir) < 0)
-        return 0;
+    // Store the path for cache-hit comparison
+    int pi = 0;
+    if (path) {
+        for (; path[pi] && pi < FAT16_MAX_PATH - 1; pi++)
+            rdcache.path[pi] = path[pi];
+    }
+    rdcache.path[pi] = '\0';
 
-    int vis = 0;
     int is_subdir = (dir.cluster != 0);
-    int result = 0;
 
     // Heap-allocate bulk read buffer to avoid kernel stack overflow (8KB limit)
     uint8_t *bulk = (uint8_t *)kmalloc(FAT16_SECTOR_SIZE * 8);
     if (!bulk)
-        return 0;
+        return;
 
     if (dir.cluster == 0) {
         // Root directory — bulk-read sectors
         uint32_t s = 0;
-        while (s < g_fat.root_dir_sectors) {
+        while (s < g_fat.root_dir_sectors && rdcache.count < RDCACHE_MAX) {
             uint32_t batch = g_fat.root_dir_sectors - s;
             if (batch > 8) batch = 8;
             if (ata_pio_read(g_fat.root_start_lba + s, (uint8_t)batch, bulk) <
@@ -974,17 +994,11 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
                         continue;
                     if (de->attr & FAT16_ATTR_VOLUMEID)
                         continue;
-                    if (vis == index) {
-                        char name[13];
-                        fat16_dirent_name_to_string(de, name);
-                        size_t n = strlen(name);
-                        if (n >= size) n = size - 1;
-                        memcpy(buf, name, n);
-                        buf[n] = '\0';
-                        result = (int)(n + 1);
-                        goto done;
+                    if (rdcache.count < RDCACHE_MAX) {
+                        fat16_dirent_name_to_string(
+                            de, rdcache.names[rdcache.count]);
+                        rdcache.count++;
                     }
-                    vis++;
                 }
             }
             s += batch;
@@ -993,7 +1007,7 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
         // Subdirectory: follow cluster chain, bulk-read
         int can_bulk = (g_fat.sectors_per_cluster <= 8);
         uint16_t cl = dir.cluster;
-        while (cl >= 2 && cl < 0xFFF8) {
+        while (cl >= 2 && cl < 0xFFF8 && rdcache.count < RDCACHE_MAX) {
             uint32_t base_lba = cluster_to_lba(cl);
             uint8_t *data;
             uint8_t sec_single[FAT16_SECTOR_SIZE];
@@ -1003,7 +1017,7 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
                     goto done;
                 data = bulk;
             } else {
-                data = NULL; // fall through to per-sector below
+                data = NULL;
             }
 
             for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
@@ -1025,7 +1039,6 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
                         continue;
                     if (de->attr & FAT16_ATTR_VOLUMEID)
                         continue;
-                    // Skip '.' and '..' in subdirectory listings
                     if (is_subdir) {
                         if (de->name[0] == '.' && de->name[1] == ' ')
                             continue;
@@ -1033,17 +1046,11 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
                             de->name[2] == ' ')
                             continue;
                     }
-                    if (vis == index) {
-                        char name[13];
-                        fat16_dirent_name_to_string(de, name);
-                        size_t n = strlen(name);
-                        if (n >= size) n = size - 1;
-                        memcpy(buf, name, n);
-                        buf[n] = '\0';
-                        result = (int)(n + 1);
-                        goto done;
+                    if (rdcache.count < RDCACHE_MAX) {
+                        fat16_dirent_name_to_string(
+                            de, rdcache.names[rdcache.count]);
+                        rdcache.count++;
                     }
-                    vis++;
                 }
             }
             cl = fat16_get_entry(cl);
@@ -1052,12 +1059,49 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
 
 done:
     kfree(bulk);
-    return result;
+    rdcache.valid = 1;
+}
+
+// Check if the readdir cache is valid for the given path.
+static int rdcache_hit(const char *path) {
+    if (!rdcache.valid)
+        return 0;
+    const char *a = path ? path : "";
+    return (strcmp(a, rdcache.path) == 0);
+}
+
+// Enumerate entries in a directory. Supports root and subdirectories.
+// Skips '.', '..', volume labels, LFN entries, and deleted entries.
+// Uses a cache: the first call (or path change) scans once; subsequent
+// calls return from cache in O(1).
+static int fat16_vfs_readdir(const char *path, int index, char *buf,
+                             uint32_t size) {
+    if (!g_fat.mounted || !buf || size == 0 || index < 0)
+        return 0;
+
+    // Populate cache on first call or path change
+    if (!rdcache_hit(path)) {
+        fat16_dir_loc_t dir;
+        if (fat16_resolve_dir(path, &dir) < 0)
+            return 0;
+        fat16_readdir_fill_cache(path, dir);
+    }
+
+    if (index >= rdcache.count)
+        return 0;
+
+    const char *name = rdcache.names[index];
+    size_t n = strlen(name);
+    if (n >= size) n = size - 1;
+    memcpy(buf, name, n);
+    buf[n] = '\0';
+    return (int)(n + 1);
 }
 
 static int fat16_vfs_unlink(const char *path) {
     if (!g_fat.mounted || !path)
         return -1;
+    rdcache_invalidate(); // directory contents will change
 
     fat16_dirent_t de;
     uint32_t de_lba = 0;
@@ -1089,6 +1133,7 @@ static int fat16_vfs_unlink(const char *path) {
 static int fat16_vfs_mkdir(const char *path) {
     if (!g_fat.mounted || !path)
         return -1;
+    rdcache_invalidate(); // directory contents will change
 
     fat16_dir_loc_t parent;
     fat16_dirent_t de;
@@ -1154,6 +1199,7 @@ static int fat16_vfs_mkdir(const char *path) {
 static int fat16_vfs_rmdir(const char *path) {
     if (!g_fat.mounted || !path)
         return -1;
+    rdcache_invalidate(); // directory contents will change
 
     fat16_dirent_t de;
     uint32_t de_lba = 0;
