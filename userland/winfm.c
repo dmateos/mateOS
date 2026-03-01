@@ -10,6 +10,7 @@
 #define EXT_MAX 16
 
 #define TOPBAR_H 16
+#define NAVBAR_H 18
 #define STATUS_H 14
 #define PAD_X 10
 #define PAD_Y 8
@@ -51,11 +52,38 @@ static int selected = 0;
 static int view_first = 0;
 static int wid = -1;
 static char cwd[128] = "/";
-static char title[64] = "File Manager - /";
-static char status[80] = "Arrows Move  Enter Open  Bksp Up  "
-                         "F Filter  R Refresh  Q Quit";
+static char title[64] = "File Manager";
+static char status[80] = "Enter Open  Bksp Up  - Back  = Fwd  "
+                         "F Filter  X Del  Q Quit";
 
 static void ensure_selected_visible(void);
+static void copy_name(char *dst, const char *src, int cap);
+
+// Navigation history for back/forward
+#define HIST_MAX 32
+static char hist_stack[HIST_MAX][128]; // path history
+static int hist_count = 0;            // total entries in stack
+static int hist_pos = -1;             // current position (-1 = none)
+
+static void hist_push(const char *path) {
+    // Truncate forward history when navigating to new location
+    if (hist_pos >= 0 && hist_pos < hist_count - 1) {
+        hist_count = hist_pos + 1;
+    }
+    // Push new entry
+    if (hist_count >= HIST_MAX) {
+        // Shift everything down to make room
+        for (int i = 0; i < HIST_MAX - 1; i++)
+            copy_name(hist_stack[i], hist_stack[i + 1], 128);
+        hist_count = HIST_MAX - 1;
+    }
+    copy_name(hist_stack[hist_count], path, 128);
+    hist_pos = hist_count;
+    hist_count++;
+}
+
+static int hist_can_back(void) { return hist_pos > 0; }
+static int hist_can_fwd(void) { return hist_pos < hist_count - 1; }
 
 static int str_ends_with(const char *s, const char *suffix) {
     int sl = strlen(s);
@@ -284,7 +312,7 @@ static void draw_file_icon(int x, int y, int selected_cell, const char *name,
 
 static void grid_dims(int *out_cols, int *out_rows, int *out_page) {
     int cols = (W - PAD_X * 2) / CELL_W;
-    int rows = (H - TOPBAR_H - STATUS_H - PAD_Y - 10) / CELL_H;
+    int rows = (H - TOPBAR_H - NAVBAR_H - STATUS_H - PAD_Y - 10) / CELL_H;
     if (cols < 1)
         cols = 1;
     if (rows < 1)
@@ -372,8 +400,8 @@ static void draw_scrollbar(int cols, int rows) {
         return;
 
     int track_x = W - 10;
-    int track_y = TOPBAR_H + 6;
-    int track_h = H - TOPBAR_H - STATUS_H - 10;
+    int track_y = TOPBAR_H + NAVBAR_H + 6;
+    int track_h = H - TOPBAR_H - NAVBAR_H - STATUS_H - 10;
     if (track_h < 20)
         return;
 
@@ -393,6 +421,63 @@ static void draw_scrollbar(int cols, int rows) {
     ugfx_buf_hline(buf, W, H, track_x + 1, thumb_y, 4, COL_TITLE_BAR2);
 }
 
+// Draw a small button at (x, y) with w x h size, label, and enabled state
+static void draw_nav_btn(int x, int y, int w, int h, const char *label,
+                         int enabled) {
+    unsigned char bg = enabled ? COL_PANEL : COL_BG;
+    unsigned char fg = enabled ? COL_TEXT : COL_MUTED;
+    ugfx_buf_rect(buf, W, H, x, y, w, h, bg);
+    ugfx_buf_hline(buf, W, H, x, y, w, enabled ? COL_LIGHT : COL_PANEL_ALT);
+    ugfx_buf_hline(buf, W, H, x, y + h - 1, w, COL_DARK);
+    buf_vline(x, y, h, enabled ? COL_LIGHT : COL_PANEL_ALT);
+    buf_vline(x + w - 1, y, h, COL_DARK);
+    int llen = strlen(label);
+    int tx = x + (w - llen * 8) / 2;
+    ugfx_buf_string(buf, W, H, tx, y + (h - 8) / 2, label, fg);
+}
+
+static void draw_navbar(void) {
+    int ny = TOPBAR_H;
+    // Navbar background
+    ugfx_buf_rect(buf, W, H, 0, ny, W, NAVBAR_H, COL_STATUS);
+    ugfx_buf_hline(buf, W, H, 0, ny + NAVBAR_H - 1, W, COL_DARK);
+
+    // [<] Back button
+    draw_nav_btn(4, ny + 1, 20, NAVBAR_H - 2, "<", hist_can_back());
+    // [>] Forward button
+    draw_nav_btn(26, ny + 1, 20, NAVBAR_H - 2, ">", hist_can_fwd());
+    // [^] Up button
+    draw_nav_btn(48, ny + 1, 20, NAVBAR_H - 2, "^",
+                 strcmp(cwd, "/") != 0);
+
+    // Path/address bar
+    int path_x = 72;
+    int path_w = W - path_x - 4;
+    ugfx_buf_rect(buf, W, H, path_x, ny + 2, path_w, NAVBAR_H - 4,
+                  COL_PANEL_ALT);
+    ugfx_buf_hline(buf, W, H, path_x, ny + 2, path_w, COL_DARK);
+    ugfx_buf_hline(buf, W, H, path_x, ny + NAVBAR_H - 3, path_w, COL_LIGHT);
+    buf_vline(path_x, ny + 2, NAVBAR_H - 4, COL_DARK);
+    buf_vline(path_x + path_w - 1, ny + 2, NAVBAR_H - 4, COL_LIGHT);
+
+    // Truncate path to fit
+    int max_chars = (path_w - 8) / 8;
+    char path_disp[64];
+    int cwdlen = strlen(cwd);
+    if (cwdlen <= max_chars) {
+        copy_name(path_disp, cwd, sizeof(path_disp));
+    } else {
+        // Show "...end/of/path"
+        path_disp[0] = '.';
+        path_disp[1] = '.';
+        path_disp[2] = '.';
+        int start = cwdlen - (max_chars - 3);
+        copy_name(path_disp + 3, cwd + start, sizeof(path_disp) - 3);
+    }
+    ugfx_buf_string(buf, W, H, path_x + 4, ny + (NAVBAR_H - 8) / 2,
+                    path_disp, COL_TEXT);
+}
+
 static void redraw(void) {
     ugfx_buf_clear(buf, W, H, COL_BG);
 
@@ -400,13 +485,16 @@ static void redraw(void) {
     ugfx_buf_hline(buf, W, H, 0, 1, W, COL_TITLE_BAR2);
     ugfx_buf_string(buf, W, H, 6, 4, title, COL_TITLE_TXT);
 
-    draw_bevel(4, TOPBAR_H + 2, W - 8, H - TOPBAR_H - STATUS_H - 6);
+    draw_navbar();
+
+    int content_top = TOPBAR_H + NAVBAR_H;
+    draw_bevel(4, content_top + 2, W - 8, H - content_top - STATUS_H - 6);
 
     int cols, rows, page;
     grid_dims(&cols, &rows, &page);
 
     int area_x = PAD_X;
-    int area_y = TOPBAR_H + PAD_Y + 2;
+    int area_y = content_top + PAD_Y + 2;
     int shown = 0;
     int max_i = view_first + page;
     if (max_i > file_count)
@@ -475,9 +563,24 @@ static void page_selection(int delta_pages) {
     move_selection(delta_pages * page);
 }
 
+// Navigate to a path, push to history
 static void navigate_to(const char *dir_name) {
     if (chdir(dir_name) < 0) {
         copy_status("Cannot enter directory");
+        return;
+    }
+    getcwd(cwd, sizeof(cwd));
+    hist_push(cwd);
+    selected = 0;
+    view_first = 0;
+    ext_filter_idx = 0;
+    load_files();
+}
+
+// Navigate without pushing history (for back/forward)
+static void navigate_to_no_hist(const char *path) {
+    if (chdir(path) < 0) {
+        copy_status("Navigate failed");
         return;
     }
     getcwd(cwd, sizeof(cwd));
@@ -488,12 +591,29 @@ static void navigate_to(const char *dir_name) {
 }
 
 static void navigate_up(void) {
-    // Already at root?
     if (strcmp(cwd, "/") == 0) {
         copy_status("Already at /");
         return;
     }
     navigate_to("..");
+}
+
+static void navigate_back(void) {
+    if (!hist_can_back()) {
+        copy_status("No back history");
+        return;
+    }
+    hist_pos--;
+    navigate_to_no_hist(hist_stack[hist_pos]);
+}
+
+static void navigate_fwd(void) {
+    if (!hist_can_fwd()) {
+        copy_status("No forward history");
+        return;
+    }
+    hist_pos++;
+    navigate_to_no_hist(hist_stack[hist_pos]);
 }
 
 static void spawn_for_entry(int idx) {
@@ -589,6 +709,8 @@ void _start(int argc, char **argv) {
     }
     detach();
 
+    getcwd(cwd, sizeof(cwd));
+    hist_push(cwd);
     load_files();
     redraw();
     win_write(wid, buf, sizeof(buf));
@@ -614,6 +736,10 @@ void _start(int argc, char **argv) {
             navigate_up();
         } else if (k == 'x' || k == 'X') {
             delete_selected();
+        } else if (k == '-') {
+            navigate_back();
+        } else if (k == '=') {
+            navigate_fwd();
         } else if (k == '[') {
             page_selection(-1);
         } else if (k == ']') {
