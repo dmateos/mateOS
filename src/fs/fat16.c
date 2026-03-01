@@ -94,6 +94,50 @@ typedef struct {
 static fat16_state_t g_fat;
 static fat16_open_t g_open[FAT16_MAX_OPEN];
 
+// Forward declarations for ATA helpers
+static int ata_read_sector(uint32_t lba, uint8_t *out);
+static int ata_write_sector(uint32_t lba, const uint8_t *in);
+
+// ---------------------------------------------------------------------------
+// FAT sector cache — avoids re-reading the same FAT sector on every cluster
+// chain lookup. Each entry caches one 512-byte FAT sector.
+// ---------------------------------------------------------------------------
+#define FAT_CACHE_SIZE 8
+static struct {
+    uint32_t lba;  // 0 = unused
+    uint8_t data[FAT16_SECTOR_SIZE];
+} fat_cache[FAT_CACHE_SIZE];
+static int fat_cache_next; // round-robin eviction index
+
+static void fat_cache_invalidate(void) {
+    for (int i = 0; i < FAT_CACHE_SIZE; i++)
+        fat_cache[i].lba = 0;
+    fat_cache_next = 0;
+}
+
+static uint8_t *fat_cache_get(uint32_t lba) {
+    // Check cache
+    for (int i = 0; i < FAT_CACHE_SIZE; i++) {
+        if (fat_cache[i].lba == lba)
+            return fat_cache[i].data;
+    }
+    // Miss — read and cache
+    int slot = fat_cache_next;
+    fat_cache_next = (fat_cache_next + 1) % FAT_CACHE_SIZE;
+    if (ata_read_sector(lba, fat_cache[slot].data) < 0)
+        return NULL;
+    fat_cache[slot].lba = lba;
+    return fat_cache[slot].data;
+}
+
+// Invalidate a specific LBA (after writes to FAT)
+static void fat_cache_evict(uint32_t lba) {
+    for (int i = 0; i < FAT_CACHE_SIZE; i++) {
+        if (fat_cache[i].lba == lba)
+            fat_cache[i].lba = 0;
+    }
+}
+
 static int is_fat16_part_type(uint8_t type) {
     return (type == 0x04 || type == 0x06 || type == 0x0E);
 }
@@ -137,12 +181,12 @@ static void write_u16(uint8_t *p, uint16_t v) {
 }
 
 static uint16_t fat16_get_entry(uint16_t cluster) {
-    uint8_t sec[FAT16_SECTOR_SIZE];
     uint32_t fat_offset = (uint32_t)cluster * 2;
     uint32_t fat_sec = g_fat.fat_start_lba + (fat_offset / FAT16_SECTOR_SIZE);
     uint32_t ent_off = fat_offset % FAT16_SECTOR_SIZE;
 
-    if (ata_read_sector(fat_sec, sec) < 0)
+    uint8_t *sec = fat_cache_get(fat_sec);
+    if (!sec)
         return FAT16_EOC;
     return read_u16(sec + ent_off);
 }
@@ -162,6 +206,8 @@ static int fat16_set_entry(uint16_t cluster, uint16_t value) {
         write_u16(sec + ent_off, value);
         if (ata_write_sector(fat_sec, sec) < 0)
             return -1;
+        // Evict cached copy since we wrote new data
+        fat_cache_evict(fat_sec);
     }
 
     return 0;
@@ -317,6 +363,48 @@ static int fat16_name_to_83(const char *in, uint8_t out[11]) {
 // scans the fixed root directory sectors. For subdirs, follows the cluster
 // chain. Returns 0 on match, -1 on not found. Optionally returns first free
 // slot.
+// Helper: scan a sector buffer for a matching 8.3 name or free slot.
+// Returns 1 if match found, -1 if end-of-directory (0x00 marker), 0 to keep scanning.
+static int fat16_scan_dir_sector(const uint8_t *sec, uint32_t lba,
+                                 const uint8_t name83[11],
+                                 fat16_dirent_t *out, uint32_t *out_lba,
+                                 uint16_t *out_off, uint32_t *free_lba,
+                                 uint16_t *free_off) {
+    for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
+        const fat16_dirent_t *de = (const fat16_dirent_t *)(sec + off);
+
+        if (de->name[0] == 0x00) {
+            if (free_lba && *free_lba == 0) {
+                *free_lba = lba;
+                *free_off = (uint16_t)off;
+            }
+            return -1; // end of directory
+        }
+        if (de->name[0] == 0xE5) {
+            if (free_lba && *free_lba == 0) {
+                *free_lba = lba;
+                *free_off = (uint16_t)off;
+            }
+            continue;
+        }
+        if (de->attr == FAT16_ATTR_LFN)
+            continue;
+        if (de->attr & FAT16_ATTR_VOLUMEID)
+            continue;
+
+        if (memcmp(de->name, name83, 11) == 0) {
+            if (out)
+                *out = *de;
+            if (out_lba)
+                *out_lba = lba;
+            if (out_off)
+                *out_off = (uint16_t)off;
+            return 1; // found
+        }
+    }
+    return 0; // keep scanning
+}
+
 static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
                                fat16_dirent_t *out, uint32_t *out_lba,
                                uint16_t *out_off, uint32_t *free_lba,
@@ -324,88 +412,52 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
     if (!g_fat.mounted || !name83)
         return -1;
 
-    uint8_t sec[FAT16_SECTOR_SIZE];
-
     if (dir.cluster == 0) {
-        // Root directory: fixed LBA region
-        for (uint32_t s = 0; s < g_fat.root_dir_sectors; s++) {
-            uint32_t lba = g_fat.root_start_lba + s;
-            if (ata_read_sector(lba, sec) < 0)
+        // Root directory: fixed LBA region — bulk-read up to 8 sectors
+        uint8_t bulk[FAT16_SECTOR_SIZE * 8];
+        uint32_t s = 0;
+        while (s < g_fat.root_dir_sectors) {
+            uint32_t batch = g_fat.root_dir_sectors - s;
+            if (batch > 8) batch = 8;
+            uint32_t base_lba = g_fat.root_start_lba + s;
+            if (ata_pio_read(base_lba, (uint8_t)batch, bulk) < 0)
                 return -1;
-
-            for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
-                fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
-
-                if (de->name[0] == 0x00) {
-                    if (free_lba && *free_lba == 0) {
-                        *free_lba = lba;
-                        *free_off = (uint16_t)off;
-                    }
-                    return -1;
-                }
-                if (de->name[0] == 0xE5) {
-                    if (free_lba && *free_lba == 0) {
-                        *free_lba = lba;
-                        *free_off = (uint16_t)off;
-                    }
-                    continue;
-                }
-                if (de->attr == FAT16_ATTR_LFN)
-                    continue;
-                if (de->attr & FAT16_ATTR_VOLUMEID)
-                    continue;
-
-                if (memcmp(de->name, name83, 11) == 0) {
-                    if (out)
-                        *out = *de;
-                    if (out_lba)
-                        *out_lba = lba;
-                    if (out_off)
-                        *out_off = (uint16_t)off;
-                    return 0;
-                }
+            for (uint32_t b = 0; b < batch; b++) {
+                int rc = fat16_scan_dir_sector(
+                    bulk + b * FAT16_SECTOR_SIZE, base_lba + b,
+                    name83, out, out_lba, out_off, free_lba, free_off);
+                if (rc == 1) return 0;   // found
+                if (rc == -1) return -1;  // end of dir
             }
+            s += batch;
         }
     } else {
-        // Subdirectory: follow cluster chain
+        // Subdirectory: follow cluster chain, bulk-read entire cluster
+        uint8_t cbuf[FAT16_SECTOR_SIZE * 8]; // up to 8 sectors per cluster
+        int can_bulk = (g_fat.sectors_per_cluster <= 8);
         uint16_t cl = dir.cluster;
         while (cl >= 2 && cl < 0xFFF8) {
-            for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
-                uint32_t lba = cluster_to_lba(cl) + s;
-                if (ata_read_sector(lba, sec) < 0)
+            uint32_t base_lba = cluster_to_lba(cl);
+            if (can_bulk) {
+                if (ata_pio_read(base_lba, g_fat.sectors_per_cluster, cbuf) < 0)
                     return -1;
-
-                for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
-                    fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
-
-                    if (de->name[0] == 0x00) {
-                        if (free_lba && *free_lba == 0) {
-                            *free_lba = lba;
-                            *free_off = (uint16_t)off;
-                        }
+                for (uint8_t b = 0; b < g_fat.sectors_per_cluster; b++) {
+                    int rc = fat16_scan_dir_sector(
+                        cbuf + b * FAT16_SECTOR_SIZE, base_lba + b,
+                        name83, out, out_lba, out_off, free_lba, free_off);
+                    if (rc == 1) return 0;
+                    if (rc == -1) return -1;
+                }
+            } else {
+                uint8_t sec[FAT16_SECTOR_SIZE];
+                for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
+                    if (ata_read_sector(base_lba + s, sec) < 0)
                         return -1;
-                    }
-                    if (de->name[0] == 0xE5) {
-                        if (free_lba && *free_lba == 0) {
-                            *free_lba = lba;
-                            *free_off = (uint16_t)off;
-                        }
-                        continue;
-                    }
-                    if (de->attr == FAT16_ATTR_LFN)
-                        continue;
-                    if (de->attr & FAT16_ATTR_VOLUMEID)
-                        continue;
-
-                    if (memcmp(de->name, name83, 11) == 0) {
-                        if (out)
-                            *out = *de;
-                        if (out_lba)
-                            *out_lba = lba;
-                        if (out_off)
-                            *out_off = (uint16_t)off;
-                        return 0;
-                    }
+                    int rc = fat16_scan_dir_sector(
+                        sec, base_lba + s,
+                        name83, out, out_lba, out_off, free_lba, free_off);
+                    if (rc == 1) return 0;
+                    if (rc == -1) return -1;
                 }
             }
             cl = fat16_get_entry(cl);
@@ -542,6 +594,9 @@ static int fat16_update_dirent(fat16_open_t *f) {
     return 0;
 }
 
+// Read from a cluster chain. Uses multi-sector ATA reads when possible:
+// reads an entire cluster (sectors_per_cluster sectors) in one ATA command
+// instead of one sector at a time.
 static int fat16_read_file(uint16_t first_cluster, uint32_t pos, void *buf,
                            uint32_t len) {
     if (len == 0)
@@ -565,27 +620,50 @@ static int fat16_read_file(uint16_t first_cluster, uint32_t pos, void *buf,
     }
 
     uint32_t done = 0;
-    uint8_t sec[FAT16_SECTOR_SIZE];
+    // Cluster buffer for multi-sector reads (max 64 sectors/cluster = 32KB,
+    // but typical is 1-8 sectors). Stack buffer for small clusters, else
+    // fall back to per-sector reads.
+    uint8_t cluster_buf[FAT16_SECTOR_SIZE * 8]; // up to 4KB cluster
+    int can_bulk = (g_fat.sectors_per_cluster <= 8);
+
     while (done < len && cl >= 2 && cl < 0xFFF8) {
-        for (uint8_t s = 0; s < g_fat.sectors_per_cluster && done < len; s++) {
-            uint32_t sector_off = (uint32_t)s * FAT16_SECTOR_SIZE;
-            uint32_t lba = cluster_to_lba(cl) + s;
-            if (ata_read_sector(lba, sec) < 0)
+        uint32_t lba = cluster_to_lba(cl);
+
+        if (can_bulk && in_cluster == 0 && (len - done) >= cluster_size) {
+            // Fast path: read entire cluster directly into output buffer
+            if (ata_pio_read(lba, g_fat.sectors_per_cluster, out + done) < 0)
                 return (int)done;
-
-            if (in_cluster >= sector_off + FAT16_SECTOR_SIZE) {
-                continue;
-            }
-
-            uint32_t start = 0;
-            if (in_cluster > sector_off)
-                start = in_cluster - sector_off;
-            uint32_t avail = FAT16_SECTOR_SIZE - start;
+            done += cluster_size;
+        } else if (can_bulk) {
+            // Partial cluster: bulk read into temp buffer, copy needed portion
+            if (ata_pio_read(lba, g_fat.sectors_per_cluster, cluster_buf) < 0)
+                return (int)done;
+            uint32_t avail = cluster_size - in_cluster;
             uint32_t need = len - done;
             uint32_t take = (avail < need) ? avail : need;
-
-            memcpy(out + done, sec + start, take);
+            memcpy(out + done, cluster_buf + in_cluster, take);
             done += take;
+        } else {
+            // Large cluster: read sector by sector (rare)
+            for (uint8_t s = 0; s < g_fat.sectors_per_cluster && done < len;
+                 s++) {
+                uint32_t sector_off = (uint32_t)s * FAT16_SECTOR_SIZE;
+                if (in_cluster >= sector_off + FAT16_SECTOR_SIZE)
+                    continue;
+
+                uint8_t sec[FAT16_SECTOR_SIZE];
+                if (ata_read_sector(lba + s, sec) < 0)
+                    return (int)done;
+
+                uint32_t start = 0;
+                if (in_cluster > sector_off)
+                    start = in_cluster - sector_off;
+                uint32_t avail = FAT16_SECTOR_SIZE - start;
+                uint32_t need = len - done;
+                uint32_t take = (avail < need) ? avail : need;
+                memcpy(out + done, sec + start, take);
+                done += take;
+            }
         }
         in_cluster = 0;
         cl = fat16_get_entry(cl);
@@ -851,48 +929,72 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
     if (fat16_resolve_dir(path, &dir) < 0)
         return 0;
 
-    uint8_t sec[FAT16_SECTOR_SIZE];
     int vis = 0;
+    int is_subdir = (dir.cluster != 0);
 
     if (dir.cluster == 0) {
-        // Root directory
-        for (uint32_t s = 0; s < g_fat.root_dir_sectors; s++) {
-            if (ata_read_sector(g_fat.root_start_lba + s, sec) < 0)
+        // Root directory — bulk-read sectors
+        uint8_t bulk[FAT16_SECTOR_SIZE * 8];
+        uint32_t s = 0;
+        while (s < g_fat.root_dir_sectors) {
+            uint32_t batch = g_fat.root_dir_sectors - s;
+            if (batch > 8) batch = 8;
+            if (ata_pio_read(g_fat.root_start_lba + s, (uint8_t)batch, bulk) <
+                0)
                 return 0;
-
-            for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
-                fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
-                if (de->name[0] == 0x00)
-                    return 0;
-                if (de->name[0] == 0xE5)
-                    continue;
-                if (de->attr == FAT16_ATTR_LFN)
-                    continue;
-                if (de->attr & FAT16_ATTR_VOLUMEID)
-                    continue;
-
-                if (vis == index) {
-                    char name[13];
-                    fat16_dirent_name_to_string(de, name);
-                    size_t n = strlen(name);
-                    if (n >= size)
-                        n = size - 1;
-                    memcpy(buf, name, n);
-                    buf[n] = '\0';
-                    return (int)(n + 1);
+            for (uint32_t b = 0; b < batch; b++) {
+                uint8_t *sec = bulk + b * FAT16_SECTOR_SIZE;
+                for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
+                    fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
+                    if (de->name[0] == 0x00)
+                        return 0;
+                    if (de->name[0] == 0xE5)
+                        continue;
+                    if (de->attr == FAT16_ATTR_LFN)
+                        continue;
+                    if (de->attr & FAT16_ATTR_VOLUMEID)
+                        continue;
+                    if (vis == index) {
+                        char name[13];
+                        fat16_dirent_name_to_string(de, name);
+                        size_t n = strlen(name);
+                        if (n >= size) n = size - 1;
+                        memcpy(buf, name, n);
+                        buf[n] = '\0';
+                        return (int)(n + 1);
+                    }
+                    vis++;
                 }
-                vis++;
             }
+            s += batch;
         }
     } else {
-        // Subdirectory: follow cluster chain
+        // Subdirectory: follow cluster chain, bulk-read
+        uint8_t cbuf[FAT16_SECTOR_SIZE * 8];
+        int can_bulk = (g_fat.sectors_per_cluster <= 8);
         uint16_t cl = dir.cluster;
         while (cl >= 2 && cl < 0xFFF8) {
-            for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
-                uint32_t lba = cluster_to_lba(cl) + s;
-                if (ata_read_sector(lba, sec) < 0)
-                    return 0;
+            uint32_t base_lba = cluster_to_lba(cl);
+            uint8_t *data;
+            uint8_t sec_single[FAT16_SECTOR_SIZE];
 
+            if (can_bulk) {
+                if (ata_pio_read(base_lba, g_fat.sectors_per_cluster, cbuf) < 0)
+                    return 0;
+                data = cbuf;
+            } else {
+                data = NULL; // fall through to per-sector below
+            }
+
+            for (uint8_t s = 0; s < g_fat.sectors_per_cluster; s++) {
+                uint8_t *sec;
+                if (can_bulk) {
+                    sec = data + s * FAT16_SECTOR_SIZE;
+                } else {
+                    if (ata_read_sector(base_lba + s, sec_single) < 0)
+                        return 0;
+                    sec = sec_single;
+                }
                 for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
                     fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
                     if (de->name[0] == 0x00)
@@ -904,18 +1006,18 @@ static int fat16_vfs_readdir(const char *path, int index, char *buf,
                     if (de->attr & FAT16_ATTR_VOLUMEID)
                         continue;
                     // Skip '.' and '..' in subdirectory listings
-                    if (de->name[0] == '.' && de->name[1] == ' ')
-                        continue;
-                    if (de->name[0] == '.' && de->name[1] == '.' &&
-                        de->name[2] == ' ')
-                        continue;
-
+                    if (is_subdir) {
+                        if (de->name[0] == '.' && de->name[1] == ' ')
+                            continue;
+                        if (de->name[0] == '.' && de->name[1] == '.' &&
+                            de->name[2] == ' ')
+                            continue;
+                    }
                     if (vis == index) {
                         char name[13];
                         fat16_dirent_name_to_string(de, name);
                         size_t n = strlen(name);
-                        if (n >= size)
-                            n = size - 1;
+                        if (n >= size) n = size - 1;
                         memcpy(buf, name, n);
                         buf[n] = '\0';
                         return (int)(n + 1);
@@ -1167,6 +1269,7 @@ static int fat16_try_mount_at(uint32_t part_lba) {
 int fat16_init(void) {
     memset(&g_fat, 0, sizeof(g_fat));
     memset(g_open, 0, sizeof(g_open));
+    fat_cache_invalidate();
 
     if (ata_pio_init() < 0) {
         printf("[fat16] ATA PIO disk not found\n");

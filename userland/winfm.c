@@ -40,6 +40,7 @@
 static unsigned char buf[W * H];
 static char files[MAX_FILES][NAME_MAX];
 static char all_files[MAX_FILES][NAME_MAX];
+static int file_is_dir[MAX_FILES]; // 1 = directory, 0 = file
 static char ext_filters[MAX_EXTS][EXT_MAX];
 static int file_count = 0;
 static int all_count = 0;
@@ -49,7 +50,9 @@ static int ext_filter_idx = 0; // 0=all, 1..N from ext_filters
 static int selected = 0;
 static int view_first = 0;
 static int wid = -1;
-static char status[80] = "Arrows/WASD Move  [/ ] Page  Enter Open  Del Delete  "
+static char cwd[128] = "/";
+static char title[64] = "File Manager - /";
+static char status[80] = "Arrows Move  Enter Open  Bksp Up  "
                          "F Filter  R Refresh  Q Quit";
 
 static void ensure_selected_visible(void);
@@ -155,12 +158,15 @@ static int filter_match(const char *name) {
     return strcmp(tok, ext_filters[ext_filter_idx - 1]) == 0;
 }
 
+static int vis_is_dir[MAX_FILES]; // parallel to files[]
+
 static void rebuild_visible_files(void) {
     file_count = 0;
     for (int i = 0; i < all_count && file_count < MAX_FILES; i++) {
         if (!filter_match(all_files[i]))
             continue;
         copy_name(files[file_count], all_files[i], NAME_MAX);
+        vis_is_dir[file_count] = file_is_dir[i];
         file_count++;
     }
     if (selected >= file_count)
@@ -232,7 +238,8 @@ static const unsigned short *icon_bitmap_for_name(const char *name) {
     return glyph_file;
 }
 
-static void draw_file_icon(int x, int y, int selected_cell, const char *name) {
+static void draw_file_icon(int x, int y, int selected_cell, const char *name,
+                           int is_dir) {
     if (selected_cell) {
         ugfx_buf_rect(buf, W, H, x + 2, y + 2, CELL_W - 4, CELL_H - 4,
                       COL_SEL_BG);
@@ -245,7 +252,7 @@ static void draw_file_icon(int x, int y, int selected_cell, const char *name) {
 
     int ix = x + (CELL_W - 24) / 2;
     int iy = y + 7;
-    unsigned char icon_fill = icon_color_for_name(name);
+    unsigned char icon_fill = is_dir ? 11 : icon_color_for_name(name);
     ugfx_buf_rect(buf, W, H, ix + 1, iy + 1, 24, 18,
                   selected_cell ? 233 : COL_DARK);
     ugfx_buf_rect(buf, W, H, ix, iy, 24, 18, icon_fill);
@@ -255,9 +262,8 @@ static void draw_file_icon(int x, int y, int selected_cell, const char *name) {
     ugfx_buf_hline(buf, W, H, ix, iy + 17, 24, COL_DARK);
     buf_vline(ix, iy, 18, COL_LIGHT);
     buf_vline(ix + 23, iy, 18, COL_DARK);
-    if (str_ends_with(name, ".dir") || strcmp(name, ".") == 0 ||
-        strcmp(name, "..") == 0) {
-        draw_bitmap16(ix + 4, iy + 1, glyph_folder, icon_fill);
+    if (is_dir) {
+        draw_bitmap16(ix + 4, iy + 1, glyph_folder, 3); // yellow folder
     } else {
         draw_bitmap16(ix + 4, iy + 1, icon_bitmap_for_name(name), icon_fill);
     }
@@ -320,6 +326,20 @@ static void ensure_selected_visible(void) {
     }
 }
 
+static void update_title(void) {
+    int p = 0;
+    const char *pre = "File Manager - ";
+    while (pre[p] && p < (int)sizeof(title) - 2) {
+        title[p] = pre[p];
+        p++;
+    }
+    int ci = 0;
+    while (cwd[ci] && p < (int)sizeof(title) - 1) {
+        title[p++] = cwd[ci++];
+    }
+    title[p] = '\0';
+}
+
 static void load_files(void) {
     all_count = 0;
     file_total = 0;
@@ -329,12 +349,19 @@ static void load_files(void) {
     while (readdir((unsigned int)i, name, sizeof(name)) > 0) {
         if (all_count < MAX_FILES) {
             copy_name(all_files[all_count], name, NAME_MAX);
+            // Check if entry is a directory using stat()
+            stat_t st;
+            file_is_dir[all_count] = 0;
+            if (stat(name, &st) == 0 && st.type == 1) {
+                file_is_dir[all_count] = 1;
+            }
             all_count++;
         }
         i++;
     }
     file_total = i;
 
+    update_title();
     rebuild_ext_filters();
     rebuild_visible_files();
 }
@@ -371,8 +398,7 @@ static void redraw(void) {
 
     ugfx_buf_rect(buf, W, H, 0, 0, W, TOPBAR_H, COL_TITLE);
     ugfx_buf_hline(buf, W, H, 0, 1, W, COL_TITLE_BAR2);
-    ugfx_buf_string(buf, W, H, 6, 4, "Program Manager - File Manager",
-                    COL_TITLE_TXT);
+    ugfx_buf_string(buf, W, H, 6, 4, title, COL_TITLE_TXT);
 
     draw_bevel(4, TOPBAR_H + 2, W - 8, H - TOPBAR_H - STATUS_H - 6);
 
@@ -392,7 +418,7 @@ static void redraw(void) {
         int col = local % cols;
         int x = area_x + col * CELL_W;
         int y = area_y + row * CELL_H;
-        draw_file_icon(x, y, i == selected, files[i]);
+        draw_file_icon(x, y, i == selected, files[i], vis_is_dir[i]);
         shown++;
     }
 
@@ -449,7 +475,38 @@ static void page_selection(int delta_pages) {
     move_selection(delta_pages * page);
 }
 
-static void spawn_for_entry(const char *name) {
+static void navigate_to(const char *dir_name) {
+    if (chdir(dir_name) < 0) {
+        copy_status("Cannot enter directory");
+        return;
+    }
+    getcwd(cwd, sizeof(cwd));
+    selected = 0;
+    view_first = 0;
+    ext_filter_idx = 0;
+    load_files();
+}
+
+static void navigate_up(void) {
+    // Already at root?
+    if (strcmp(cwd, "/") == 0) {
+        copy_status("Already at /");
+        return;
+    }
+    navigate_to("..");
+}
+
+static void spawn_for_entry(int idx) {
+    if (idx < 0 || idx >= file_count)
+        return;
+    const char *name = files[idx];
+
+    // Directory: navigate into it
+    if (vis_is_dir[idx]) {
+        navigate_to(name);
+        return;
+    }
+
     if (str_ends_with(name, ".elf") || str_ends_with(name, ".wlf")) {
         int pid = spawn(name);
         if (pid < 0) {
@@ -552,8 +609,10 @@ void _start(int argc, char **argv) {
             cycle_filter();
         } else if (k == '\n' || k == '\r') {
             if (file_count > 0)
-                spawn_for_entry(files[selected]);
+                spawn_for_entry(selected);
         } else if (k == 127 || k == '\b') {
+            navigate_up();
+        } else if (k == 'x' || k == 'X') {
             delete_selected();
         } else if (k == '[') {
             page_selection(-1);
