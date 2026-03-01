@@ -85,7 +85,7 @@ static int parse_u32_after(const char *s, const char *key, unsigned int *out) {
 
 static void refresh_mem_stats(void) {
     char mem[256];
-    int fd = open("kmeminfo.mos", O_RDONLY);
+    int fd = open("/proc/kmeminfo.mos", O_RDONLY);
     if (fd < 0)
         return;
     int n = fd_read(fd, mem, sizeof(mem) - 1);

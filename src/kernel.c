@@ -4,7 +4,6 @@
 #include "arch/arch.h"
 #include "boot/multiboot.h"
 #include "fs/fat16.h"
-#include "fs/ramfs.h"
 #include "fs/vfs.h"
 #include "io/console.h"
 #include "io/keyboard.h"
@@ -103,48 +102,11 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     if (!ram_top)
         ram_top = 0x2000000u; // Fallback: 32MB
 
-    // Initialize physical memory manager early (needed to relocate initrd)
+    // Initialize physical memory manager
     pmm_init(ram_top);
     kprintf("[boot] pmm init ok — %d MB RAM, %d frames (0x%x-0x%x)\n",
             ram_top / (1024 * 1024), PMM_FRAME_COUNT, PMM_START, PMM_END);
 
-    // Initialize ramfs from initrd module.
-    // The initrd may overlap the kernel heap (phys 0x400000-0x600000).
-    // If so, copy it into PMM frames first so ramfs pointers stay valid.
-    multiboot_module_t *initrd = multiboot_get_initrd();
-    if (initrd) {
-        uint32_t initrd_start = initrd->mod_start;
-        uint32_t initrd_size = initrd->mod_end - initrd->mod_start;
-
-        // Reserve original initrd region in PMM so it isn't allocated
-        pmm_reserve_region(initrd_start, initrd_size);
-        kprintf("[boot] pmm reserved initrd: 0x%x-0x%x\n", initrd_start,
-                initrd_start + initrd_size);
-
-        // Compare against physical heap address (initrd is at physical addrs)
-        if (initrd_start + initrd_size > KVIRT_TO_PHYS(KERNEL_HEAP_START)) {
-            // Initrd overlaps heap — relocate to PMM frames
-            uint32_t nframes = (initrd_size + 0xFFF) / 0x1000;
-            uint32_t copy_base = pmm_alloc_frames(nframes);
-            if (copy_base) {
-                memcpy((void *)PHYS_TO_KVIRT(copy_base),
-                       (void *)PHYS_TO_KVIRT(initrd_start), initrd_size);
-                kprintf("[boot] initrd relocated: 0x%x -> 0x%x (%d bytes, %d "
-                        "frames)\n",
-                        initrd_start, copy_base, initrd_size, nframes);
-                ramfs_init((void *)PHYS_TO_KVIRT(copy_base), initrd_size);
-            } else {
-                kprintf("[boot] WARNING: failed to allocate %d frames for "
-                        "initrd copy\n",
-                        nframes);
-                ramfs_init((void *)PHYS_TO_KVIRT(initrd_start), initrd_size);
-            }
-        } else {
-            ramfs_init((void *)PHYS_TO_KVIRT(initrd_start), initrd_size);
-        }
-    } else {
-        ramfs_init(NULL, 0);
-    }
     printf("\n");
 
     keyboard_init_interrupts();
@@ -154,10 +116,6 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     rust_hello();
     printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
 
-    // NOTE: pmm_init() was already called above (line 94) before initrd
-    // relocation.  A second pmm_init() here would wipe the bitmap and
-    // free the frames that now hold the relocated initrd data, causing
-    // "invalid ELF" corruption when those frames get reused.
     // Scan PCI bus
     pci_init();
     kprintf("[boot] pci scan ok\n");
@@ -166,13 +124,17 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     net_init();
     kprintf("[boot] net init ok\n");
 
-    // Initialize VFS and register ramfs
+    // Initialize VFS and register FAT16 boot filesystem
     vfs_init();
     kprintf("[boot] vfs init ok\n");
-    vfs_register_fs(ramfs_get_ops());
-    if (fat16_init() == 0) {
-        vfs_register_fs(fat16_get_ops());
+    if (fat16_init() != 0) {
+        printf("FATAL: FAT16 boot disk not found. Cannot boot.\n");
+        printf("Ensure an IDE disk with FAT16 filesystem is attached.\n");
+        while (1)
+            halt_and_catch_fire();
     }
+    vfs_register_fs(fat16_get_ops());
+    kprintf("[boot] fat16 boot disk ok\n");
 
     // Initialize task system
     task_init();
@@ -210,31 +172,34 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     keyboard_buffer_init();
     keyboard_buffer_enable(1);
 
-    const char *boot_prog = "init.elf";
+    // Executables live in /bin/ on the FAT16 boot disk
+    const char *boot_prog = "bin/init.elf";
     char autorun_name[64];
     char autorun_prog[72];
     if (cmdline_get_value(cmdline, "autorun", autorun_name,
                           sizeof(autorun_name))) {
         memset(autorun_prog, 0, sizeof(autorun_prog));
+        // Prepend bin/ prefix for autorun programs
+        memcpy(autorun_prog, "bin/", 4);
         size_t n = strlen(autorun_name);
-        if (n >= sizeof(autorun_prog) - 1)
-            n = sizeof(autorun_prog) - 1;
-        memcpy(autorun_prog, autorun_name, n);
-        autorun_prog[n] = 0;
+        if (n >= sizeof(autorun_prog) - 5)
+            n = sizeof(autorun_prog) - 5;
+        memcpy(autorun_prog + 4, autorun_name, n);
+        autorun_prog[4 + n] = 0;
         if (!str_ends_with(autorun_prog, ".elf") &&
-            n + 4 < sizeof(autorun_prog)) {
-            memcpy(autorun_prog + n, ".elf", 5);
+            4 + n + 4 < sizeof(autorun_prog)) {
+            memcpy(autorun_prog + 4 + n, ".elf", 5);
         }
         boot_prog = autorun_prog;
         kprintf("[boot] autorun requested: %s\n", boot_prog);
     }
 
-    // Auto-launch boot program — loaded directly, no kernel trampoline
+    // Auto-launch boot program from FAT16 boot disk
     task_t *boot_task = task_create_user_elf(boot_prog, NULL, 0);
     if (boot_task) {
         task_enable();
     } else {
-        printf("WARNING: %s not found in ramfs\n", boot_prog);
+        printf("WARNING: %s not found on boot disk\n", boot_prog);
         printf("No boot program available. System halted.\n");
     }
 

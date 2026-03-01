@@ -15,8 +15,8 @@
 #ifndef CONFIG_TCCDIR
 #define CONFIG_TCCDIR "/"
 #endif
-#define CONFIG_TCC_CRTPREFIX "/"
-#define CONFIG_TCC_LIBPATHS "/"
+#define CONFIG_TCC_CRTPREFIX "/lib/"
+#define CONFIG_TCC_LIBPATHS "/lib/"
 #define CONFIG_TCC_SYSINCLUDEPATHS "/"
 #define CONFIG_TCC_ELFINTERP ""
 #define TCC_LIBTCC1 ""

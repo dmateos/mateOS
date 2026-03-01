@@ -456,22 +456,26 @@ static int vfile_version_read(uint32_t offset, void *buf, uint32_t len) {
 }
 
 void vfs_proc_register_files(void) {
-    vfs_register_virtual_file("kdebug.mos", vfile_kdebug_size,
+    // Virtual .mos files live under /proc/ in the VFS tree
+    vfs_register_virtual_file("proc/kdebug.mos", vfile_kdebug_size,
                               vfile_kdebug_read);
-    vfs_register_virtual_file("kmeminfo.mos", vfile_meminfo_size,
+    vfs_register_virtual_file("proc/kmeminfo.mos", vfile_meminfo_size,
                               vfile_meminfo_read);
-    vfs_register_virtual_file("kcpuinfo.mos", vfile_cpuinfo_size,
+    vfs_register_virtual_file("proc/kcpuinfo.mos", vfile_cpuinfo_size,
                               vfile_cpuinfo_read);
-    vfs_register_virtual_file("kirq.mos", vfile_lsirq_size, vfile_lsirq_read);
-    vfs_register_virtual_file("kpci.mos", vfile_pci_size, vfile_pci_read);
-    vfs_register_virtual_file("kuptime.mos", vfile_uptime_size,
+    vfs_register_virtual_file("proc/kirq.mos", vfile_lsirq_size,
+                              vfile_lsirq_read);
+    vfs_register_virtual_file("proc/kpci.mos", vfile_pci_size, vfile_pci_read);
+    vfs_register_virtual_file("proc/kuptime.mos", vfile_uptime_size,
                               vfile_uptime_read);
-    vfs_register_virtual_file("kwin.mos", vfile_windows_size,
+    vfs_register_virtual_file("proc/kwin.mos", vfile_windows_size,
                               vfile_windows_read);
-    vfs_register_virtual_file("kvfs.mos", vfile_vfs_size, vfile_vfs_read);
-    vfs_register_virtual_file("kheap.mos", vfile_heap_size, vfile_heap_read);
-    vfs_register_virtual_file("ktasks.mos", vfile_tasks_size, vfile_tasks_read);
-    vfs_register_virtual_file("knet.mos", vfile_net_size, vfile_net_read);
-    vfs_register_virtual_file("kversion.mos", vfile_version_size,
+    vfs_register_virtual_file("proc/kvfs.mos", vfile_vfs_size, vfile_vfs_read);
+    vfs_register_virtual_file("proc/kheap.mos", vfile_heap_size,
+                              vfile_heap_read);
+    vfs_register_virtual_file("proc/ktasks.mos", vfile_tasks_size,
+                              vfile_tasks_read);
+    vfs_register_virtual_file("proc/knet.mos", vfile_net_size, vfile_net_read);
+    vfs_register_virtual_file("proc/kversion.mos", vfile_version_size,
                               vfile_version_read);
 }

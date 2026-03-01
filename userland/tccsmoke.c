@@ -21,8 +21,8 @@ void _start(int argc, char **argv) {
     print("tccsmoke: start\n");
 
     {
-        const char *a[] = {"tcc.elf", "-v", 0};
-        int rc = run_prog_argv("tcc.elf", a, 2);
+        const char *a[] = {"bin/tcc.elf", "-v", 0};
+        int rc = run_prog_argv("bin/tcc.elf", a, 2);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc -v rc=");
             print_num(rc);
@@ -32,8 +32,8 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"tcc.elf", "-c", "test2.c", "-o", "tcc_ret.o", 0};
-        int rc = run_prog_argv("tcc.elf", a, 5);
+        const char *a[] = {"bin/tcc.elf", "-c", "test2.c", "-o", "tcc_ret.o", 0};
+        int rc = run_prog_argv("bin/tcc.elf", a, 5);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc -c test2.c rc=");
             print_num(rc);
@@ -55,8 +55,8 @@ void _start(int argc, char **argv) {
 
     // Test 3: full link (multi-file → executable)
     {
-        const char *a[] = {"tcc.elf", "t3a.c", "t3b.c", "-o", "t3.elf", 0};
-        int rc = run_prog_argv("tcc.elf", a, 5);
+        const char *a[] = {"bin/tcc.elf", "t3a.c", "t3b.c", "-o", "t3.elf", 0};
+        int rc = run_prog_argv("bin/tcc.elf", a, 5);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc link t3 rc=");
             print_num(rc);

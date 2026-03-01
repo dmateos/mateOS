@@ -22,17 +22,17 @@ void _start(int argc, char **argv) {
 
     print("init: boot sequence start\n");
 
-    spawn_service("httpd.elf");
+    spawn_service("bin/httpd.elf");
 
     for (;;) {
-        int shell_pid = spawn("shell.elf");
+        int shell_pid = spawn("bin/shell.elf");
         if (shell_pid < 0) {
-            print("init: failed to start shell.elf, retrying\n");
+            print("init: failed to start shell, retrying\n");
             sleep_ms(500);
             continue;
         }
 
-        print("init: started shell.elf pid=");
+        print("init: started shell pid=");
         print_num(shell_pid);
         print("\n");
 

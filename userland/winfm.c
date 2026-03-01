@@ -461,10 +461,10 @@ static void spawn_for_entry(const char *name) {
     }
 
     const char *argv[3];
-    argv[0] = "cat.elf";
+    argv[0] = "bin/cat.elf";
     argv[1] = name;
     argv[2] = 0;
-    int pid = spawn_argv("cat.elf", argv, 2);
+    int pid = spawn_argv("bin/cat.elf", argv, 2);
     if (pid < 0) {
         copy_status("cat spawn failed");
         return;

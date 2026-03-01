@@ -19,7 +19,7 @@ typedef enum {
 
 // Task Control Block
 #define TASK_NAME_MAX 32
-#define TASK_STACK_SIZE 4096
+#define TASK_STACK_SIZE 8192 // 8KB — FAT16 I/O uses 512-byte sector buffers on stack
 
 typedef struct task {
     uint32_t id;              // Task ID
@@ -75,7 +75,7 @@ void task_init(void);
 // Create a new kernel-mode task
 task_t *task_create(const char *name, void (*entry)(void));
 
-// Create a new user-mode task by loading an ELF from ramfs
+// Create a new user-mode task by loading an ELF from VFS
 // If argv/argc are provided, places them on the user stack for _start(argc,
 // argv). If argv==NULL or argc==0, defaults to argc=1 with argv={filename}.
 task_t *task_create_user_elf(const char *filename, const char **argv, int argc);

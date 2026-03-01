@@ -337,7 +337,7 @@ void _start(int argc_unused, char **argv_unused) {
         if (ac == 0)
             continue;
 
-        // Auto-append .elf for legacy CLI commands; fall back to .wlf.
+        // Resolve command to bin/<cmd>.elf, falling back to bin/<cmd>.wlf.
         char progname[64];
         const char *cmd = args[0];
         int cmdlen = 0;
@@ -349,27 +349,35 @@ void _start(int argc_unused, char **argv_unused) {
                         (cmd[cmdlen - 3] == 'w' && cmd[cmdlen - 2] == 'l' &&
                          cmd[cmdlen - 1] == 'f')));
         if (!has_ext) {
+            progname[0] = 'b';
+            progname[1] = 'i';
+            progname[2] = 'n';
+            progname[3] = '/';
             int i;
-            for (i = 0; i < 59 && cmd[i]; i++)
-                progname[i] = cmd[i];
-            progname[i++] = '.';
-            progname[i++] = 'e';
-            progname[i++] = 'l';
-            progname[i++] = 'f';
-            progname[i] = '\0';
+            for (i = 0; i < 55 && cmd[i]; i++)
+                progname[4 + i] = cmd[i];
+            progname[4 + i] = '.';
+            progname[5 + i] = 'e';
+            progname[6 + i] = 'l';
+            progname[7 + i] = 'f';
+            progname[8 + i] = '\0';
             args[0] = progname;
         }
 
         int child = spawn_argv(args[0], args, ac);
         if (child < 0 && !has_ext) {
             int i;
-            for (i = 0; i < 59 && cmd[i]; i++)
-                progname[i] = cmd[i];
-            progname[i++] = '.';
-            progname[i++] = 'w';
-            progname[i++] = 'l';
-            progname[i++] = 'f';
-            progname[i] = '\0';
+            progname[0] = 'b';
+            progname[1] = 'i';
+            progname[2] = 'n';
+            progname[3] = '/';
+            for (i = 0; i < 55 && cmd[i]; i++)
+                progname[4 + i] = cmd[i];
+            progname[4 + i] = '.';
+            progname[5 + i] = 'w';
+            progname[6 + i] = 'l';
+            progname[7 + i] = 'f';
+            progname[8 + i] = '\0';
             args[0] = progname;
             child = spawn_argv(args[0], args, ac);
         }

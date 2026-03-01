@@ -387,17 +387,17 @@ static int hit_rect(int x, int y, int rx, int ry, int rw, int rh) {
 }
 
 static void launch_term(void) {
-    int pid = spawn("winterm.wlf");
+    int pid = spawn("bin/winterm.wlf");
     (void)pid;
 }
 
 static void launch_files(void) {
-    int pid = spawn("winfm.wlf");
+    int pid = spawn("bin/winfm.wlf");
     (void)pid;
 }
 
 static void launch_tasks(void) {
-    int pid = spawn("wintask.wlf");
+    int pid = spawn("bin/wintask.wlf");
     (void)pid;
 }
 
@@ -493,7 +493,7 @@ static void draw_taskbar(void) {
 static void load_kversion_once(void) {
     if (g_kversion[0])
         return;
-    int fd = open("kversion.mos", O_RDONLY);
+    int fd = open("/proc/kversion.mos", O_RDONLY);
     if (fd < 0) {
         wm_strcpy(g_kversion, "mateOS", sizeof(g_kversion));
         return;
@@ -948,13 +948,13 @@ void _start(int argc, char **argv) {
     }
     z_count = 0;
 
-    int pid0 = spawn("winterm.wlf");
+    int pid0 = spawn("bin/winterm.wlf");
     if (pid0 >= 0) {
         slots[0].pid = pid0;
         wm_strcpy(slots[0].title, "Term 1", 32);
     }
 
-    int pid1 = spawn("winfm.wlf");
+    int pid1 = spawn("bin/winfm.wlf");
     if (pid1 >= 0) {
         slots[1].pid = pid1;
         wm_strcpy(slots[1].title, "FileMgr", 32);

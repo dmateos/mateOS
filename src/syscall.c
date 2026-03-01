@@ -1,6 +1,5 @@
 #include "syscall.h"
 #include "arch/arch.h"
-#include "fs/ramfs.h"
 #include "fs/vfs.h"
 #include "io/keyboard.h"
 #include "io/window.h"
@@ -310,7 +309,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
     return entry;
 }
 
-// Execute ELF binary from ramfs - replaces current process
+// Execute ELF binary from VFS - replaces current process
 static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     if (!filename)
         return -1;
@@ -473,7 +472,7 @@ static uint32_t sys_do_getkey(uint32_t flags __attribute__((unused))) {
     return (uint32_t)keyboard_buffer_pop();
 }
 
-// Spawn: create a child process from an ELF in ramfs.
+// Spawn: create a child process from an ELF via VFS.
 // If argv/argc are provided (argv != NULL, argc > 0), they are placed on
 // the child's stack. Otherwise defaults to argv={filename}, argc=1.
 // argv strings must be in the calling process's address space — they are
@@ -721,8 +720,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
         return sys_do_getkey(ebx);
 
     case SYS_SPAWN:
-        // Spawn uses filename as-is — ramfs is flat, programs live at root.
-        // Shell already appends .elf/.wlf; no cwd resolution needed.
+        // Spawn uses filename as-is — shell prepends bin/ and appends .elf/.wlf.
         if (!validate_user_string(ebx))
             return (uint32_t)-1;
         // Validate argv array if provided (ecx=argv, edx=argc)

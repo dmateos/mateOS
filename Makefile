@@ -10,11 +10,11 @@ ARCH = i686
 SRCDIR = src
 BUILDDIR = build
 TARGET = dmos.bin
-FAT16_IMG = fat16_test.img
+BOOT_IMG = boot.img
 DOOM_WAD = assets/DOOM1.WAD
 KERNEL_VERSION_FILE = $(SRCDIR)/version.h
 VERSION_MAJOR ?= 0
-VERSION_MINOR ?= 2
+VERSION_MINOR ?= 3
 VERSION_PATCH ?= 0
 VERSION_ABI ?= 2
 
@@ -69,8 +69,8 @@ SRC_LWIP_API = $(LWIP_DIR)/api/err.c
 SRC_LWIP = $(SRC_LWIP_CORE) $(SRC_LWIP_IPV4) $(SRC_LWIP_NETIF) $(SRC_LWIP_API)
 OBJ_LWIP = $(patsubst $(LWIP_DIR)/%.c,$(BUILDDIR)/lwip/%.o,$(SRC_LWIP))
 
-# Default target
-all: userland initrd $(KERNEL_VERSION_FILE) $(TARGET)
+# Default target — boot.img is always built (FAT16 boot disk)
+all: userland $(BOOT_IMG) $(KERNEL_VERSION_FILE) $(TARGET)
 
 # Build Rust library
 rust:
@@ -144,21 +144,20 @@ $(BUILDDIR)/lwip/%.o: $(LWIP_DIR)/%.c $(KERNEL_VERSION_FILE)
 userland:
 	@$(MAKE) -C userland
 
-INITRD_EXTRA =
-ifneq ($(wildcard $(DOOM_WAD)),)
-INITRD_EXTRA += $(DOOM_WAD)
-endif
-INITRD_EXTRA += userland/crt0.o userland/crt1.o userland/crti.o userland/crtn.o userland/cprint.o userland/libc.o userland/syscalls.o userland/libtiny.a userland/libc.a
-
-initrd.img:
-	@$(MAKE) -C userland
-	./tools/mkinitrd initrd.img userland/*.elf userland/*.wlf $(INITRD_EXTRA)
-
-initrd: initrd.img
+# Boot disk — FAT16 image with /bin/ (executables) and /lib/ (CRT/libc for TCC)
+$(BOOT_IMG): userland
+	python3 tools/mkfat16_test_disk.py $(BOOT_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),) \
+		$(if $(wildcard tests/cc/test.c),--add tests/cc/test.c,) \
+		$(if $(wildcard tests/cc/test2.c),--add tests/cc/test2.c,) \
+		$(if $(wildcard tests/cc/t3a.c),--add tests/cc/t3a.c,) \
+		$(if $(wildcard tests/cc/t3b.c),--add tests/cc/t3b.c,) \
+		$(if $(wildcard tests/cc/t4.c),--add tests/cc/t4.c,) \
+		--add-dir bin userland/*.elf userland/*.wlf \
+		--add-dir lib userland/crt0.o userland/crt1.o userland/crti.o userland/crtn.o userland/cprint.o userland/libc.o userland/syscalls.o userland/libtiny.a userland/libc.a
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)
-	rm -rf out.iso initrd.img $(KERNEL_VERSION_FILE)
+	rm -rf out.iso $(BOOT_IMG) $(KERNEL_VERSION_FILE)
 	@$(MAKE) -C userland clean
 	@cd rust && cargo clean 2>/dev/null || true
 
@@ -173,11 +172,9 @@ clean:
 #   make run GFX=1 NET=1 HTTP=1     # sdl + net + port fwd
 #   make run NET=tap                  # tap networking
 #   make run VNC=1 NET=1 HTTP=1     # vnc + net + port fwd
-#   make run FAT16=1                  # attach FAT16 test disk
-#   make run GFX=1 NET=1 FAT16=1      # combine options
 
 QEMU = qemu-system-i386
-QEMU_BASE = -kernel $(TARGET) -initrd initrd.img -no-reboot
+QEMU_BASE = -kernel $(TARGET) -drive file=$(BOOT_IMG),format=raw,if=ide -no-reboot
 
 ifdef VNC
   QEMU_DISPLAY = -display vnc=:0 -vga std
@@ -199,42 +196,21 @@ else
   QEMU_NET =
 endif
 
-RUN_DEPS = $(TARGET) initrd.img
-ifdef FAT16
-  QEMU_DISK = -drive file=$(FAT16_IMG),format=raw,if=ide
-  RUN_DEPS += $(FAT16_IMG)
-else
-  QEMU_DISK =
-endif
+RUN_DEPS = $(TARGET) $(BOOT_IMG)
 
 run: $(RUN_DEPS)
 ifdef VNC
 	@echo "VNC server on :0 (port 5900) - connect with a VNC client"
 endif
-	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET) $(QEMU_DISK)
+	$(QEMU) $(QEMU_DISPLAY) $(QEMU_BASE) $(QEMU_NET)
 
-$(FAT16_IMG):
-	python3 tools/mkfat16_test_disk.py $(FAT16_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),) \
-		$(if $(wildcard tests/cc/test.c),--add tests/cc/test.c,) \
-		$(if $(wildcard tests/cc/test2.c),--add tests/cc/test2.c,) \
-		$(if $(wildcard tests/cc/t3a.c),--add tests/cc/t3a.c,) \
-		$(if $(wildcard tests/cc/t3b.c),--add tests/cc/t3b.c,) \
-		$(if $(wildcard tests/cc/t4.c),--add tests/cc/t4.c,)
-
-fat16img: $(FAT16_IMG)
-
-run-fat16:
-	$(MAKE) run FAT16=1
-
-cc-smoke: $(TARGET) initrd $(FAT16_IMG)
-	@$(MAKE) -B initrd.img
-	@$(MAKE) -B $(FAT16_IMG)
+cc-smoke: $(TARGET) $(BOOT_IMG)
+	@$(MAKE) -B $(BOOT_IMG)
 	@echo "Running compiler smoke test in QEMU (autorun=cctest)..."
 	@log=".cc-smoke.log"; \
 	rm -f "$$log"; \
 	$(QEMU) -display none -serial stdio \
-		-kernel $(TARGET) -initrd initrd.img -no-reboot \
-		-drive file=$(FAT16_IMG),format=raw,if=ide \
+		$(QEMU_BASE) \
 		-append "autorun=cctest serial=1" \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		> "$$log" 2>&1; \
@@ -247,15 +223,13 @@ cc-smoke: $(TARGET) initrd $(FAT16_IMG)
 	tail -n 80 "$$log"; \
 	exit 1
 
-cc-symbol-smoke: $(TARGET) initrd $(FAT16_IMG)
-	@$(MAKE) -B initrd.img
-	@$(MAKE) -B $(FAT16_IMG)
+cc-symbol-smoke: $(TARGET) $(BOOT_IMG)
+	@$(MAKE) -B $(BOOT_IMG)
 	@echo "Running cc symbol smoke test in QEMU (autorun=ccsymtest)..."
 	@log=".cc-symbol-smoke.log"; \
 	rm -f "$$log"; \
 	$(QEMU) -display none -serial stdio \
-		-kernel $(TARGET) -initrd initrd.img -no-reboot \
-		-drive file=$(FAT16_IMG),format=raw,if=ide \
+		$(QEMU_BASE) \
 		-append "autorun=ccsymtest serial=1" \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		> "$$log" 2>&1; \
@@ -268,15 +242,13 @@ cc-symbol-smoke: $(TARGET) initrd $(FAT16_IMG)
 	tail -n 80 "$$log"; \
 	exit 1
 
-tcc-smoke: $(TARGET) initrd $(FAT16_IMG)
-	@$(MAKE) -B initrd.img
-	@$(MAKE) -B $(FAT16_IMG)
+tcc-smoke: $(TARGET) $(BOOT_IMG)
+	@$(MAKE) -B $(BOOT_IMG)
 	@echo "Running TinyCC smoke test in QEMU (autorun=tccsmoke)..."
 	@log=".tcc-smoke.log"; \
 	rm -f "$$log"; \
 	$(QEMU) -display none -serial stdio \
-		-kernel $(TARGET) -initrd initrd.img -no-reboot \
-		-drive file=$(FAT16_IMG),format=raw,if=ide \
+		$(QEMU_BASE) \
 		-append "autorun=tccsmoke serial=1" \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		> "$$log" 2>&1; \
@@ -289,14 +261,14 @@ tcc-smoke: $(TARGET) initrd $(FAT16_IMG)
 	tail -n 100 "$$log"; \
 	exit 1
 
-doom-smoke: $(TARGET) initrd
+doom-smoke: $(TARGET) $(BOOT_IMG)
 	@$(MAKE) -C userland doom.elf
-	@./tools/mkinitrd initrd.img userland/*.elf userland/*.wlf $(INITRD_EXTRA)
+	@$(MAKE) -B $(BOOT_IMG)
 	@echo "Running Doom startup smoke test in QEMU (autorun=doom)..."
 	@log=".doom-smoke.log"; \
 	rm -f "$$log"; \
 	timeout 30s $(QEMU) -display none -serial stdio \
-		-kernel $(TARGET) -initrd initrd.img -no-reboot \
+		$(QEMU_BASE) \
 		-append "autorun=doom serial=1" \
 		-device isa-debug-exit,iobase=0xf4,iosize=0x04 \
 		> "$$log" 2>&1; \
@@ -332,4 +304,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run run-fat16 fat16img cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland initrd tinycc-phase1
+.PHONY: clean rust run cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland tinycc-phase1

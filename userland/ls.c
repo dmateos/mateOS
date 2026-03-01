@@ -28,19 +28,29 @@ static void swap_names(char a[32], char b[32]) {
     memcpy(b, t, sizeof(t));
 }
 
-static int max_name_len(char names[][32], int count) {
+static void swap_types(int *a, int *b) {
+    int t = *a;
+    *a = *b;
+    *b = t;
+}
+
+static int max_name_len(char names[][32], int types[], int count) {
     int max = 0;
     for (int i = 0; i < count; i++) {
         int n = strlen(names[i]);
+        if (types[i])
+            n++; // account for trailing '/'
         if (n > max)
             max = n;
     }
     return max;
 }
 
-static void print_padded(const char *s, int width) {
-    int n = strlen(s);
+static void print_padded(const char *s, int extra, int width) {
+    int n = strlen(s) + extra;
     print(s);
+    if (extra)
+        print("/");
     for (int i = n; i < width; i++)
         print(" ");
 }
@@ -58,18 +68,35 @@ void _start(int argc, char **argv) {
     }
 
     char names[256][32];
+    int types[256]; // 0=file, 1=dir
     int count = 0;
 
     if (path) {
         // List a specific directory
         while (count < 256 &&
                readdir_path(path, (unsigned int)count, names[count]) > 0) {
+            // Build full path for stat
+            char fullpath[96];
+            int pi = 0;
+            for (int j = 0; path[j] && pi < 90; j++)
+                fullpath[pi++] = path[j];
+            if (pi > 0 && fullpath[pi - 1] != '/')
+                fullpath[pi++] = '/';
+            for (int j = 0; names[count][j] && pi < 95; j++)
+                fullpath[pi++] = names[count][j];
+            fullpath[pi] = '\0';
+
+            stat_t st;
+            types[count] = (stat(fullpath, &st) == 0 && st.type == 1) ? 1 : 0;
             count++;
         }
     } else {
         // List current working directory (uses cwd via kernel)
         while (count < 256 && readdir((unsigned int)count, names[count],
                                       sizeof(names[count])) > 0) {
+            stat_t st;
+            types[count] =
+                (stat(names[count], &st) == 0 && st.type == 1) ? 1 : 0;
             count++;
         }
     }
@@ -80,12 +107,13 @@ void _start(int argc, char **argv) {
                            : cmp_alpha(names[i], names[j]);
             if (c > 0) {
                 swap_names(names[i], names[j]);
+                swap_types(&types[i], &types[j]);
             }
         }
     }
 
     if (count > 0) {
-        int name_w = max_name_len(names, count) + 2;
+        int name_w = max_name_len(names, types, count) + 2;
         if (name_w < 12)
             name_w = 12;
         if (name_w > 30)
@@ -104,10 +132,13 @@ void _start(int argc, char **argv) {
                 int idx = c * rows + r; // Fill columns vertically.
                 if (idx >= count)
                     continue;
-                if (c == cols - 1)
+                if (c == cols - 1) {
                     print(names[idx]);
-                else
-                    print_padded(names[idx], name_w);
+                    if (types[idx])
+                        print("/");
+                } else {
+                    print_padded(names[idx], types[idx], name_w);
+                }
             }
             print("\n");
         }

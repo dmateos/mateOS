@@ -13,7 +13,7 @@
 #define SYS_GETKEY 7   // getkey(flags) - read key from buffer
 #define SYS_SPAWN 8    // spawn(filename) - create child process from ELF
 #define SYS_WAIT 9     // wait(task_id) - block until child exits
-#define SYS_READDIR 10 // readdir(index, buf, size) - read ramfs directory entry
+#define SYS_READDIR 10 // readdir(index, buf, size) - read directory entry
 #define SYS_GETPID 11  // getpid() - get current task ID
 #define SYS_TASKINFO 12    // taskinfo() - print task list to console
 #define SYS_SHUTDOWN 13    // shutdown() - power off the machine
@@ -72,7 +72,7 @@ typedef struct {
 // Initialize syscall handler (registers int 0x80)
 void syscall_init(void);
 
-// Load ELF from ramfs into a page directory. Returns entry point, or 0 on
+// Load ELF from VFS into a page directory. Returns entry point, or 0 on
 // error. If stack_phys_out is non-NULL, stores the physical address of the user
 // stack page. If user_end_out is non-NULL, stores the first unmapped byte above
 // loaded PT_LOAD segments.

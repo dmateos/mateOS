@@ -36,7 +36,7 @@ Inspired by experimenting with a simple OS on the 6502.
 - **Process detach** - GUI apps call `detach()` to release from parent's wait
 - **Process kill** - `kill(pid)` terminates any task by PID
 - **Process Isolation** - Child processes run in separate address spaces, parent memory is never touched
-- **ELF Loader** - Loads ELF32 binaries from ramfs into per-process physical frames
+- **ELF Loader** - Loads ELF32 binaries from FAT16 boot disk into per-process physical frames
 - **Exit Codes** - Processes return exit codes to their parent via wait()
 
 ### Networking
@@ -65,12 +65,11 @@ Inspired by experimenting with a simple OS on the 6502.
 
 ### Filesystem
 - **Virtual File System (VFS)** - Abstraction layer supporting multiple filesystem backends
-- **Ramfs** - In-memory filesystem loaded from multiboot initrd module
-- **FAT16** - Read/write FAT16 on IDE disk with MBR partition detection, cluster allocation, file create/delete
-- **Virtual OS Files** - Synthetic `.mos` files exposing runtime system info (cpuinfo, meminfo, lsirq, pci, kdebug, version)
+- **FAT16 Boot Disk** - Boots from FAT16 IDE disk with subdirectories (`/bin/` for executables, `/lib/` for CRT/libc), cluster allocation, file create/delete
+- **Virtual OS Files** - Synthetic `.mos` files under `/proc/` exposing runtime system info (cpuinfo, meminfo, lsirq, pci, kdebug, version)
 - **Per-Process File Descriptors** - Each task has its own FD table (16 max)
 - **File I/O Syscalls** - open, read, write, close, seek, stat, unlink
-- **Initrd Tool** - `tools/mkinitrd` packs `.elf` and `.wlf` binaries into a bootable initrd image
+- **Directory Support** - mkdir, rmdir, chdir, getcwd, readdir with nested path resolution
 
 ### User Mode Support
 - **TSS (Task State Segment)** - Kernel stack switching on ring transitions
@@ -108,8 +107,7 @@ Inspired by experimenting with a simple OS on the 6502.
 
 ```bash
 make userland                # Build all userland programs
-make initrd                  # Build userland + pack into initrd.img
-make                         # Build kernel (dmos.bin)
+make                         # Build kernel (dmos.bin) + FAT16 boot disk (boot.img)
 make run                     # Run in QEMU (text mode)
 make cc-smoke                # Headless compiler smoke test (autorun cctest)
 ```
@@ -117,7 +115,7 @@ make cc-smoke                # Headless compiler smoke test (autorun cctest)
 ### Kernel Versioning
 
 - Kernel build generates `src/version.h` automatically from `tools/gen_version_header.sh`.
-- Runtime version is exposed as `/kversion.mos` (e.g. `cat kversion.mos`).
+- Runtime version is exposed as `/proc/kversion.mos` (e.g. `cat /proc/kversion.mos`).
 - Boot log prints version, ABI, and build timestamp.
 - Version fields can be overridden at build time:
 
@@ -126,7 +124,7 @@ make VERSION_MAJOR=0 VERSION_MINOR=3 VERSION_PATCH=0 VERSION_ABI=3
 ```
 
 ```bash
-make clean                   # Clean everything (kernel + userland + initrd)
+make clean                   # Clean everything (kernel + userland + boot.img)
 ```
 
 ### Running with QEMU
@@ -140,7 +138,6 @@ make run VNC=1                    # VNC display (connect to port 5900)
 make run NET=1                    # User-mode networking
 make run NET=tap                  # TAP networking
 make run NET=1 HTTP=1             # Networking + port forward 8080->80
-make run FAT16=1                  # Attach FAT16 disk image
 make run GFX=1 NET=1 HTTP=1      # Graphics + networking + HTTP
 make cc-smoke                     # Headless compiler smoke test
 make doom-smoke                   # Headless DOOM startup smoke test
@@ -152,7 +149,6 @@ Flags can be combined freely:
 - **NET=1** - QEMU user-mode networking with RTL8139
 - **NET=tap** - TAP networking with RTL8139
 - **HTTP=1** - Port forward host 8080 to guest 80 (use with NET=1)
-- **FAT16=1** - Attach `fat16_test.img` as IDE secondary disk
 
 ### Testing the HTTP Server
 
@@ -178,7 +174,7 @@ The shell runs as a Ring 3 user process (`shell.elf`) under the default userland
 **File extensions:**
 - `.elf` — CLI programs (shell, ls, cat, ping, etc.)
 - `.wlf` — Window/GUI programs (winterm, winfm, wintask, winhello, wintempleos, etc.)
-- `.mos` — Virtual OS interface files (cpuinfo, meminfo, lsirq, pci, kdebug)
+- `.mos` — Virtual OS interface files under `/proc/` (cpuinfo, meminfo, lsirq, pci, kdebug)
 
 ### Built-in Commands
 
@@ -191,7 +187,7 @@ The shell runs as a Ring 3 user process (`shell.elf`) under the default userland
 
 These are separate ELF binaries invoked by name:
 
-- `ls` - List files in ramfs/FAT16
+- `ls` - List files and directories (with `/` suffix for dirs)
 - `cat <file>` - Display file contents
 - `cp <src> <dst>` - Copy a file
 - `del <file>` - Delete a file
@@ -242,7 +238,7 @@ $ test
 7. Cooperative scheduling (multiple yields)
 8. Memory patterns (ascending, alternating, fill/zero)
 9. getpid syscall (stability across calls)
-10. readdir syscall (ramfs directory listing)
+10. readdir syscall (directory listing)
 11. spawn + wait (child process lifecycle)
 12. Spawn error handling (non-existent files)
 13. Write return value validation
@@ -293,7 +289,7 @@ Supported operations:
 - **Seek** — SEEK_SET, SEEK_CUR, SEEK_END
 - **Directory listing** — root directory entries via `readdir()`
 
-FAT16 files are accessible through the same VFS syscalls as ramfs files. The shell commands `ls`, `cat`, `cp`, `del`, `touch`, and `writefile` all work on FAT16.
+The FAT16 boot disk is the primary filesystem. All executables live in `/bin/` and CRT/libc files in `/lib/`. The shell commands `ls`, `cat`, `cp`, `del`, `touch`, and `writefile` all work on the FAT16 filesystem.
 
 ## HTTP Server
 
@@ -322,24 +318,24 @@ curl http://localhost:8080/os
   - Uptime/ticks
   - Kernel debug log
 
-## Virtual OS Files
+## Virtual OS Files (`/proc/`)
 
-The VFS exposes synthetic read-only `.mos` files that provide runtime system information:
+The VFS exposes synthetic read-only `.mos` files under `/proc/` that provide runtime system information:
 
-- `/kcpuinfo.mos` — CPUID vendor, family, model, stepping, feature flags
-- `/kmeminfo.mos` — Detected RAM, PMM range/total/used/free frames, user VA range, heap start/end/current, bytes used/free
-- `/kirq.mos` — IRQ table (vector, masked status, handler presence)
-- `/kpci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
-- `/kuptime.mos` — ticks, uptime seconds, and pretty uptime format
-- `/knet.mos` — current network config (ip/mask/gw) and rx/tx packet counters
-- `/kwin.mos` — current window manager table (window id, owner pid, dimensions, title)
-- `/kvfs.mos` — registered FS backends and active virtual files
-- `/kheap.mos` — allocator heap range/current/usage summary
-- `/ktasks.mos` — task table (PID/PPID/ring/state/name)
-- `/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
-- `/kversion.mos` — kernel version/build metadata (semver, git hash, ABI, build UTC)
+- `/proc/kcpuinfo.mos` — CPUID vendor, family, model, stepping, feature flags
+- `/proc/kmeminfo.mos` — Detected RAM, PMM range/total/used/free frames, user VA range, heap start/end/current, bytes used/free
+- `/proc/kirq.mos` — IRQ table (vector, masked status, handler presence)
+- `/proc/kpci.mos` — PCI device list (bus:dev.func, vendor/device, class/subclass, IRQ)
+- `/proc/kuptime.mos` — ticks, uptime seconds, and pretty uptime format
+- `/proc/knet.mos` — current network config (ip/mask/gw) and rx/tx packet counters
+- `/proc/kwin.mos` — current window manager table (window id, owner pid, dimensions, title)
+- `/proc/kvfs.mos` — registered FS backends and active virtual files
+- `/proc/kheap.mos` — allocator heap range/current/usage summary
+- `/proc/ktasks.mos` — task table (PID/PPID/ring/state/name)
+- `/proc/kdebug.mos` — kernel debug log (circular buffer of `kprintf()` output)
+- `/proc/kversion.mos` — kernel version/build metadata (semver, git hash, ABI, build UTC)
 
-These files are readable via normal `open()`/`fread()` syscalls. The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server dashboard (`/`, and `/os` alias) reads all of them.
+These files are readable via normal `open()`/`fread()` syscalls (e.g. `cat /proc/kmeminfo.mos`). The file manager shows them with yellow icons (`.mos`), green for `.elf`, magenta for `.wlf`. The HTTP server dashboard (`/`, and `/os` alias) reads all of them.
 
 ## Syscall Reference
 
@@ -414,7 +410,7 @@ Kernel core (central entry points and shared definitions):
 Filesystem subsystem:
 - `vfs.c/h` - Virtual file system abstraction layer + virtual-file plumbing
 - `vfs_proc.c/h` - Proc-style synthetic `.mos` generators and registration (`k*.mos`)
-- `ramfs.c/h` - In-memory filesystem with bounce buffer for cross-address-space reads
+- `fat16.c/h` - FAT16 filesystem driver with subdirectory support (boot disk)
 - `fat16.c/h` - FAT16 filesystem driver (read/write, MBR partition, cluster alloc, unlink)
 
 ### `src/proc/`
@@ -436,7 +432,7 @@ I/O and display:
 
 ### `src/boot/`
 Boot:
-- `multiboot.c/h` - Multiboot info parsing, initrd detection, RAM auto-detection via memory map
+- `multiboot.c/h` - Multiboot info parsing, RAM auto-detection via memory map
 
 ### `src/utils/`
 Shared kernel utilities:
@@ -531,7 +527,7 @@ doomgeneric DOOM port:
 Rust userland example (`no_std`, staticlib, custom panic handler, `opt-level=z` + LTO) → `winhello_rust.wlf`
 
 ### `tools/`
-- `mkinitrd` - Initrd image builder
+- `mkfat16_test_disk.py` - FAT16 boot disk image builder with subdirectory support
 - `mkfat16_test_disk.py` - FAT16 test disk image creator (8MB, optional DOOM1.WAD)
 - `gen_version_header.sh` - Build-time generator for `src/version.h` (version/git/ABI/build date)
 

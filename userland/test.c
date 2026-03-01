@@ -327,54 +327,47 @@ static int test_getpid(void) {
 }
 
 // ============================================================
-// Test 10: readdir syscall (ramfs directory listing)
+// Test 10: readdir syscall (root directory listing)
 // ============================================================
 static int test_readdir(void) {
     print("TEST 10: readdir syscall\n");
 
     char name[32];
     int count = 0;
-    int found_shell = 0;
-    int found_hello = 0;
-    int found_test = 0;
+    int found_bin = 0;
+    int found_proc = 0;
 
     while (readdir(count, name, sizeof(name)) > 0) {
-        print("  - File ");
+        print("  - Entry ");
         print_num(count);
         print(": ");
         print(name);
         print("\n");
 
-        if (strcmp(name, "shell.elf") == 0)
-            found_shell = 1;
-        if (strcmp(name, "hello.elf") == 0)
-            found_hello = 1;
-        if (strcmp(name, "test.elf") == 0)
-            found_test = 1;
+        if (strcmp(name, "BIN") == 0 || strcmp(name, "bin") == 0)
+            found_bin = 1;
+        if (strcmp(name, "proc") == 0)
+            found_proc = 1;
 
         count++;
         if (count > 64)
-            break; // Safety limit (must exceed RAMFS_MAX_FILES)
+            break;
     }
 
     if (count == 0) {
-        print("  FAILED: no files found\n");
+        print("  FAILED: no entries found\n");
         return 0;
     }
-    print("  - Total files: ");
+    print("  - Total entries: ");
     print_num(count);
     print("\n");
 
-    if (!found_shell) {
-        print("  FAILED: shell.elf not found\n");
+    if (!found_bin) {
+        print("  FAILED: bin/ not found\n");
         return 0;
     }
-    if (!found_hello) {
-        print("  FAILED: hello.elf not found\n");
-        return 0;
-    }
-    if (!found_test) {
-        print("  FAILED: test.elf not found\n");
+    if (!found_proc) {
+        print("  FAILED: proc/ not found\n");
         return 0;
     }
 
@@ -390,7 +383,7 @@ static int test_spawn_wait(void) {
 
     // Spawn hello.elf as a child process
     print("  - Spawning hello.elf...\n");
-    int child = spawn("hello.elf");
+    int child = spawn("bin/hello.elf");
     if (child < 0) {
         print("  FAILED: spawn returned ");
         print_num(child);
@@ -423,7 +416,7 @@ static int test_spawn_invalid(void) {
 
     // Try to spawn a non-existent file
     print("  - Spawning nonexistent.elf...\n");
-    int ret = spawn("nonexistent.elf");
+    int ret = spawn("bin/nonexistent.elf");
     print("  - Result: ");
     print_num(ret);
     print("\n");
@@ -533,7 +526,7 @@ static int test_process_isolation(void) {
     print_hex(isolation_marker);
     print("\n");
 
-    int child = spawn("hello.elf");
+    int child = spawn("bin/hello.elf");
     if (child < 0) {
         print("  FAILED: spawn failed\n");
         return 0;
@@ -552,7 +545,7 @@ static int test_process_isolation(void) {
     print("  - Process memory isolation: OK\n");
 
     // Spawn again to doubly verify
-    child = spawn("hello.elf");
+    child = spawn("bin/hello.elf");
     if (child >= 0) {
         wait(child);
     }
@@ -636,8 +629,8 @@ static int test_wait_nb(void) {
     print("  - wait_nb(self) while running: OK\n");
 
     // Child completion path
-    const char *argv[] = {"echo.elf", "wait_nb", "test", 0};
-    int child = spawn_argv("echo.elf", argv, 3);
+    const char *argv[] = {"bin/echo.elf", "wait_nb", "test", 0};
+    int child = spawn_argv("bin/echo.elf", argv, 3);
     if (child < 0) {
         print("  FAILED: spawn_argv(echo.elf)\n");
         return 0;
@@ -736,7 +729,7 @@ static int test_detach(void) {
     // Existing detached app in tree: winsleep.wlf (detaches after win_create).
     // In text mode (no WM), it exits before detach, so we treat that as
     // skipped.
-    int child = spawn("winsleep.wlf");
+    int child = spawn("bin/winsleep.wlf");
     if (child < 0) {
         print("  SKIP: couldn't spawn winsleep.wlf\n\n");
         return 1;
@@ -761,7 +754,7 @@ static int test_detach(void) {
 static int test_vfs_io(void) {
     print("TEST 21: VFS file I/O\n");
 
-    int fd = open("hello.elf", 0); // O_RDONLY
+    int fd = open("bin/hello.elf", 0); // O_RDONLY
     if (fd < 0) {
         print("  FAILED: open hello.elf\n");
         return 0;
@@ -801,7 +794,7 @@ static int test_vfs_io(void) {
     print("  - seek+readback: OK\n");
 
     stat_t st;
-    if (stat("hello.elf", &st) != 0) {
+    if (stat("bin/hello.elf", &st) != 0) {
         print("  FAILED: stat hello.elf\n");
         close(fd);
         return 0;
@@ -828,8 +821,8 @@ static int test_vfs_io(void) {
 // ============================================================
 static int test_spawn_argv(void) {
     print("TEST 22: spawn_argv syscall\n");
-    const char *argv[] = {"echo.elf", "arg1", "arg2", "arg3", 0};
-    int child = spawn_argv("echo.elf", argv, 4);
+    const char *argv[] = {"bin/echo.elf", "arg1", "arg2", "arg3", 0};
+    int child = spawn_argv("bin/echo.elf", argv, 4);
     if (child < 0) {
         print("  FAILED: spawn_argv returned ");
         print_num(child);
@@ -904,7 +897,7 @@ static int test_ptr_validation(void) {
     print("  - open(NULL): rejected OK\n");
 
     // fd_read with NULL buffer should return -1
-    int fd = open("hello.elf", 0);
+    int fd = open("bin/hello.elf", 0);
     if (fd >= 0) {
         ret = fd_read(fd, (void *)0, 64);
         if (ret != -1) {
@@ -1004,22 +997,22 @@ static int test_stat_edges(void) {
     print("  - stat(NULL path): -1 OK\n");
 
     // stat on valid file should return 0 with sane fields
-    ret = stat("shell.elf", &st);
+    ret = stat("bin/shell.elf", &st);
     if (ret != 0) {
-        print("  FAILED: stat(shell.elf) returned ");
+        print("  FAILED: stat(bin/shell.elf) returned ");
         print_num(ret);
         print("\n");
         return 0;
     }
     if (st.size == 0) {
-        print("  FAILED: shell.elf size is 0\n");
+        print("  FAILED: bin/shell.elf size is 0\n");
         return 0;
     }
     if (st.type != 0) {
-        print("  FAILED: shell.elf type not 0 (file)\n");
+        print("  FAILED: bin/shell.elf type not 0 (file)\n");
         return 0;
     }
-    print("  - stat(shell.elf): size=");
+    print("  - stat(bin/shell.elf): size=");
     print_num(st.size);
     print(" type=0 OK\n");
 
@@ -1100,7 +1093,7 @@ static int test_kill(void) {
     print("  - kill(nonexistent): -1 OK\n");
 
     // Spawn a child, then kill it
-    int child = spawn("burn.elf");
+    int child = spawn("bin/burn.elf");
     if (child < 0) {
         // burn.elf may not exist; try hello.elf with a sleep-based approach
         print("  SKIP: burn.elf not available\n");
@@ -1170,7 +1163,7 @@ static int test_fd_limits(void) {
     int fds[16];
     int count = 0;
     for (int i = 0; i < 16; i++) {
-        fds[i] = open("hello.elf", 0);
+        fds[i] = open("bin/hello.elf", 0);
         if (fds[i] < 0)
             break;
         count++;
@@ -1206,7 +1199,7 @@ static int test_fd_limits(void) {
     print("  - all fds closed: OK\n");
 
     // After closing, we should be able to open again
-    int fd = open("hello.elf", 0);
+    int fd = open("bin/hello.elf", 0);
     if (fd < 0) {
         print("  FAILED: can't open after closing all\n");
         return 0;
@@ -1224,7 +1217,7 @@ static int test_fd_limits(void) {
 static int test_seek_edges(void) {
     print("TEST 31: VFS seek edge cases\n");
 
-    int fd = open("hello.elf", 0);
+    int fd = open("bin/hello.elf", 0);
     if (fd < 0) {
         print("  FAILED: couldn't open hello.elf\n");
         return 0;
@@ -1258,7 +1251,7 @@ static int test_seek_edges(void) {
 
     // SEEK_END to 0 should return file size
     stat_t st;
-    stat("hello.elf", &st);
+    stat("bin/hello.elf", &st);
     pos = seek(fd, 0, SEEK_END);
     if (pos != (int)st.size) {
         print("  FAILED: SEEK_END(0) returned ");
@@ -1337,7 +1330,7 @@ static int test_invalid_fd(void) {
     print("  - seek(99): -1 OK\n");
 
     // Double close: open a file, close it, close again
-    int fd = open("hello.elf", 0);
+    int fd = open("bin/hello.elf", 0);
     if (fd >= 0) {
         close(fd);
         ret = close(fd);
@@ -1429,7 +1422,7 @@ static int test_stat_ptr_validation(void) {
     print("TEST 35: stat() pointer validation\n");
 
     // stat with kernel-range stat buffer should return -1
-    int ret = stat("hello.elf", (stat_t *)0x200000);
+    int ret = stat("bin/hello.elf", (stat_t *)0x200000);
     if (ret != -1) {
         print("  FAILED: stat(valid, kernel ptr) returned ");
         print_num(ret);
@@ -1599,7 +1592,7 @@ static int test_vfs_mode(void) {
     print("TEST 39: VFS open mode enforcement\n");
 
     // Open a file read-only
-    int fd = open("hello.elf", O_RDONLY);
+    int fd = open("bin/hello.elf", O_RDONLY);
     if (fd < 0) {
         print("  FAILED: open(hello.elf, RDONLY) failed\n");
         return 0;

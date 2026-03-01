@@ -170,7 +170,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
     return task;
 }
 
-// Create a user-mode task by loading an ELF from ramfs.
+// Create a user-mode task by loading an ELF from VFS (FAT16 boot disk).
 // The ELF is loaded entirely in kernel mode — the task starts directly
 // at the ELF entry point with no kernel trampoline. No kernel pages are
 // marked user-accessible.

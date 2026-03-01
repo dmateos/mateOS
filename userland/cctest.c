@@ -51,8 +51,8 @@ void _start(int argc, char **argv) {
     print("cctest: compiler smoke start\n");
 
     {
-        const char *a[] = {"cc.elf", "test2.c", "-o", "cc_ret.elf", 0};
-        int rc = run_prog_argv("cc.elf", a, 4);
+        const char *a[] = {"bin/cc.elf", "test2.c", "-o", "cc_ret.elf", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 4);
         if (rc != 0)
             finish_and_exit(fail("cc test2.c", rc));
     }
@@ -63,8 +63,8 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"cc.elf", "test.c", "-o", "cc_print.elf", 0};
-        int rc = run_prog_argv("cc.elf", a, 4);
+        const char *a[] = {"bin/cc.elf", "test.c", "-o", "cc_print.elf", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 4);
         if (rc != 0)
             finish_and_exit(fail("cc test.c", rc));
     }
@@ -75,8 +75,8 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"cc.elf", "-S", "test2.c", "-o", "cc_s.asm", 0};
-        int rc = run_prog_argv("cc.elf", a, 5);
+        const char *a[] = {"bin/cc.elf", "-S", "test2.c", "-o", "cc_s.asm", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 5);
         if (rc != 0)
             finish_and_exit(fail("cc -S test2.c", rc));
         if (require_file_nonempty("cc_s.asm") != 0)
@@ -84,16 +84,16 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"cc.elf", "-c", "test2.c", "-o", "cc_c.o", 0};
-        int rc = run_prog_argv("cc.elf", a, 5);
+        const char *a[] = {"bin/cc.elf", "-c", "test2.c", "-o", "cc_c.o", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 5);
         if (rc != 0)
             finish_and_exit(fail("cc -c test2.c", rc));
         if (require_file_nonempty("cc_c.o") != 0)
             finish_and_exit(fail("missing cc_c.o", -1));
     }
     {
-        const char *a[] = {"cc.elf", "cc_c.o", "-o", "cc_obj.elf", 0};
-        int rc = run_prog_argv("cc.elf", a, 4);
+        const char *a[] = {"bin/cc.elf", "cc_c.o", "-o", "cc_obj.elf", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 4);
         if (rc != 0)
             finish_and_exit(fail("cc cc_c.o", rc));
     }
@@ -104,8 +104,8 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0};
-        int rc = run_prog_argv("cc.elf", a, 5);
+        const char *a[] = {"bin/cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 5);
         if (rc != 0)
             finish_and_exit(fail("cc t3a.c t3b.c", rc));
     }
@@ -116,9 +116,9 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"cc.elf", "t4.c",       "libtiny.a",
-                           "-o",     "cc_lib.elf", 0};
-        int rc = run_prog_argv("cc.elf", a, 5);
+        const char *a[] = {"bin/cc.elf", "t4.c",       "lib/libtiny.a",
+                           "-o",         "cc_lib.elf", 0};
+        int rc = run_prog_argv("bin/cc.elf", a, 5);
         if (rc != 0)
             finish_and_exit(fail("cc t4.c libtiny.a", rc));
     }
