@@ -97,7 +97,7 @@ static unsigned char icon_color_for_name(const char *name) {
         return 2; // green: executable
     if (str_ends_with(name, ".wlf"))
         return 13; // magenta: window executable
-    if (str_ends_with(name, ".mos"))
+    if (strcmp(cwd, "/mos") == 0 || strcmp(cwd, "/mos/") == 0)
         return 14; // yellow: virtual OS file
     if (str_ends_with(name, ".htm"))
         return 11; // cyan: web/html
@@ -260,7 +260,7 @@ static const unsigned short *icon_bitmap_for_name(const char *name) {
         return glyph_exec;
     if (str_ends_with(name, ".wlf"))
         return glyph_graph;
-    if (str_ends_with(name, ".mos"))
+    if (strcmp(cwd, "/mos") == 0 || strcmp(cwd, "/mos/") == 0)
         return glyph_chip;
     return glyph_file;
 }

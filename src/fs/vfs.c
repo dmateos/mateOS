@@ -62,7 +62,7 @@ const char *vfs_get_virtual_file_name(int idx) {
 static int vfs_path_matches_virtual(const char *path, const char *name) {
     if (!path || !name)
         return 0;
-    // Match "proc/foo.mos" or "/proc/foo.mos" against stored name "proc/foo.mos"
+    // Match "mos/foo" or "/mos/foo" against stored name "mos/foo"
     if (strcmp(path, name) == 0)
         return 1;
     if (path[0] == '/' && strcmp(path + 1, name) == 0)
@@ -376,9 +376,9 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
         return 0;
     }
 
-    // /proc virtual directory
-    if (strcmp(path, "/proc") == 0 || strcmp(path, "/proc/") == 0 ||
-        strcmp(path, "proc") == 0) {
+    // /mos virtual directory
+    if (strcmp(path, "/mos") == 0 || strcmp(path, "/mos/") == 0 ||
+        strcmp(path, "mos") == 0) {
         st->size = 0;
         st->type = VFS_DIR;
         return 0;
@@ -400,10 +400,10 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
     return -1;
 }
 
-// Check if path refers to the /proc virtual directory
-static int vfs_is_proc_dir(const char *path) {
-    return strcmp(path, "/proc") == 0 || strcmp(path, "/proc/") == 0 ||
-           strcmp(path, "proc") == 0;
+// Check if path refers to the /mos virtual directory
+static int vfs_is_mos_dir(const char *path) {
+    return strcmp(path, "/mos") == 0 || strcmp(path, "/mos/") == 0 ||
+           strcmp(path, "mos") == 0;
 }
 
 int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
@@ -412,14 +412,14 @@ int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
 
     int remaining = index;
 
-    // Reading /proc: list virtual .mos files (strip "proc/" prefix for display)
-    if (vfs_is_proc_dir(path)) {
+    // Reading /mos: list virtual kernel info files (strip "mos/" prefix)
+    if (vfs_is_mos_dir(path)) {
         if (remaining < virtual_file_count) {
             const char *name = virtual_files[remaining].name;
-            // Strip "proc/" prefix from stored name for display
-            if (name[0] == 'p' && name[1] == 'r' && name[2] == 'o' &&
-                name[3] == 'c' && name[4] == '/')
-                name += 5;
+            // Strip "mos/" prefix from stored name for display
+            if (name[0] == 'm' && name[1] == 'o' && name[2] == 's' &&
+                name[3] == '/')
+                name += 4;
             size_t n = strlen(name);
             if (n >= size)
                 n = size - 1;
@@ -427,22 +427,22 @@ int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
             buf[n] = '\0';
             return (int)(n + 1);
         }
-        return 0; // no FS entries in /proc
+        return 0; // no FS entries in /mos
     }
 
-    // Reading root "/": show "proc" virtual directory entry first
+    // Reading root "/": show "mos" virtual directory entry first
     if (strcmp(path, "/") == 0 || strcmp(path, "") == 0) {
         if (remaining == 0) {
-            // First entry: the proc virtual directory
-            const char *pname = "proc";
-            size_t n = 4;
+            // First entry: the mos virtual directory
+            const char *pname = "mos";
+            size_t n = 3;
             if (n >= size)
                 n = size - 1;
             memcpy(buf, pname, n);
             buf[n] = '\0';
             return (int)(n + 1);
         }
-        remaining--; // account for the "proc" entry
+        remaining--; // account for the "mos" entry
     }
 
     for (int fs = 0; fs < fs_count; fs++) {

@@ -335,7 +335,7 @@ static int test_readdir(void) {
     char name[32];
     int count = 0;
     int found_bin = 0;
-    int found_proc = 0;
+    int found_mos = 0;
 
     while (readdir(count, name, sizeof(name)) > 0) {
         print("  - Entry ");
@@ -346,8 +346,8 @@ static int test_readdir(void) {
 
         if (strcmp(name, "BIN") == 0 || strcmp(name, "bin") == 0)
             found_bin = 1;
-        if (strcmp(name, "proc") == 0)
-            found_proc = 1;
+        if (strcmp(name, "mos") == 0)
+            found_mos = 1;
 
         count++;
         if (count > 64)
@@ -366,8 +366,8 @@ static int test_readdir(void) {
         print("  FAILED: bin/ not found\n");
         return 0;
     }
-    if (!found_proc) {
-        print("  FAILED: proc/ not found\n");
+    if (!found_mos) {
+        print("  FAILED: mos/ not found\n");
         return 0;
     }
 

@@ -493,7 +493,7 @@ static void draw_taskbar(void) {
 static void load_kversion_once(void) {
     if (g_kversion[0])
         return;
-    int fd = open("/proc/kversion.mos", O_RDONLY);
+    int fd = open("/mos/kver", O_RDONLY);
     if (fd < 0) {
         wm_strcpy(g_kversion, "mateOS", sizeof(g_kversion));
         return;

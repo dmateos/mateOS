@@ -260,29 +260,29 @@ static int serve_os_page(int client) {
         0) {
         return -1;
     }
-    if (append_section(&out_len, "kcpuinfo.mos", "/proc/kcpuinfo.mos") < 0)
+    if (append_section(&out_len, "kcpu", "/mos/kcpu") < 0)
         return -1;
-    if (append_section(&out_len, "kmeminfo.mos", "/proc/kmeminfo.mos") < 0)
+    if (append_section(&out_len, "kmem", "/mos/kmem") < 0)
         return -1;
-    if (append_section(&out_len, "kirq.mos", "/proc/kirq.mos") < 0)
+    if (append_section(&out_len, "kirq", "/mos/kirq") < 0)
         return -1;
-    if (append_section(&out_len, "kpci.mos", "/proc/kpci.mos") < 0)
+    if (append_section(&out_len, "kpci", "/mos/kpci") < 0)
         return -1;
-    if (append_section(&out_len, "kuptime.mos", "/proc/kuptime.mos") < 0)
+    if (append_section(&out_len, "kuptime", "/mos/kuptime") < 0)
         return -1;
-    if (append_section(&out_len, "kwin.mos", "/proc/kwin.mos") < 0)
+    if (append_section(&out_len, "kwin", "/mos/kwin") < 0)
         return -1;
-    if (append_section(&out_len, "kvfs.mos", "/proc/kvfs.mos") < 0)
+    if (append_section(&out_len, "kvfs", "/mos/kvfs") < 0)
         return -1;
-    if (append_section(&out_len, "kheap.mos", "/proc/kheap.mos") < 0)
+    if (append_section(&out_len, "kheap", "/mos/kheap") < 0)
         return -1;
-    if (append_section(&out_len, "knet.mos", "/proc/knet.mos") < 0)
+    if (append_section(&out_len, "knet", "/mos/knet") < 0)
         return -1;
-    if (append_section(&out_len, "ktasks.mos", "/proc/ktasks.mos") < 0)
+    if (append_section(&out_len, "ktasks", "/mos/ktasks") < 0)
         return -1;
-    if (append_section(&out_len, "kdebug.mos", "/proc/kdebug.mos") < 0)
+    if (append_section(&out_len, "kdebug", "/mos/kdebug") < 0)
         return -1;
-    if (append_section(&out_len, "kversion.mos", "/proc/kversion.mos") < 0)
+    if (append_section(&out_len, "kver", "/mos/kver") < 0)
         return -1;
 
     if (append_cstr(os_page, sizeof(os_page), &out_len,
