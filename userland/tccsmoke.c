@@ -32,10 +32,10 @@ void _start(int argc, char **argv) {
     }
 
     {
-        const char *a[] = {"bin/tcc.elf", "-c", "test2.c", "-o", "tcc_ret.o", 0};
+        const char *a[] = {"bin/tcc.elf", "-c", "user/test2.c", "-o", "tcc_ret.o", 0};
         int rc = run_prog_argv("bin/tcc.elf", a, 5);
         if (rc != 0) {
-            print("tccsmoke: FAIL (tcc -c test2.c rc=");
+            print("tccsmoke: FAIL (tcc -c user/test2.c rc=");
             print_num(rc);
             print(")\n");
             finish_and_exit(1);
@@ -55,7 +55,7 @@ void _start(int argc, char **argv) {
 
     // Test 3: full link (multi-file → executable)
     {
-        const char *a[] = {"bin/tcc.elf", "t3a.c", "t3b.c", "-o", "t3.elf", 0};
+        const char *a[] = {"bin/tcc.elf", "user/t3a.c", "user/t3b.c", "-o", "t3.elf", 0};
         int rc = run_prog_argv("bin/tcc.elf", a, 5);
         if (rc != 0) {
             print("tccsmoke: FAIL (tcc link t3 rc=");

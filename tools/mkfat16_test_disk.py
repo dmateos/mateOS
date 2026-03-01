@@ -271,7 +271,7 @@ def main():
     args = ap.parse_args()
 
     # Collect all files to estimate size
-    root_files = [("TEST.TXT", b"Hello from FAT16 on ATA PIO!\n")]
+    root_files = []
     if args.wad:
         with open(args.wad, "rb") as f:
             root_files.append(("DOOM1.WAD", f.read()))

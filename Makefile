@@ -145,15 +145,13 @@ userland:
 	@$(MAKE) -C userland
 
 # Boot disk — FAT16 image with /bin/ (executables) and /lib/ (CRT/libc for TCC)
+USER_CC_FILES := $(wildcard tests/cc/test.c tests/cc/test2.c tests/cc/t3a.c tests/cc/t3b.c tests/cc/t4.c)
+
 $(BOOT_IMG): userland
 	python3 tools/mkfat16_test_disk.py $(BOOT_IMG) $(if $(wildcard $(DOOM_WAD)),$(DOOM_WAD),) \
-		$(if $(wildcard tests/cc/test.c),--add tests/cc/test.c,) \
-		$(if $(wildcard tests/cc/test2.c),--add tests/cc/test2.c,) \
-		$(if $(wildcard tests/cc/t3a.c),--add tests/cc/t3a.c,) \
-		$(if $(wildcard tests/cc/t3b.c),--add tests/cc/t3b.c,) \
-		$(if $(wildcard tests/cc/t4.c),--add tests/cc/t4.c,) \
 		--add-dir bin userland/*.elf userland/*.wlf \
-		--add-dir lib userland/crt0.o userland/crt1.o userland/crti.o userland/crtn.o userland/cprint.o userland/libc.o userland/syscalls.o userland/libtiny.a userland/libc.a
+		--add-dir lib userland/crt0.o userland/crt1.o userland/crti.o userland/crtn.o userland/cprint.o userland/libc.o userland/syscalls.o userland/libtiny.a userland/libc.a \
+		$(if $(USER_CC_FILES),--add-dir user $(USER_CC_FILES),)
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET)

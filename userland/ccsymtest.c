@@ -20,7 +20,7 @@ void _start(int argc, char **argv) {
 
     print("ccsymtest: start\n");
     {
-        const char *a[] = {"bin/cc.elf", "t3a.c", "t3b.c", "-o", "ccmul.elf", 0};
+        const char *a[] = {"bin/cc.elf", "user/t3a.c", "user/t3b.c", "-o", "ccmul.elf", 0};
         int rc = run_prog_argv("bin/cc.elf", a, 5);
         if (rc != 0) {
             print("ccsymtest: FAIL (cc rc=");
