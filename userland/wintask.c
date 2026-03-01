@@ -5,7 +5,7 @@
 #define W 500
 #define H 350
 #define MAX_TASKS_VIEW 32
-#define TITLE_H 16
+#define TITLE_H 0
 #define STATS_H 36
 #define STATUS_H 14
 #define ROW_H 10
@@ -348,10 +348,6 @@ static void draw_stats_panel(void) {
 
 static void redraw(void) {
     ugfx_buf_clear(buf, W, H, COL_BG);
-
-    ugfx_buf_rect(buf, W, H, 0, 0, W, TITLE_H, COL_TITLE);
-    ugfx_buf_hline(buf, W, H, 0, 1, W, COL_TITLE_2);
-    draw_str(6, 4, "Task Manager", COL_TITLE_TXT);
 
     draw_stats_panel();
 

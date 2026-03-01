@@ -9,7 +9,6 @@
 #define MAX_EXTS 32
 #define EXT_MAX 16
 
-#define TOPBAR_H 16
 #define NAVBAR_H 18
 #define STATUS_H 14
 #define PAD_X 10
@@ -312,7 +311,7 @@ static void draw_file_icon(int x, int y, int selected_cell, const char *name,
 
 static void grid_dims(int *out_cols, int *out_rows, int *out_page) {
     int cols = (W - PAD_X * 2) / CELL_W;
-    int rows = (H - TOPBAR_H - NAVBAR_H - STATUS_H - PAD_Y - 10) / CELL_H;
+    int rows = (H - NAVBAR_H - STATUS_H - PAD_Y - 10) / CELL_H;
     if (cols < 1)
         cols = 1;
     if (rows < 1)
@@ -400,8 +399,8 @@ static void draw_scrollbar(int cols, int rows) {
         return;
 
     int track_x = W - 10;
-    int track_y = TOPBAR_H + NAVBAR_H + 6;
-    int track_h = H - TOPBAR_H - NAVBAR_H - STATUS_H - 10;
+    int track_y = NAVBAR_H + 6;
+    int track_h = H - NAVBAR_H - STATUS_H - 10;
     if (track_h < 20)
         return;
 
@@ -437,7 +436,7 @@ static void draw_nav_btn(int x, int y, int w, int h, const char *label,
 }
 
 static void draw_navbar(void) {
-    int ny = TOPBAR_H;
+    int ny = 0;
     // Navbar background
     ugfx_buf_rect(buf, W, H, 0, ny, W, NAVBAR_H, COL_STATUS);
     ugfx_buf_hline(buf, W, H, 0, ny + NAVBAR_H - 1, W, COL_DARK);
@@ -481,13 +480,9 @@ static void draw_navbar(void) {
 static void redraw(void) {
     ugfx_buf_clear(buf, W, H, COL_BG);
 
-    ugfx_buf_rect(buf, W, H, 0, 0, W, TOPBAR_H, COL_TITLE);
-    ugfx_buf_hline(buf, W, H, 0, 1, W, COL_TITLE_BAR2);
-    ugfx_buf_string(buf, W, H, 6, 4, title, COL_TITLE_TXT);
-
     draw_navbar();
 
-    int content_top = TOPBAR_H + NAVBAR_H;
+    int content_top = NAVBAR_H;
     draw_bevel(4, content_top + 2, W - 8, H - content_top - STATUS_H - 6);
 
     int cols, rows, page;
