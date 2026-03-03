@@ -1649,6 +1649,317 @@ static int test_vfs_mode(void) {
 }
 
 // ============================================================
+// Test 40: Subdirectory readdir
+// ============================================================
+static int test_subdir_readdir(void) {
+    print("TEST 40: Subdirectory readdir\n");
+
+    // readdir_path on /bin should return entries
+    char name[32];
+    int count = 0;
+    while (count < 256 && readdir_path("bin", count, name) > 0)
+        count++;
+
+    if (count < 5) {
+        print("  FAILED: /bin has only ");
+        print_num(count);
+        print(" entries (expected > 5)\n");
+        return 0;
+    }
+    print("  - /bin entries: ");
+    print_num(count);
+    print(" OK\n");
+
+    // readdir_path on /mos should return 12 virtual files
+    count = 0;
+    while (count < 256 && readdir_path("mos", count, name) > 0)
+        count++;
+
+    if (count != 12) {
+        print("  FAILED: /mos has ");
+        print_num(count);
+        print(" entries (expected 12)\n");
+        return 0;
+    }
+    print("  - /mos entries: ");
+    print_num(count);
+    print(" OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 41: Stat on directories
+// ============================================================
+static int test_stat_dirs(void) {
+    print("TEST 41: Stat on directories\n");
+
+    stat_t st;
+
+    if (stat("bin", &st) != 0 || st.type != 1) {
+        print("  FAILED: stat('bin') not a directory\n");
+        return 0;
+    }
+    print("  - stat('bin'): type=dir OK\n");
+
+    if (stat("mos", &st) != 0 || st.type != 1) {
+        print("  FAILED: stat('mos') not a directory\n");
+        return 0;
+    }
+    print("  - stat('mos'): type=dir OK\n");
+
+    if (stat("/mos", &st) != 0 || st.type != 1) {
+        print("  FAILED: stat('/mos') not a directory\n");
+        return 0;
+    }
+    print("  - stat('/mos'): type=dir OK\n");
+
+    if (stat("bin/hello.elf", &st) != 0 || st.type != 0 || st.size == 0) {
+        print("  FAILED: stat('bin/hello.elf') bad\n");
+        return 0;
+    }
+    print("  - stat('bin/hello.elf'): type=file size=");
+    print_num((int)st.size);
+    print(" OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 42: Virtual file read (/mos/)
+// ============================================================
+static int test_mos_read(void) {
+    print("TEST 42: Virtual file read (/mos/)\n");
+
+    int fd = open("/mos/kcpu", O_RDONLY);
+    if (fd < 0) {
+        print("  FAILED: open('/mos/kcpu') returned ");
+        print_num(fd);
+        print("\n");
+        return 0;
+    }
+
+    char buf[128];
+    int n = fd_read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) {
+        print("  FAILED: read returned ");
+        print_num(n);
+        print("\n");
+        return 0;
+    }
+    buf[n] = '\0';
+    print("  - /mos/kcpu: ");
+    print_num(n);
+    print(" bytes OK\n");
+
+    fd = open("/mos/kver", O_RDONLY);
+    if (fd < 0) {
+        print("  FAILED: open('/mos/kver') returned ");
+        print_num(fd);
+        print("\n");
+        return 0;
+    }
+    n = fd_read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) {
+        print("  FAILED: read kver returned ");
+        print_num(n);
+        print("\n");
+        return 0;
+    }
+    buf[n] = '\0';
+    print("  - /mos/kver: ");
+    print_num(n);
+    print(" bytes OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 43: chdir/getcwd round-trip
+// ============================================================
+static int test_chdir_getcwd(void) {
+    print("TEST 43: chdir/getcwd round-trip\n");
+
+    char buf[64];
+
+    // Save initial cwd
+    if (!getcwd(buf, sizeof(buf))) {
+        print("  FAILED: initial getcwd\n");
+        return 0;
+    }
+    print("  - initial cwd: ");
+    print(buf);
+    print("\n");
+
+    // chdir to /bin
+    if (chdir("/bin") != 0) {
+        print("  FAILED: chdir('/bin')\n");
+        return 0;
+    }
+    if (!getcwd(buf, sizeof(buf)) || strcmp(buf, "/bin") != 0) {
+        print("  FAILED: cwd after chdir('/bin') = ");
+        print(buf);
+        print("\n");
+        chdir("/");
+        return 0;
+    }
+    print("  - chdir('/bin'): cwd=/bin OK\n");
+
+    // chdir back to /
+    if (chdir("/") != 0) {
+        print("  FAILED: chdir('/')\n");
+        return 0;
+    }
+    if (!getcwd(buf, sizeof(buf)) || strcmp(buf, "/") != 0) {
+        print("  FAILED: cwd after chdir('/') = ");
+        print(buf);
+        print("\n");
+        return 0;
+    }
+    print("  - chdir('/'): cwd=/ OK\n");
+
+    // chdir to nonexistent should fail
+    if (chdir("nonexistent_dir_xyz") == 0) {
+        print("  FAILED: chdir('nonexistent') should fail\n");
+        chdir("/");
+        return 0;
+    }
+    print("  - chdir('nonexistent'): rejected OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 44: mkdir/rmdir functional
+// ============================================================
+static int test_mkdir_rmdir(void) {
+    print("TEST 44: mkdir/rmdir functional\n");
+
+    // Clean up from any previous failed run
+    rmdir("_testdir");
+
+    if (mkdir("_testdir") != 0) {
+        print("  FAILED: mkdir('_testdir')\n");
+        return 0;
+    }
+    print("  - mkdir('_testdir'): OK\n");
+
+    stat_t st;
+    if (stat("_testdir", &st) != 0 || st.type != 1) {
+        print("  FAILED: stat('_testdir') not a directory\n");
+        rmdir("_testdir");
+        return 0;
+    }
+    print("  - stat('_testdir'): type=dir OK\n");
+
+    if (rmdir("_testdir") != 0) {
+        print("  FAILED: rmdir('_testdir')\n");
+        return 0;
+    }
+    print("  - rmdir('_testdir'): OK\n");
+
+    if (stat("_testdir", &st) == 0) {
+        print("  FAILED: _testdir still exists after rmdir\n");
+        return 0;
+    }
+    print("  - stat after rmdir: gone OK\n");
+
+    if (rmdir("_testdir") == 0) {
+        print("  FAILED: rmdir nonexistent should fail\n");
+        return 0;
+    }
+    print("  - rmdir nonexistent: rejected OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
+// Test 45: File create/write/read/unlink cycle
+// ============================================================
+static int test_file_create_cycle(void) {
+    print("TEST 45: File create/write/read/unlink\n");
+
+    // Clean up from any previous failed run
+    unlink("_test.tmp");
+
+    int fd = open("_test.tmp", O_WRONLY | O_CREAT);
+    if (fd < 0) {
+        print("  FAILED: open O_CREAT returned ");
+        print_num(fd);
+        print("\n");
+        return 0;
+    }
+
+    int n = fd_write(fd, "hello", 5);
+    if (n != 5) {
+        print("  FAILED: write returned ");
+        print_num(n);
+        print("\n");
+        close(fd);
+        unlink("_test.tmp");
+        return 0;
+    }
+    close(fd);
+    print("  - create+write 5 bytes: OK\n");
+
+    stat_t st;
+    if (stat("_test.tmp", &st) != 0 || st.size != 5) {
+        print("  FAILED: stat size=");
+        print_num((int)st.size);
+        print(" (expected 5)\n");
+        unlink("_test.tmp");
+        return 0;
+    }
+    print("  - stat size=5: OK\n");
+
+    fd = open("_test.tmp", O_RDONLY);
+    if (fd < 0) {
+        print("  FAILED: reopen O_RDONLY\n");
+        unlink("_test.tmp");
+        return 0;
+    }
+    char buf[8];
+    n = fd_read(fd, buf, 5);
+    close(fd);
+    if (n != 5) {
+        print("  FAILED: read returned ");
+        print_num(n);
+        print("\n");
+        unlink("_test.tmp");
+        return 0;
+    }
+    buf[5] = '\0';
+    if (strcmp(buf, "hello") != 0) {
+        print("  FAILED: read back '");
+        print(buf);
+        print("' (expected 'hello')\n");
+        unlink("_test.tmp");
+        return 0;
+    }
+    print("  - read back 'hello': OK\n");
+
+    if (unlink("_test.tmp") != 0) {
+        print("  FAILED: unlink\n");
+        return 0;
+    }
+    if (stat("_test.tmp", &st) == 0) {
+        print("  FAILED: file still exists after unlink\n");
+        return 0;
+    }
+    print("  - unlink+verify gone: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
@@ -1659,7 +1970,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 39;
+    int total = 45;
 
     // Run all tests
     if (test_syscalls())
@@ -1740,6 +2051,18 @@ void _start(int argc, char **argv) {
         passed++; // 38
     if (test_vfs_mode())
         passed++; // 39
+    if (test_subdir_readdir())
+        passed++; // 40
+    if (test_stat_dirs())
+        passed++; // 41
+    if (test_mos_read())
+        passed++; // 42
+    if (test_chdir_getcwd())
+        passed++; // 43
+    if (test_mkdir_rmdir())
+        passed++; // 44
+    if (test_file_create_cycle())
+        passed++; // 45
 
     print("========================================\n");
     print("  Results: ");
