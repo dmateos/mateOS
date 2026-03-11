@@ -83,9 +83,10 @@ void shutdown(void);
 typedef struct {
     unsigned int id;
     unsigned int parent_id;
-    unsigned int ring;  // 0=kernel, 3=user
-    unsigned int state; // 0=ready, 1=running, 2=blocked, 3=terminated
+    unsigned int ring;          // 0=kernel, 3=user
+    unsigned int state;         // 0=ready, 1=running, 2=blocked, 3=terminated
     unsigned int runtime_ticks;
+    unsigned int start_ticks;   // tick count when task was spawned (100Hz)
     char name[32];
 } taskinfo_entry_t;
 

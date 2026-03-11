@@ -48,6 +48,9 @@ typedef struct task {
     // Detach flag: process has detached from parent's wait
     int detached;
 
+    // Tick count at spawn time (for calculating task age)
+    uint32_t start_ticks;
+
     // Per-process address space
     page_directory_t
         *page_dir; // Per-process page directory (NULL for kernel tasks)

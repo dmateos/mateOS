@@ -58,6 +58,7 @@ void task_init(void) {
     idle->user_brk_min = 0;
     idle->user_brk = 0;
     idle->runtime_ticks = 0;
+    idle->start_ticks = 0; // kernel task starts at boot
     memcpy(idle->cwd, "/", 2); // Root cwd for kernel task
 
     current_task = idle;
@@ -151,6 +152,7 @@ task_t *task_create(const char *name, void (*entry)(void)) {
     task->stdout_wid = -1;
     task->detached = 0;
     task->runtime_ticks = 0;
+    task->start_ticks = get_tick_count();
     memcpy(task->cwd, "/", 2); // Default cwd for kernel tasks
 
     // Add to circular task list (skip if reusing — already linked)
@@ -346,6 +348,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     task->stdout_wid = -1;
     task->detached = 0;
     task->runtime_ticks = 0;
+    task->start_ticks = get_tick_count();
 
     // Inherit parent's cwd, or default to "/"
     if (parent && parent->cwd[0]) {
@@ -579,6 +582,7 @@ int task_list_info(taskinfo_entry_t *buf, int max) {
         buf[count].ring = tasks[i].is_kernel ? 0u : 3u;
         buf[count].state = (uint32_t)tasks[i].state;
         buf[count].runtime_ticks = tasks[i].runtime_ticks;
+        buf[count].start_ticks = tasks[i].start_ticks;
         // Copy name
         int j;
         for (j = 0; j < TASK_NAME_MAX - 1 && tasks[i].name[j]; j++) {

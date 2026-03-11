@@ -46,6 +46,7 @@ static int view_top = 0;
 static int wid = -1;
 static int self_pid = -1;
 static unsigned int prev_total_ticks = 0;
+static unsigned int now_ticks = 0; // updated each refresh, used by redraw()
 static char status[96] = "Up/Down Select  K Kill  R Refresh  Q Quit";
 static unsigned char cpu_hist[96];
 static int cpu_hist_len = 0;
@@ -175,7 +176,7 @@ static int sample_cpu_percent(int pid) {
 }
 
 static void refresh_tasks(void) {
-    unsigned int now_ticks = get_ticks();
+    now_ticks = get_ticks();
     unsigned int delta_total = 0;
     if (prev_total_ticks != 0 && now_ticks >= prev_total_ticks) {
         delta_total = now_ticks - prev_total_ticks;
@@ -360,7 +361,8 @@ static void redraw(void) {
     draw_str(88, hdr_y + 2, "R", COL_HDR_TXT);
     draw_str(108, hdr_y + 2, "STATE", COL_HDR_TXT);
     draw_str(164, hdr_y + 2, "CPU", COL_HDR_TXT);
-    draw_str(222, hdr_y + 2, "NAME", COL_HDR_TXT);
+    draw_str(222, hdr_y + 2, "START", COL_HDR_TXT);
+    draw_str(286, hdr_y + 2, "NAME", COL_HDR_TXT);
 
     int y0 = hdr_y + ROW_H + 4;
     int rows = visible_rows();
@@ -390,7 +392,13 @@ static void redraw(void) {
         draw_cpu_bar(160, y, cpu, sel);
         draw_num(184, y, cpu, tc);
         draw_str(206, y, "%", tc);
-        draw_str(222, y, tasks[ti].name, tc);
+        // Task age: seconds since this task was spawned
+        unsigned int age_ticks = (tasks[ti].start_ticks <= now_ticks)
+                                 ? (now_ticks - tasks[ti].start_ticks) : 0;
+        unsigned int age_sec = age_ticks / 100;
+        draw_num(222, y, (int)age_sec, tc);
+        draw_str(252, y, "s", tc);
+        draw_str(286, y, tasks[ti].name, tc);
     }
 
     ugfx_buf_rect(buf, W, H, 0, H - STATUS_H, W, STATUS_H, COL_STATUS);

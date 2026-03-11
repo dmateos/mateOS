@@ -63,9 +63,10 @@
 typedef struct {
     uint32_t id;
     uint32_t parent_id;
-    uint32_t ring;  // 0=kernel, 3=user
-    uint32_t state; // 0=ready, 1=running, 2=blocked, 3=terminated
+    uint32_t ring;         // 0=kernel, 3=user
+    uint32_t state;        // 0=ready, 1=running, 2=blocked, 3=terminated
     uint32_t runtime_ticks;
+    uint32_t start_ticks;  // tick count when task was spawned (100Hz)
     char name[32];
 } taskinfo_entry_t;
 

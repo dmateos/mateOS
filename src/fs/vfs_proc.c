@@ -304,8 +304,21 @@ static uint32_t vgen_tasks(char *dst, uint32_t cap) {
     if (n < 0)
         n = 0;
 
-    append_cstr(dst, cap, &len, "PID  PPID  RING  STATE       NAME\n");
+    uint32_t now_ticks = get_tick_count();
+
+    append_cstr(dst, cap, &len, "PID  PPID  RING  STATE       CPU%  START(s)  NAME\n");
     for (int i = 0; i < n; i++) {
+        // Lifetime CPU% = runtime_ticks / task_age_ticks * 100
+        // Task age = ticks since spawn (0 means kernel/boot task)
+        uint32_t age_ticks = (t[i].start_ticks < now_ticks)
+                             ? (now_ticks - t[i].start_ticks) : 0;
+        uint32_t cpu_pct = (age_ticks > 0)
+                           ? (t[i].runtime_ticks * 100u / age_ticks) : 0;
+        if (cpu_pct > 100)
+            cpu_pct = 100;
+        // Start time in seconds since boot (tick 0 = boot)
+        uint32_t start_sec = t[i].start_ticks / 100;
+
         append_dec_u32(dst, cap, &len, t[i].id);
         append_cstr(dst, cap, &len, "    ");
         append_dec_u32(dst, cap, &len, t[i].parent_id);
@@ -313,6 +326,10 @@ static uint32_t vgen_tasks(char *dst, uint32_t cap) {
         append_dec_u32(dst, cap, &len, t[i].ring);
         append_cstr(dst, cap, &len, "    ");
         append_cstr(dst, cap, &len, task_state_name(t[i].state));
+        append_cstr(dst, cap, &len, "    ");
+        append_dec_u32(dst, cap, &len, cpu_pct);
+        append_cstr(dst, cap, &len, "    ");
+        append_dec_u32(dst, cap, &len, start_sec);
         append_cstr(dst, cap, &len, "    ");
         append_cstr(dst, cap, &len, t[i].name);
         append_cstr(dst, cap, &len, "\n");
