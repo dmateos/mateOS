@@ -128,6 +128,10 @@ static void keyboard_irq_handler(uint32_t number __attribute__((unused)),
                     key = KEY_UP;
                 else if (scancode == 0x50)
                     key = KEY_DOWN;
+                else if (scancode == 0x47)
+                    key = KEY_HOME;
+                else if (scancode == 0x4F)
+                    key = KEY_END;
                 if (key) {
                     keyboard_buffer_push(key);
                     return;

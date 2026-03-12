@@ -135,10 +135,12 @@ int getmouse(int *x, int *y, unsigned char *buttons);
 #define SEEK_END 2
 
 // Special key codes
-#define KEY_LEFT 0x80
+#define KEY_LEFT  0x80
 #define KEY_RIGHT 0x81
-#define KEY_UP 0x82
-#define KEY_DOWN 0x83
+#define KEY_UP    0x82
+#define KEY_DOWN  0x83
+#define KEY_HOME  0x84
+#define KEY_END   0x85
 
 // Open flags
 #define O_RDONLY 0
