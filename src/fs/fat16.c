@@ -18,6 +18,9 @@
 
 #define FAT16_EOC 0xFFFF
 
+// Extra open flags (must match vfs.h / userland/syscalls.h)
+#define O_APPEND 0x10
+
 typedef struct __attribute__((packed)) {
     uint8_t jump[3];
     uint8_t oem[8];
@@ -58,6 +61,20 @@ typedef struct __attribute__((packed)) {
     uint32_t lba_first;
     uint32_t sector_count;
 } mbr_part_t;
+
+// LFN (Long File Name) directory entry — attribute byte 0x0F marks these.
+// Entries are stored in reverse order before the short 8.3 dirent, each
+// tagged with a 1-based sequence number (last entry ORed with 0x40).
+typedef struct __attribute__((packed)) {
+    uint8_t  seq;          // sequence number (1-based, 0x40 = last/first-in-chain)
+    uint8_t  name1[10];    // 5 UTF-16LE chars
+    uint8_t  attr;         // 0x0F = LFN marker
+    uint8_t  type;         // 0
+    uint8_t  checksum;     // checksum of the associated 8.3 name
+    uint8_t  name2[12];    // 6 UTF-16LE chars
+    uint16_t cluster;      // 0 (unused for LFN)
+    uint8_t  name3[4];     // 2 UTF-16LE chars
+} fat16_lfn_t;
 
 typedef struct {
     int mounted;
@@ -144,8 +161,8 @@ static void fat_cache_evict(uint32_t lba) {
 // On index==0 (or path change), scan the entire directory once and cache
 // all entry names. Subsequent readdir calls just index into the cache.
 // ---------------------------------------------------------------------------
-#define RDCACHE_MAX 128
-#define RDCACHE_NAME 13 // FAT16 8.3 → max 12 chars + NUL
+#define RDCACHE_MAX 256  // raised from 128: silently truncating directories is confusing
+#define RDCACHE_NAME 64  // long filenames up to 63 chars + NUL
 static struct {
     char path[FAT16_MAX_PATH]; // cached directory path
     char names[RDCACHE_MAX][RDCACHE_NAME];
@@ -175,6 +192,133 @@ static int is_83_char(char c) {
     if (c == '_' || c == '$' || c == '~' || c == '-' || c == '!')
         return 1;
     return 0;
+}
+
+// Compute the 8.3 checksum used to associate LFN entries with their short dirent.
+static uint8_t lfn_checksum(const uint8_t name83[11]) {
+    uint8_t sum = 0;
+    for (int i = 0; i < 11; i++)
+        sum = ((sum & 1) ? 0x80 : 0) + (sum >> 1) + name83[i];
+    return sum;
+}
+
+// Extract up to `count` UTF-16LE chars from `src` into ASCII `out` buffer.
+// Stops at NUL or 0xFFFF padding. Returns 0.
+static int lfn_extract_chars(const uint8_t *src, int count, char *out, int *pos,
+                              int maxlen) {
+    for (int i = 0; i < count; i++) {
+        uint8_t lo = src[i * 2];
+        uint8_t hi = src[i * 2 + 1];
+        if (lo == 0xFF && hi == 0xFF) break; // 0xFFFF = padding
+        if (lo == 0 && hi == 0) break;       // NUL terminator
+        if (*pos < maxlen - 1)
+            out[(*pos)++] = (char)lo;        // ASCII-safe: take low byte
+    }
+    return 0;
+}
+
+// Generate a short 8.3 alias for a long name that cannot be represented
+// directly. Uses up to 6 chars of base + "~N" suffix, plus up to 3 ext chars.
+// Does NOT check for collisions — caller is responsible for uniqueness if needed.
+static void fat16_make_short_alias(const char *longname, uint8_t out[11],
+                                   int suffix_num) {
+    for (int i = 0; i < 11; i++) out[i] = ' ';
+
+    // Find last dot for extension
+    const char *dot = (const char *)0;
+    for (const char *p = longname; *p; p++) {
+        if (*p == '.') dot = p;
+    }
+
+    // Build base (up to 6 valid 8.3 chars)
+    int base_len = 0;
+    const char *p = longname;
+    const char *base_end = dot ? dot : (longname + strlen(longname));
+    while (p < base_end && base_len < 6) {
+        char c = upper_ascii(*p++);
+        if (is_83_char(c)) {
+            out[base_len++] = (uint8_t)c;
+        } else if (c != ' ') {
+            out[base_len++] = '_'; // replace invalid char
+        }
+    }
+
+    // Append ~N suffix (N = suffix_num, 1-9)
+    char suffix[3] = { '~', (char)('0' + suffix_num), '\0' };
+    // suffix needs 2 chars; if base_len > 6 already capped; just place at [6] and [7]
+    // But base is only up to 6, so positions [base_len] and [base_len+1] (if < 8)
+    if (base_len > 6) base_len = 6;
+    out[base_len]     = '~';
+    out[base_len + 1] = (uint8_t)('0' + suffix_num);
+    (void)suffix; // silence unused warning
+
+    // Extension: up to 3 chars after the last dot
+    if (dot) {
+        int ext_len = 0;
+        p = dot + 1;
+        while (*p && ext_len < 3) {
+            char c = upper_ascii(*p++);
+            if (is_83_char(c))
+                out[8 + ext_len++] = (uint8_t)c;
+        }
+    }
+}
+
+// Write LFN directory entries for `longname` into `sec` at `off`, going
+// backwards. `lfn_count` is the number of LFN entries to write (already
+// computed). `checksum` is the checksum of the associated 8.3 name.
+// Returns 0 on success, -1 if the entries don't fit in the sector
+// (caller must ensure there is room).
+static void lfn_write_entries(uint8_t *sec, int start_off, int lfn_count,
+                               const char *longname, uint8_t checksum) {
+    int namelen = (int)strlen(longname);
+    // LFN entries are written in reverse order: highest seq first (lowest addr),
+    // seq 1 last (just before the 8.3 dirent).
+    for (int seq = lfn_count; seq >= 1; seq--) {
+        int entry_off = start_off + (seq - 1) * 32;
+        fat16_lfn_t *lfn = (fat16_lfn_t *)(sec + entry_off);
+        memset(lfn, 0xFF, sizeof(*lfn)); // fill with 0xFF (padding)
+        lfn->attr     = FAT16_ATTR_LFN;
+        lfn->type     = 0;
+        lfn->checksum = checksum;
+        lfn->cluster  = 0;
+        // which characters does this entry cover?
+        // seq 1 covers chars 0-12, seq 2 covers 13-25, etc.
+        int char_start = (seq - 1) * 13;
+        uint8_t seq_num = (uint8_t)seq;
+        if (seq == lfn_count) seq_num |= 0x40; // mark as last (first in reverse order)
+        lfn->seq = seq_num;
+
+        // Fill name1[10], name2[12], name3[4] with UTF-16LE chars
+        // For each of the 13 chars in this entry:
+        // positions 0-4 -> name1, 5-10 -> name2, 11-12 -> name3
+        for (int ci = 0; ci < 13; ci++) {
+            int char_idx = char_start + ci;
+            uint8_t lo, hi;
+            if (char_idx < namelen) {
+                lo = (uint8_t)longname[char_idx];
+                hi = 0;
+            } else if (char_idx == namelen) {
+                lo = 0; hi = 0; // NUL terminator
+            } else {
+                lo = 0xFF; hi = 0xFF; // padding
+            }
+            uint8_t *field;
+            int field_idx;
+            if (ci < 5) {
+                field = lfn->name1;
+                field_idx = ci;
+            } else if (ci < 11) {
+                field = lfn->name2;
+                field_idx = ci - 5;
+            } else {
+                field = lfn->name3;
+                field_idx = ci - 11;
+            }
+            field[field_idx * 2]     = lo;
+            field[field_idx * 2 + 1] = hi;
+        }
+    }
 }
 
 static int ata_read_sector(uint32_t lba, uint8_t *out) {
@@ -382,13 +526,20 @@ static int fat16_name_to_83(const char *in, uint8_t out[11]) {
 // scans the fixed root directory sectors. For subdirs, follows the cluster
 // chain. Returns 0 on match, -1 on not found. Optionally returns first free
 // slot.
-// Helper: scan a sector buffer for a matching 8.3 name or free slot.
+// Helper: scan a sector buffer for a matching 8.3 name (or long name) or free slot.
+// `pending_lfn` is the long name accumulated from preceding LFN entries (may be "").
+// `pending_lfn_start_lba/off` records where those LFN entries began (for free-slot
+// reporting when a deleted entry is found).
 // Returns 1 if match found, -1 if end-of-directory (0x00 marker), 0 to keep scanning.
 static int fat16_scan_dir_sector(const uint8_t *sec, uint32_t lba,
                                  const uint8_t name83[11],
+                                 const char *longname,
                                  fat16_dirent_t *out, uint32_t *out_lba,
                                  uint16_t *out_off, uint32_t *free_lba,
-                                 uint16_t *free_off) {
+                                 uint16_t *free_off,
+                                 // LFN state: accumulated name and its storage info
+                                 char *pending_lfn, int pending_lfn_maxlen,
+                                 int *pending_lfn_seq) {
     for (int off = 0; off < FAT16_SECTOR_SIZE; off += 32) {
         const fat16_dirent_t *de = (const fat16_dirent_t *)(sec + off);
 
@@ -400,31 +551,94 @@ static int fat16_scan_dir_sector(const uint8_t *sec, uint32_t lba,
             return -1; // end of directory
         }
         if (de->name[0] == 0xE5) {
+            // Deleted entry: reset pending LFN state and record as free slot
+            if (pending_lfn) pending_lfn[0] = '\0';
+            if (pending_lfn_seq) *pending_lfn_seq = 0;
             if (free_lba && *free_lba == 0) {
                 *free_lba = lba;
                 *free_off = (uint16_t)off;
             }
             continue;
         }
-        if (de->attr == FAT16_ATTR_LFN)
+        if (de->attr == FAT16_ATTR_LFN) {
+            // Accumulate LFN characters into pending_lfn.
+            // LFN entries arrive in reverse seq order on disk, so the entry with
+            // the highest seq (ORed with 0x40) arrives first, down to seq 1.
+            // We process them in arrival order, prepending each entry's chars.
+            // Simple approach: rebuild the name when we see each entry.
+            // Since we see them from last->first, we can store them and reassemble
+            // when we hit the short entry. For simplicity, do a forward pass:
+            // treat them in arrival order and just store the whole name.
+            if (pending_lfn && pending_lfn_seq) {
+                const fat16_lfn_t *lfn = (const fat16_lfn_t *)de;
+                uint8_t seq = lfn->seq & 0x3F; // strip 0x40 flag
+                if (lfn->seq & 0x40) {
+                    // This is the last LFN entry (highest seq, first on disk)
+                    // — reset and start accumulating from here
+                    *pending_lfn_seq = (int)seq;
+                    pending_lfn[0] = '\0';
+                }
+                // Prepend this entry's chars: entry with seq=N covers chars (N-1)*13..N*13-1
+                // Build a temporary buffer for just this entry's contribution
+                char chunk[14];
+                int cpos = 0;
+                lfn_extract_chars(lfn->name1, 5, chunk, &cpos, 14);
+                lfn_extract_chars(lfn->name2, 6, chunk, &cpos, 14);
+                lfn_extract_chars(lfn->name3, 2, chunk, &cpos, 14);
+                chunk[cpos] = '\0';
+                // Each chunk corresponds to chars at position (seq-1)*13 in the final name.
+                // Rather than complex insertion, just overwrite those positions.
+                int char_start = ((int)seq - 1) * 13;
+                for (int ci = 0; ci < cpos && (char_start + ci) < pending_lfn_maxlen - 1; ci++)
+                    pending_lfn[char_start + ci] = chunk[ci];
+                // NUL-terminate at the known end
+                int total_chars = *pending_lfn_seq * 13;
+                if (total_chars < pending_lfn_maxlen)
+                    pending_lfn[total_chars] = '\0';
+                else
+                    pending_lfn[pending_lfn_maxlen - 1] = '\0';
+            }
             continue;
-        if (de->attr & FAT16_ATTR_VOLUMEID)
+        }
+        if (de->attr & FAT16_ATTR_VOLUMEID) {
+            // Volume label: reset pending LFN
+            if (pending_lfn) pending_lfn[0] = '\0';
+            if (pending_lfn_seq) *pending_lfn_seq = 0;
             continue;
+        }
 
-        if (memcmp(de->name, name83, 11) == 0) {
-            if (out)
-                *out = *de;
-            if (out_lba)
-                *out_lba = lba;
-            if (out_off)
-                *out_off = (uint16_t)off;
+        // Short 8.3 entry: check for match
+        int matched = 0;
+        if (memcmp(de->name, name83, 11) == 0)
+            matched = 1;
+        // Also match by long name if provided and pending_lfn has content
+        if (!matched && longname && pending_lfn && pending_lfn[0] != '\0') {
+            if (strcmp(pending_lfn, longname) == 0)
+                matched = 1;
+        }
+
+        if (matched) {
+            if (out)   *out    = *de;
+            if (out_lba) *out_lba = lba;
+            if (out_off) *out_off = (uint16_t)off;
+            // Reset pending LFN state
+            if (pending_lfn) pending_lfn[0] = '\0';
+            if (pending_lfn_seq) *pending_lfn_seq = 0;
             return 1; // found
         }
+
+        // No match: reset pending LFN for next entry
+        if (pending_lfn) pending_lfn[0] = '\0';
+        if (pending_lfn_seq) *pending_lfn_seq = 0;
     }
     return 0; // keep scanning
 }
 
+// Lookup a name in a directory. Supports both 8.3 and long file names.
+// `name83` is the 8.3-encoded name (11 bytes); `longname` is the original
+// filename string (may be NULL). Matches on either 8.3 or LFN.
 static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
+                               const char *longname,
                                fat16_dirent_t *out, uint32_t *out_lba,
                                uint16_t *out_off, uint32_t *free_lba,
                                uint16_t *free_off) {
@@ -438,6 +652,11 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
         return -1;
     int result = -1;
 
+    // LFN accumulator state (persists across sector boundaries)
+    char pending_lfn[RDCACHE_NAME];
+    int  pending_lfn_seq = 0;
+    pending_lfn[0] = '\0';
+
     if (dir.cluster == 0) {
         // Root directory: fixed LBA region — bulk-read up to 8 sectors
         uint32_t s = 0;
@@ -450,7 +669,8 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
             for (uint32_t b = 0; b < batch; b++) {
                 int rc = fat16_scan_dir_sector(
                     bulk + b * FAT16_SECTOR_SIZE, base_lba + b,
-                    name83, out, out_lba, out_off, free_lba, free_off);
+                    name83, longname, out, out_lba, out_off, free_lba, free_off,
+                    pending_lfn, RDCACHE_NAME, &pending_lfn_seq);
                 if (rc == 1) { result = 0; goto out; }
                 if (rc == -1) goto out;
             }
@@ -468,7 +688,8 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
                 for (uint8_t b = 0; b < g_fat.sectors_per_cluster; b++) {
                     int rc = fat16_scan_dir_sector(
                         bulk + b * FAT16_SECTOR_SIZE, base_lba + b,
-                        name83, out, out_lba, out_off, free_lba, free_off);
+                        name83, longname, out, out_lba, out_off, free_lba, free_off,
+                        pending_lfn, RDCACHE_NAME, &pending_lfn_seq);
                     if (rc == 1) { result = 0; goto out; }
                     if (rc == -1) goto out;
                 }
@@ -479,7 +700,8 @@ static int fat16_lookup_in_dir(fat16_dir_loc_t dir, const uint8_t name83[11],
                         goto out;
                     int rc = fat16_scan_dir_sector(
                         sec, base_lba + s,
-                        name83, out, out_lba, out_off, free_lba, free_off);
+                        name83, longname, out, out_lba, out_off, free_lba, free_off,
+                        pending_lfn, RDCACHE_NAME, &pending_lfn_seq);
                     if (rc == 1) { result = 0; goto out; }
                     if (rc == -1) goto out;
                 }
@@ -527,17 +749,21 @@ static int fat16_resolve_path(const char *path, fat16_dir_loc_t *parent_dir,
             continue;
         }
 
-        // Extract component name
-        char comp[13];
+        // Extract component name (up to RDCACHE_NAME-1 chars for LFN support)
+        char comp[RDCACHE_NAME];
         if (comp_len >= (int)sizeof(comp))
             return -1; // name too long
         memcpy(comp, path, (size_t)comp_len);
         comp[comp_len] = '\0';
 
-        // Convert to 8.3
+        // Convert to 8.3 — may fail for long names; use all-spaces as sentinel
         uint8_t c83[11];
-        if (fat16_name_to_83(comp, c83) < 0)
-            return -1;
+        int c83_ok = (fat16_name_to_83(comp, c83) == 0);
+        if (!c83_ok) {
+            // Long name: build a dummy 8.3 alias for the lookup.
+            // The scan will match via the LFN string comparison path.
+            for (int i = 0; i < 11; i++) c83[i] = 0;
+        }
 
         // Is this the last component?
         const char *rest = end;
@@ -549,18 +775,22 @@ static int fat16_resolve_path(const char *path, fat16_dir_loc_t *parent_dir,
             // This is the final component — look it up in cur_dir
             if (parent_dir)
                 *parent_dir = cur_dir;
-            if (name83)
-                memcpy(name83, c83, 11);
+            if (name83) {
+                if (c83_ok)
+                    memcpy(name83, c83, 11);
+                else
+                    memset(name83, ' ', 11); // signal: long name, alias unknown until found
+            }
             if (free_lba)
                 *free_lba = 0;
             if (free_off)
                 *free_off = 0;
-            return fat16_lookup_in_dir(cur_dir, c83, final_de, de_lba, de_off,
+            return fat16_lookup_in_dir(cur_dir, c83, comp, final_de, de_lba, de_off,
                                        free_lba, free_off);
         } else {
             // Intermediate component — must be a directory
             fat16_dirent_t de;
-            if (fat16_lookup_in_dir(cur_dir, c83, &de, NULL, NULL, NULL, NULL) <
+            if (fat16_lookup_in_dir(cur_dir, c83, comp, &de, NULL, NULL, NULL, NULL) <
                 0) {
                 return -1; // intermediate dir not found
             }
@@ -738,21 +968,89 @@ static int fat16_vfs_open(const char *path, int flags) {
             return -1;
         rdcache_invalidate(); // new file being created
 
-        uint8_t sec[FAT16_SECTOR_SIZE];
-        if (ata_read_sector(free_lba, sec) < 0)
-            return -1;
-        fat16_dirent_t *nde = (fat16_dirent_t *)(sec + free_off);
-        memset(nde, 0, sizeof(*nde));
-        memcpy(nde->name, name83, 11);
-        nde->attr = FAT16_ATTR_ARCHIVE;
-        nde->first_cluster_lo = 0;
-        nde->file_size = 0;
-        if (ata_write_sector(free_lba, sec) < 0)
-            return -1;
+        // Determine whether we need LFN entries.
+        // Extract the last path component as the filename.
+        const char *fname = path;
+        for (const char *p = path; *p; p++)
+            if (*p == '/') fname = p + 1;
+        int need_lfn = (fat16_name_to_83(fname, name83) < 0);
+        uint8_t actual_name83[11];
+        if (need_lfn) {
+            // Generate a short alias and write LFN entries first.
+            // Find a non-colliding alias suffix.
+            int suffix = 1;
+            fat16_make_short_alias(fname, actual_name83, suffix);
+            // Simple collision check: if alias already exists, try next suffix
+            while (suffix <= 9) {
+                fat16_dirent_t check_de;
+                fat16_make_short_alias(fname, actual_name83, suffix);
+                if (fat16_lookup_in_dir(parent, actual_name83, NULL,
+                                        &check_de, NULL, NULL, NULL, NULL) < 0)
+                    break; // not found = no collision
+                suffix++;
+            }
+            if (suffix > 9) return -1; // gave up
 
-        de = *nde;
-        de_lba = free_lba;
-        de_off = free_off;
+            // Compute how many LFN entries we need
+            int fname_len = (int)strlen(fname);
+            int lfn_count = (fname_len + 12) / 13; // ceil(len/13)
+            uint8_t checksum = lfn_checksum(actual_name83);
+
+            // We need lfn_count + 1 consecutive free slots. For now, require
+            // the free slot found earlier to be followed by enough space in
+            // the same sector. This is a simplified implementation.
+            // If there's no room in the sector, just write the short entry only.
+            int can_fit_lfn = (free_off + (uint16_t)((lfn_count + 1) * 32) <= FAT16_SECTOR_SIZE);
+
+            uint8_t sec[FAT16_SECTOR_SIZE];
+            if (ata_read_sector(free_lba, sec) < 0)
+                return -1;
+
+            if (can_fit_lfn) {
+                // Write LFN entries before the short entry
+                lfn_write_entries(sec, (int)free_off, lfn_count, fname, checksum);
+                // Write short entry after LFN entries
+                int short_off = (int)free_off + lfn_count * 32;
+                fat16_dirent_t *nde = (fat16_dirent_t *)(sec + short_off);
+                memset(nde, 0, sizeof(*nde));
+                memcpy(nde->name, actual_name83, 11);
+                nde->attr = FAT16_ATTR_ARCHIVE;
+                if (ata_write_sector(free_lba, sec) < 0)
+                    return -1;
+                de = *nde;
+                de_lba = free_lba;
+                de_off = (uint16_t)short_off;
+            } else {
+                // Not enough room in this sector: just write short name only
+                fat16_dirent_t *nde = (fat16_dirent_t *)(sec + free_off);
+                memset(nde, 0, sizeof(*nde));
+                memcpy(nde->name, actual_name83, 11);
+                nde->attr = FAT16_ATTR_ARCHIVE;
+                if (ata_write_sector(free_lba, sec) < 0)
+                    return -1;
+                de = *nde;
+                de_lba = free_lba;
+                de_off = free_off;
+            }
+            memcpy(name83, actual_name83, 11);
+        } else {
+            // Normal 8.3 name
+            uint8_t sec[FAT16_SECTOR_SIZE];
+            if (ata_read_sector(free_lba, sec) < 0)
+                return -1;
+            fat16_dirent_t *nde = (fat16_dirent_t *)(sec + free_off);
+            memset(nde, 0, sizeof(*nde));
+            memcpy(nde->name, name83, 11);
+            nde->attr = FAT16_ATTR_ARCHIVE;
+            nde->first_cluster_lo = 0;
+            nde->file_size = 0;
+            if (ata_write_sector(free_lba, sec) < 0)
+                return -1;
+
+            de = *nde;
+            de_lba = free_lba;
+            de_off = free_off;
+        }
     }
 
     if (de.attr & FAT16_ATTR_DIR)
@@ -833,6 +1131,10 @@ static int fat16_vfs_write(int handle, const void *buf, uint32_t len) {
         return -1;
     if (len == 0)
         return 0;
+
+    // O_APPEND: always write at end of file
+    if (f->flags & O_APPEND)
+        f->pos = f->size;
 
     uint32_t cluster_size =
         (uint32_t)g_fat.sectors_per_cluster * FAT16_SECTOR_SIZE;
@@ -973,6 +1275,28 @@ static void fat16_readdir_fill_cache(const char *path, fat16_dir_loc_t dir) {
     if (!bulk)
         return;
 
+    // LFN accumulator: collect pending long-name from LFN entries
+    char pending_lfn[RDCACHE_NAME];
+    int  pending_lfn_seq = 0;
+    pending_lfn[0] = '\0';
+
+    // Helper macro to add an entry to the cache, using LFN if available
+#define RDCACHE_ADD(de_ptr) do { \
+    if (rdcache.count < RDCACHE_MAX) { \
+        if (pending_lfn[0] != '\0') { \
+            int _n = 0; \
+            for (; pending_lfn[_n] && _n < RDCACHE_NAME - 1; _n++) \
+                rdcache.names[rdcache.count][_n] = pending_lfn[_n]; \
+            rdcache.names[rdcache.count][_n] = '\0'; \
+        } else { \
+            fat16_dirent_name_to_string((de_ptr), rdcache.names[rdcache.count]); \
+        } \
+        rdcache.count++; \
+    } \
+    pending_lfn[0] = '\0'; \
+    pending_lfn_seq = 0; \
+} while (0)
+
     if (dir.cluster == 0) {
         // Root directory — bulk-read sectors
         uint32_t s = 0;
@@ -988,17 +1312,37 @@ static void fat16_readdir_fill_cache(const char *path, fat16_dir_loc_t dir) {
                     fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
                     if (de->name[0] == 0x00)
                         goto done;
-                    if (de->name[0] == 0xE5)
+                    if (de->name[0] == 0xE5) {
+                        pending_lfn[0] = '\0'; pending_lfn_seq = 0;
                         continue;
-                    if (de->attr == FAT16_ATTR_LFN)
-                        continue;
-                    if (de->attr & FAT16_ATTR_VOLUMEID)
-                        continue;
-                    if (rdcache.count < RDCACHE_MAX) {
-                        fat16_dirent_name_to_string(
-                            de, rdcache.names[rdcache.count]);
-                        rdcache.count++;
                     }
+                    if (de->attr == FAT16_ATTR_LFN) {
+                        // Accumulate LFN chars
+                        const fat16_lfn_t *lfn = (const fat16_lfn_t *)de;
+                        uint8_t seq = lfn->seq & 0x3F;
+                        if (lfn->seq & 0x40) {
+                            pending_lfn_seq = (int)seq;
+                            pending_lfn[0] = '\0';
+                        }
+                        int char_start = ((int)seq - 1) * 13;
+                        char chunk[14]; int cpos = 0;
+                        lfn_extract_chars(lfn->name1, 5, chunk, &cpos, 14);
+                        lfn_extract_chars(lfn->name2, 6, chunk, &cpos, 14);
+                        lfn_extract_chars(lfn->name3, 2, chunk, &cpos, 14);
+                        for (int ci = 0; ci < cpos && (char_start+ci) < RDCACHE_NAME-1; ci++)
+                            pending_lfn[char_start + ci] = chunk[ci];
+                        int total_chars = pending_lfn_seq * 13;
+                        if (total_chars < RDCACHE_NAME)
+                            pending_lfn[total_chars] = '\0';
+                        else
+                            pending_lfn[RDCACHE_NAME - 1] = '\0';
+                        continue;
+                    }
+                    if (de->attr & FAT16_ATTR_VOLUMEID) {
+                        pending_lfn[0] = '\0'; pending_lfn_seq = 0;
+                        continue;
+                    }
+                    RDCACHE_ADD(de);
                 }
             }
             s += batch;
@@ -1033,29 +1377,51 @@ static void fat16_readdir_fill_cache(const char *path, fat16_dir_loc_t dir) {
                     fat16_dirent_t *de = (fat16_dirent_t *)(sec + off);
                     if (de->name[0] == 0x00)
                         goto done;
-                    if (de->name[0] == 0xE5)
+                    if (de->name[0] == 0xE5) {
+                        pending_lfn[0] = '\0'; pending_lfn_seq = 0;
                         continue;
-                    if (de->attr == FAT16_ATTR_LFN)
+                    }
+                    if (de->attr == FAT16_ATTR_LFN) {
+                        const fat16_lfn_t *lfn = (const fat16_lfn_t *)de;
+                        uint8_t seq = lfn->seq & 0x3F;
+                        if (lfn->seq & 0x40) {
+                            pending_lfn_seq = (int)seq;
+                            pending_lfn[0] = '\0';
+                        }
+                        int char_start = ((int)seq - 1) * 13;
+                        char chunk[14]; int cpos = 0;
+                        lfn_extract_chars(lfn->name1, 5, chunk, &cpos, 14);
+                        lfn_extract_chars(lfn->name2, 6, chunk, &cpos, 14);
+                        lfn_extract_chars(lfn->name3, 2, chunk, &cpos, 14);
+                        for (int ci = 0; ci < cpos && (char_start+ci) < RDCACHE_NAME-1; ci++)
+                            pending_lfn[char_start + ci] = chunk[ci];
+                        int total_chars = pending_lfn_seq * 13;
+                        if (total_chars < RDCACHE_NAME)
+                            pending_lfn[total_chars] = '\0';
+                        else
+                            pending_lfn[RDCACHE_NAME - 1] = '\0';
                         continue;
-                    if (de->attr & FAT16_ATTR_VOLUMEID)
+                    }
+                    if (de->attr & FAT16_ATTR_VOLUMEID) {
+                        pending_lfn[0] = '\0'; pending_lfn_seq = 0;
                         continue;
+                    }
                     if (is_subdir) {
-                        if (de->name[0] == '.' && de->name[1] == ' ')
-                            continue;
+                        if (de->name[0] == '.' && de->name[1] == ' ') {
+                            pending_lfn[0] = '\0'; continue;
+                        }
                         if (de->name[0] == '.' && de->name[1] == '.' &&
-                            de->name[2] == ' ')
-                            continue;
+                            de->name[2] == ' ') {
+                            pending_lfn[0] = '\0'; continue;
+                        }
                     }
-                    if (rdcache.count < RDCACHE_MAX) {
-                        fat16_dirent_name_to_string(
-                            de, rdcache.names[rdcache.count]);
-                        rdcache.count++;
-                    }
+                    RDCACHE_ADD(de);
                 }
             }
             cl = fat16_get_entry(cl);
         }
     }
+#undef RDCACHE_ADD
 
 done:
     kfree(bulk);
@@ -1265,6 +1631,238 @@ done_check:
     return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Rename: move/rename a file or directory.
+// ---------------------------------------------------------------------------
+// Helper: mark LFN entries preceding a dirent as deleted.
+// Scans backward from `de_off` in the sector at `de_lba`, marking 0xE5.
+static void fat16_delete_preceding_lfn(uint32_t de_lba, uint16_t de_off) {
+    uint8_t sec[FAT16_SECTOR_SIZE];
+    if (ata_read_sector(de_lba, sec) < 0)
+        return;
+    int off = (int)de_off - 32;
+    int changed = 0;
+    while (off >= 0) {
+        fat16_dirent_t *e = (fat16_dirent_t *)(sec + off);
+        if (e->attr == FAT16_ATTR_LFN && e->name[0] != 0xE5) {
+            e->name[0] = 0xE5; // mark deleted
+            changed = 1;
+            off -= 32;
+        } else {
+            break;
+        }
+    }
+    if (changed)
+        ata_write_sector(de_lba, sec);
+}
+
+static int fat16_vfs_rename(const char *oldpath, const char *newpath) {
+    if (!g_fat.mounted || !oldpath || !newpath)
+        return -1;
+    rdcache_invalidate();
+
+    // Resolve old path
+    fat16_dir_loc_t old_parent;
+    fat16_dirent_t old_de;
+    uint32_t old_lba = 0;
+    uint16_t old_off = 0;
+    uint8_t old_name83[11];
+    int rc = fat16_resolve_path(oldpath, &old_parent, &old_de, &old_lba,
+                                &old_off, old_name83, NULL, NULL);
+    if (rc < 0)
+        return -1; // old path doesn't exist
+
+    // Resolve new path (parent must exist)
+    fat16_dir_loc_t new_parent;
+    fat16_dirent_t new_de;
+    uint32_t new_lba = 0, new_free_lba = 0;
+    uint16_t new_off = 0, new_free_off = 0;
+    uint8_t new_name83[11];
+    int new_rc = fat16_resolve_path(newpath, &new_parent, &new_de, &new_lba,
+                                    &new_off, new_name83, &new_free_lba,
+                                    &new_free_off);
+
+    // Extract new filename component
+    const char *new_fname = newpath;
+    for (const char *p = newpath; *p; p++)
+        if (*p == '/') new_fname = p + 1;
+
+    if (new_rc == 0) {
+        // Target already exists
+        if (new_de.attr & FAT16_ATTR_DIR)
+            return -1; // can't overwrite directory
+        // Delete the existing target file first
+        if (new_de.first_cluster_lo >= 2)
+            fat16_free_chain(new_de.first_cluster_lo);
+        {
+            uint8_t sec[FAT16_SECTOR_SIZE];
+            if (ata_read_sector(new_lba, sec) < 0) return -1;
+            fat16_dirent_t *wde = (fat16_dirent_t *)(sec + new_off);
+            wde->name[0] = 0xE5;
+            if (ata_write_sector(new_lba, sec) < 0) return -1;
+            fat16_delete_preceding_lfn(new_lba, new_off);
+        }
+        // Use the freed slot as our free slot
+        new_free_lba = new_lba;
+        new_free_off = new_off;
+    }
+
+    // Determine if same parent (compare cluster values)
+    int same_parent = (old_parent.cluster == new_parent.cluster);
+
+    // Build new 8.3 name (may need LFN)
+    int new_need_lfn = (fat16_name_to_83(new_fname, new_name83) < 0);
+    uint8_t actual_new83[11];
+    if (new_need_lfn) {
+        int suffix = 1;
+        while (suffix <= 9) {
+            fat16_dirent_t check_de;
+            fat16_make_short_alias(new_fname, actual_new83, suffix);
+            if (fat16_lookup_in_dir(new_parent, actual_new83, NULL,
+                                    &check_de, NULL, NULL, NULL, NULL) < 0)
+                break;
+            suffix++;
+        }
+        if (suffix > 9) return -1;
+    } else {
+        memcpy(actual_new83, new_name83, 11);
+    }
+
+    if (same_parent && !new_need_lfn) {
+        // Simple in-place rename: just update the name83 in the existing dirent.
+        // Delete old LFN entries (in same sector, before old dirent).
+        fat16_delete_preceding_lfn(old_lba, old_off);
+        uint8_t sec[FAT16_SECTOR_SIZE];
+        if (ata_read_sector(old_lba, sec) < 0) return -1;
+        fat16_dirent_t *wde = (fat16_dirent_t *)(sec + old_off);
+        memcpy(wde->name, actual_new83, 11);
+        return ata_write_sector(old_lba, sec);
+    }
+
+    // For cross-directory or LFN rename: write new dirent, mark old as deleted.
+    if (new_free_lba == 0)
+        return -1; // no free slot in new parent
+
+    // Write new dirent (with LFN if needed)
+    {
+        uint8_t sec[FAT16_SECTOR_SIZE];
+        if (ata_read_sector(new_free_lba, sec) < 0) return -1;
+
+        if (new_need_lfn) {
+            int fname_len = (int)strlen(new_fname);
+            int lfn_count = (fname_len + 12) / 13;
+            uint8_t checksum = lfn_checksum(actual_new83);
+            int can_fit = (new_free_off + (uint16_t)((lfn_count + 1) * 32) <= FAT16_SECTOR_SIZE);
+            if (can_fit) {
+                lfn_write_entries(sec, (int)new_free_off, lfn_count, new_fname, checksum);
+                int short_off = (int)new_free_off + lfn_count * 32;
+                fat16_dirent_t *nde = (fat16_dirent_t *)(sec + short_off);
+                *nde = old_de;
+                memcpy(nde->name, actual_new83, 11);
+            } else {
+                fat16_dirent_t *nde = (fat16_dirent_t *)(sec + new_free_off);
+                *nde = old_de;
+                memcpy(nde->name, actual_new83, 11);
+            }
+        } else {
+            fat16_dirent_t *nde = (fat16_dirent_t *)(sec + new_free_off);
+            *nde = old_de;
+            memcpy(nde->name, actual_new83, 11);
+        }
+
+        if (ata_write_sector(new_free_lba, sec) < 0) return -1;
+    }
+
+    // Mark old dirent as deleted, and delete its preceding LFN entries
+    fat16_delete_preceding_lfn(old_lba, old_off);
+    {
+        uint8_t sec[FAT16_SECTOR_SIZE];
+        if (ata_read_sector(old_lba, sec) < 0) return -1;
+        fat16_dirent_t *wde = (fat16_dirent_t *)(sec + old_off);
+        wde->name[0] = 0xE5;
+        if (ata_write_sector(old_lba, sec) < 0) return -1;
+    }
+
+    // Update any open file handles that reference the old dirent location
+    // so that fat16_update_dirent() still works correctly after rename.
+    for (int i = 0; i < FAT16_MAX_OPEN; i++) {
+        if (g_open[i].in_use && g_open[i].dirent_lba == old_lba &&
+            g_open[i].dirent_off == old_off) {
+            g_open[i].dirent_lba = new_free_lba;
+            g_open[i].dirent_off = new_free_off;
+        }
+    }
+
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// ftruncate: resize an open file to exactly `length` bytes.
+// ---------------------------------------------------------------------------
+static int fat16_vfs_ftruncate(int handle, uint32_t length) {
+    if (handle < 0 || handle >= FAT16_MAX_OPEN)
+        return -1;
+    if (!g_open[handle].in_use)
+        return -1;
+
+    fat16_open_t *f = &g_open[handle];
+
+    if (length == f->size)
+        return 0; // no-op
+
+    uint32_t cluster_size =
+        (uint32_t)g_fat.sectors_per_cluster * FAT16_SECTOR_SIZE;
+
+    if (length < f->size) {
+        // Shrink: free excess clusters beyond `length`.
+        if (length == 0) {
+            // Free entire chain
+            if (f->first_cluster >= 2) {
+                if (fat16_free_chain(f->first_cluster) < 0)
+                    return -1;
+                f->first_cluster = 0;
+            }
+        } else {
+            // Walk to the cluster containing (length - 1), set its FAT entry
+            // to EOC, free the rest.
+            uint32_t keep_idx = (length - 1) / cluster_size;
+            uint16_t cl = f->first_cluster;
+            for (uint32_t i = 0; i < keep_idx; i++) {
+                uint16_t next = fat16_get_entry(cl);
+                if (next >= 0xFFF8 || next < 2)
+                    break;
+                cl = next;
+            }
+            // Free everything after cl
+            uint16_t next = fat16_get_entry(cl);
+            if (fat16_set_entry(cl, FAT16_EOC) < 0)
+                return -1;
+            if (next >= 2 && next < 0xFFF8)
+                fat16_free_chain(next);
+        }
+
+        f->size = length;
+        if (f->pos > length)
+            f->pos = length;
+    } else {
+        // Grow: allocate clusters until we reach `length`, zero-fill (already
+        // done by fat16_alloc_cluster which zeroes the cluster on alloc).
+        // Just ensure the chain is long enough.
+        uint32_t need_clusters = (length + cluster_size - 1) / cluster_size;
+        if (need_clusters == 0) need_clusters = 1;
+        uint16_t cl;
+        if (fat16_ensure_cluster_for_index(f, need_clusters - 1, &cl) < 0)
+            return -1;
+        f->size = length;
+    }
+
+    // Update directory entry on disk
+    if (fat16_update_dirent(f) < 0)
+        return -1;
+
+    return 0;
+}
+
 static const vfs_fs_ops_t fat16_ops = {
     .name = "fat16",
     .open = fat16_vfs_open,
@@ -1277,6 +1875,8 @@ static const vfs_fs_ops_t fat16_ops = {
     .unlink = fat16_vfs_unlink,
     .mkdir = fat16_vfs_mkdir,
     .rmdir = fat16_vfs_rmdir,
+    .rename = fat16_vfs_rename,
+    .ftruncate = fat16_vfs_ftruncate,
 };
 
 static int fat16_try_mount_at(uint32_t part_lba) {

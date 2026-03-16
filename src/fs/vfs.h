@@ -17,6 +17,7 @@
 #define O_RDWR 2
 #define O_CREAT 4
 #define O_TRUNC 8
+#define O_APPEND 0x10
 
 // Seek whence
 #define SEEK_SET 0
@@ -42,6 +43,8 @@ typedef struct vfs_fs_ops {
     int (*unlink)(const char *path);
     int (*mkdir)(const char *path);
     int (*rmdir)(const char *path);
+    int (*rename)(const char *oldpath, const char *newpath); // may be NULL
+    int (*ftruncate)(int handle, uint32_t length);           // may be NULL
 } vfs_fs_ops_t;
 
 // Open file descriptor (kernel-side)
@@ -80,6 +83,8 @@ int vfs_readdir(const char *path, int index, char *buf, uint32_t size);
 int vfs_unlink(const char *path);
 int vfs_mkdir(const char *path);
 int vfs_rmdir(const char *path);
+int vfs_rename(const char *oldpath, const char *newpath);
+int vfs_ftruncate(vfs_fd_table_t *fdt, int fd, uint32_t length);
 
 // Resolve a relative path against a cwd into an absolute path.
 // out must be at least VFS_PATH_MAX bytes.

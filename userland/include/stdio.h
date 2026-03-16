@@ -41,5 +41,7 @@ int fsetpos(FILE *stream, const fpos_t *pos);
 FILE *fdopen(int fd, const char *mode);
 FILE *freopen(const char *path, const char *mode, FILE *stream);
 int remove(const char *path);
+int sscanf(const char *str, const char *fmt, ...);
+int vsscanf(const char *str, const char *fmt, va_list ap);
 
 #endif

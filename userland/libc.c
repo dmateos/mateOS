@@ -23,9 +23,13 @@ char **environ = 0;
 
 int *__errno_location(void) { return &errno; }
 
-typedef struct {
-    unsigned int size;
+typedef struct alloc_hdr {
+    unsigned int size;       // requested allocation size (bytes)
+    unsigned int cap;        // total block capacity including header (bytes)
+    struct alloc_hdr *next;  // free list link (non-NULL means block is free)
 } alloc_hdr_t;
+
+static alloc_hdr_t *g_free_list = (void *)0; // head of singly-linked free list
 
 typedef struct __mate_file {
     int fd;
@@ -314,19 +318,34 @@ unsigned long long __isoc23_strtoull(const char *nptr, char **endptr,
 }
 
 void *malloc(size_t n) {
-    if (n == 0) {
-        write(2, "[malloc(0)]\n", 12);
+    if (n == 0)
         return NULL;
-    }
     {
         unsigned int need =
             align8((unsigned int)n + (unsigned int)sizeof(alloc_hdr_t));
+
+        // Search free list for a block with enough capacity (first fit)
+        alloc_hdr_t **pp = &g_free_list;
+        while (*pp) {
+            alloc_hdr_t *h = *pp;
+            if (h->cap >= need) {
+                *pp = h->next;   // unlink from free list
+                h->next = (void *)0;
+                h->size = (unsigned int)n;
+                return (void *)(h + 1);
+            }
+            pp = &h->next;
+        }
+
+        // No suitable free block — grow heap
         alloc_hdr_t *h = (alloc_hdr_t *)sbrk((int)need);
         if ((unsigned int)h == 0xFFFFFFFFu) {
             write(2, "[malloc fail: sbrk returned -1]\n", 32);
             return NULL;
         }
         h->size = (unsigned int)n;
+        h->cap  = need;
+        h->next = (void *)0;
         return (void *)(h + 1);
     }
 }
@@ -341,21 +360,37 @@ void *calloc(size_t n, size_t sz) {
     return p;
 }
 
-void free(void *p) { (void)p; }
+void free(void *p) {
+    if (!p)
+        return;
+    // Recover header sitting directly before the user data pointer
+    alloc_hdr_t *h = ((alloc_hdr_t *)p) - 1;
+    // Prepend to free list
+    h->next = g_free_list;
+    g_free_list = h;
+}
 
 void *realloc(void *p, size_t n) {
     if (!p)
         return malloc(n);
-    if (n == 0)
+    if (n == 0) {
+        free(p);
         return NULL;
+    }
     {
         alloc_hdr_t *h = ((alloc_hdr_t *)p) - 1;
+        // If the existing block already has enough capacity, reuse it
+        unsigned int need = align8((unsigned int)n + (unsigned int)sizeof(alloc_hdr_t));
+        if (h->cap >= need) {
+            h->size = (unsigned int)n;
+            return p;
+        }
         void *np = malloc(n);
-        size_t copy;
         if (!np)
             return NULL;
-        copy = h->size < n ? h->size : n;
+        size_t copy = h->size < n ? h->size : n;
         memcpy(np, p, copy);
+        free(p);
         return np;
     }
 }
@@ -917,14 +952,45 @@ int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset) {
     return sigprocmask(how, set, oldset);
 }
 
+/* jmp_buf layout (int[6]): ebx, esi, edi, ebp, esp, eip */
+
+__attribute__((returns_twice))
 int _setjmp(jmp_buf env) {
-    (void)env;
+    __asm__ __volatile__(
+        "movl %%ebx, 0(%0)\n\t"
+        "movl %%esi, 4(%0)\n\t"
+        "movl %%edi, 8(%0)\n\t"
+        "movl %%ebp, 12(%0)\n\t"
+        /* caller's esp = current esp + 8 (ret addr + env arg) */
+        "leal 8(%%esp), %%ecx\n\t"
+        "movl %%ecx, 16(%0)\n\t"
+        /* eip = return address on stack */
+        "movl (%%esp), %%ecx\n\t"
+        "movl %%ecx, 20(%0)\n\t"
+        :
+        : "r"(env)
+        : "ecx", "memory"
+    );
     return 0;
 }
 
+__attribute__((noreturn))
 void longjmp(jmp_buf env, int val) {
-    (void)env;
-    exit(val ? val : 1);
+    /* Ensure val != 0 (longjmp with 0 must return 1 to setjmp caller) */
+    if (val == 0) val = 1;
+    __asm__ __volatile__(
+        "movl %1, %%eax\n\t"   /* return value */
+        "movl 0(%0),  %%ebx\n\t"
+        "movl 4(%0),  %%esi\n\t"
+        "movl 8(%0),  %%edi\n\t"
+        "movl 12(%0), %%ebp\n\t"
+        "movl 16(%0), %%esp\n\t"
+        "jmpl *20(%0)\n\t"
+        :
+        : "r"(env), "r"(val)
+        : /* clobbers everything, but we're not returning */
+    );
+    __builtin_unreachable();
 }
 
 int sigsetjmp(sigjmp_buf env, int savesigs) {
@@ -1138,26 +1204,258 @@ int **__ctype_tolower_loc(void) {
     return &p;
 }
 
+/* Full sscanf / vsscanf implementation.
+ * Supported: %d %i %u %x %X %o %s %c %% %n %[charset] %[^charset]
+ * Modifiers: * (suppress), width, h (short), l (long)
+ * Returns number of items assigned, or EOF (-1) on input failure before match. */
+static int mini_vsscanf(const char *str, const char *fmt, va_list ap) {
+    const char *s = str;
+    const char *f = fmt;
+    int assigned = 0;
+    int input_consumed = 0; /* set to 1 once we start consuming input */
+
+    while (*f) {
+        /* Whitespace in format matches zero or more whitespace in input */
+        if (c_isspace((unsigned char)*f)) {
+            while (c_isspace((unsigned char)*s))
+                s++;
+            f++;
+            continue;
+        }
+
+        /* Literal match */
+        if (*f != '%') {
+            if (*s != *f)
+                return assigned ? assigned : -1;
+            s++;
+            f++;
+            input_consumed = 1;
+            continue;
+        }
+
+        f++; /* skip '%' */
+
+        /* %% — match literal percent */
+        if (*f == '%') {
+            if (*s != '%')
+                return assigned ? assigned : -1;
+            s++;
+            f++;
+            input_consumed = 1;
+            continue;
+        }
+
+        /* Assignment suppression flag */
+        int suppress = 0;
+        if (*f == '*') { suppress = 1; f++; }
+
+        /* Width */
+        int width = 0;
+        while (c_isdigit((unsigned char)*f)) {
+            width = width * 10 + (*f - '0');
+            f++;
+        }
+
+        /* Length modifier */
+        int is_long = 0, is_short = 0;
+        if (*f == 'l') { is_long  = 1; f++; }
+        else if (*f == 'h') { is_short = 1; f++; }
+
+        char conv = *f++;
+
+        /* %n — store chars consumed so far, no input consumed */
+        if (conv == 'n') {
+            if (!suppress) {
+                int *p = va_arg(ap, int *);
+                if (p) *p = (int)(s - str);
+            }
+            continue;
+        }
+
+        /* Skip leading whitespace for numeric and %s conversions */
+        if (conv != 'c' && conv != '[') {
+            while (c_isspace((unsigned char)*s))
+                s++;
+        }
+
+        if (*s == '\0') {
+            /* Input exhausted before this conversion */
+            return (assigned || input_consumed) ? assigned : -1;
+        }
+        input_consumed = 1;
+
+        if (conv == 'd' || conv == 'i' || conv == 'u' ||
+            conv == 'x' || conv == 'X' || conv == 'o') {
+            int base = 10;
+            if (conv == 'x' || conv == 'X') base = 16;
+            else if (conv == 'o') base = 8;
+            else if (conv == 'i') base = 0; /* strtol auto-detect */
+
+            /* Copy up to 'width' chars into a temp buffer for strtol */
+            char tmp[64];
+            int tlen = 0;
+            const char *start = s;
+            /* allow sign for signed conversions */
+            if ((conv == 'd' || conv == 'i') && (*s == '-' || *s == '+')) {
+                if (width == 0 || tlen < width) tmp[tlen++] = *s++;
+            }
+            /* 0x prefix for hex/auto */
+            if ((base == 16 || base == 0) && s[0] == '0' &&
+                (s[1] == 'x' || s[1] == 'X')) {
+                if (width == 0 || tlen + 2 <= width) {
+                    tmp[tlen++] = *s++;
+                    tmp[tlen++] = *s++;
+                }
+            }
+            while (*s && (width == 0 || tlen < width)) {
+                int d = parse_base_digit(*s);
+                int eff_base = (base == 0) ? 10 : base;
+                if (d < 0 || d >= eff_base) break;
+                tmp[tlen++] = *s++;
+            }
+            tmp[tlen] = '\0';
+            if (s == start) return assigned ? assigned : -1; /* no chars read */
+
+            if (!suppress) {
+                char *end;
+                if (conv == 'u' || conv == 'x' || conv == 'X' || conv == 'o') {
+                    unsigned long v = strtoul(tmp, &end, base == 0 ? 10 : base);
+                    if (is_long) {
+                        unsigned long *p = va_arg(ap, unsigned long *);
+                        if (p) *p = v;
+                    } else if (is_short) {
+                        unsigned short *p = va_arg(ap, unsigned short *);
+                        if (p) *p = (unsigned short)v;
+                    } else {
+                        unsigned int *p = va_arg(ap, unsigned int *);
+                        if (p) *p = (unsigned int)v;
+                    }
+                } else {
+                    long v = strtol(tmp, &end, base == 0 ? 0 : base);
+                    if (is_long) {
+                        long *p = va_arg(ap, long *);
+                        if (p) *p = v;
+                    } else if (is_short) {
+                        short *p = va_arg(ap, short *);
+                        if (p) *p = (short)v;
+                    } else {
+                        int *p = va_arg(ap, int *);
+                        if (p) *p = (int)v;
+                    }
+                }
+                assigned++;
+            }
+
+        } else if (conv == 'c') {
+            int n = (width == 0) ? 1 : width;
+            if (!suppress) {
+                char *p = va_arg(ap, char *);
+                int i;
+                for (i = 0; i < n && *s; i++)
+                    p[i] = *s++;
+                if (i < n) return assigned ? assigned : -1;
+                assigned++;
+            } else {
+                int i;
+                for (i = 0; i < n && *s; i++) s++;
+            }
+
+        } else if (conv == 's') {
+            const char *start = s;
+            int n = 0;
+            char *p = suppress ? (void *)0 : va_arg(ap, char *);
+            while (*s && !c_isspace((unsigned char)*s) &&
+                   (width == 0 || n < width)) {
+                if (!suppress && p) p[n] = *s;
+                s++;
+                n++;
+            }
+            if (s == start) return assigned ? assigned : -1;
+            if (!suppress && p) {
+                p[n] = '\0';
+                assigned++;
+            } else if (suppress) {
+                /* nothing to assign */
+            }
+
+        } else if (conv == '[') {
+            /* Scanset: %[abc] or %[^abc] */
+            int negate = 0;
+            if (*f == '^') { negate = 1; f++; }
+            /* collect charset into fixed buffer */
+            char charset[128];
+            int cslen = 0;
+            /* ']' as first char (or after '^') is literal */
+            if (*f == ']') charset[cslen++] = *f++;
+            while (*f && *f != ']' && cslen < 127)
+                charset[cslen++] = *f++;
+            charset[cslen] = '\0';
+            if (*f == ']') f++;
+
+            char *p = suppress ? (void *)0 : va_arg(ap, char *);
+            int n = 0;
+            const char *start2 = s;
+            while (*s && (width == 0 || n < width)) {
+                /* Check membership */
+                int in_set = 0;
+                int ci;
+                for (ci = 0; ci < cslen; ci++) {
+                    if (charset[ci] == *s) { in_set = 1; break; }
+                }
+                if (negate ? in_set : !in_set) break;
+                if (!suppress && p) p[n] = *s;
+                s++;
+                n++;
+            }
+            if (s == start2) return assigned ? assigned : -1;
+            if (!suppress && p) {
+                p[n] = '\0';
+                assigned++;
+            }
+        }
+        /* unknown conversion: skip */
+    }
+    return assigned;
+}
+
+int sscanf(const char *str, const char *fmt, ...) {
+    va_list ap;
+    int n;
+    va_start(ap, fmt);
+    n = mini_vsscanf(str, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int vsscanf(const char *str, const char *fmt, va_list ap) {
+    return mini_vsscanf(str, fmt, ap);
+}
+
 int __isoc99_sscanf(const char *str, const char *fmt, ...) {
     va_list ap;
-    int matched = 0;
-    (void)ap;
-    if (!str || !fmt)
-        return 0;
-    if (strcmp(fmt, "%d") == 0) {
-        int *out;
-        va_start(ap, fmt);
-        out = va_arg(ap, int *);
-        if (out) {
-            char *end;
-            *out = (int)strtol(str, &end, 10);
-            if (end != str)
-                matched = 1;
-        }
-        va_end(ap);
-        return matched;
-    }
-    return 0;
+    int n;
+    va_start(ap, fmt);
+    n = mini_vsscanf(str, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+/* GCC 14+ maps sscanf to __isoc23_sscanf */
+int __isoc23_sscanf(const char *str, const char *fmt, ...) {
+    va_list ap;
+    int n;
+    va_start(ap, fmt);
+    n = mini_vsscanf(str, fmt, ap);
+    va_end(ap);
+    return n;
+}
+
+int __isoc99_vsscanf(const char *str, const char *fmt, va_list ap) {
+    return mini_vsscanf(str, fmt, ap);
+}
+
+int __isoc23_vsscanf(const char *str, const char *fmt, va_list ap) {
+    return mini_vsscanf(str, fmt, ap);
 }
 
 char *strerror(int errnum) {

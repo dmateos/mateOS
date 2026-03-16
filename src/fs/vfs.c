@@ -548,6 +548,43 @@ int vfs_read_file(const char *path, void **out_data, uint32_t *out_size) {
     return 0;
 }
 
+int vfs_rename(const char *oldpath, const char *newpath) {
+    if (!oldpath || !newpath)
+        return -1;
+    // Cannot rename virtual files
+    if (vfs_find_virtual_file(oldpath) >= 0 || vfs_find_virtual_file(newpath) >= 0)
+        return -1;
+
+    for (int fs = 0; fs < fs_count; fs++) {
+        if (!filesystems[fs]->rename)
+            continue;
+        if (filesystems[fs]->rename(oldpath, newpath) == 0)
+            return 0;
+    }
+    return -1;
+}
+
+int vfs_ftruncate(vfs_fd_table_t *fdt, int fd, uint32_t length) {
+    if (!fdt || fd < 0 || fd >= VFS_MAX_FDS_PER_TASK)
+        return -1;
+    if (!fdt->fds[fd].in_use)
+        return -1;
+
+    // Must be open for writing
+    int access = fdt->fds[fd].open_flags & 0x3;
+    if (access == O_RDONLY)
+        return -1;
+
+    int fs = fdt->fds[fd].fs_id;
+    if (fs < 0)
+        return -1; // console or virtual fd
+    if (vfs_virtual_index_from_fs_id(fs) >= 0)
+        return -1;
+    if (!filesystems[fs]->ftruncate)
+        return -1;
+    return filesystems[fs]->ftruncate(fdt->fds[fd].fs_handle, length);
+}
+
 void vfs_close_all(vfs_fd_table_t *fdt) {
     if (!fdt)
         return;

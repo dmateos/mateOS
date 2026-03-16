@@ -1025,6 +1025,25 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
         return (uint32_t)vfs_rmdir(rpath);
     }
 
+    case SYS_RENAME: {
+        // rename(oldpath, newpath) -> 0 or -1 (ebx=oldpath, ecx=newpath)
+        if (!validate_user_string(ebx) || !validate_user_string(ecx))
+            return (uint32_t)-1;
+        task_t *rncur = task_current();
+        char rn_old[VFS_PATH_MAX], rn_new[VFS_PATH_MAX];
+        vfs_resolve_path(rncur ? rncur->cwd : "/", (const char *)ebx, rn_old);
+        vfs_resolve_path(rncur ? rncur->cwd : "/", (const char *)ecx, rn_new);
+        return (uint32_t)vfs_rename(rn_old, rn_new);
+    }
+
+    case SYS_FTRUNCATE: {
+        // ftruncate(fd, length) -> 0 or -1 (ebx=fd, ecx=length)
+        task_t *ftcur = task_current();
+        if (!ftcur || !ftcur->fd_table)
+            return (uint32_t)-1;
+        return (uint32_t)vfs_ftruncate(ftcur->fd_table, (int)ebx, ecx);
+    }
+
     case SYS_GETCWD: {
         // getcwd(buf, size) -> 0 or -1
         if (!validate_user_ptr(ebx, ecx))

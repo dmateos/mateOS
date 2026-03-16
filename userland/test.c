@@ -4,6 +4,8 @@
 
 #include "libc.h"
 #include "syscalls.h"
+#include <setjmp.h>
+#include <stdio.h>
 
 // ============================================================
 // Test 1: Basic syscall functionality
@@ -1959,6 +1961,228 @@ static int test_file_create_cycle(void) {
     return 1;
 }
 
+static int test_free(void) {
+    print("TEST 46: free/malloc reuse\n");
+
+    // free(NULL) must not crash
+    free((void *)0);
+    print("  - free(NULL): OK\n");
+
+    // Allocate a block, free it, reallocate same size — must reuse (heap shouldn't grow)
+    void *a = malloc(64);
+    if (!a) { print("  FAIL: malloc 64\n\n"); return 0; }
+    // Write a sentinel so we can distinguish reused memory
+    char *ca = (char *)a;
+    ca[0] = 0x5A;
+    ca[63] = 0x5A;
+    free(a);
+
+    void *b = malloc(64);
+    if (!b) { print("  FAIL: malloc 64 after free\n\n"); return 0; }
+    // The reused pointer must be the same block
+    if (b != a) { print("  FAIL: free block not reused\n\n"); return 0; }
+    print("  - malloc after free reuses block: OK\n");
+
+    // Allocate several blocks, free them all, then reallocate — each should be reused
+    void *p[8];
+    int i;
+    for (i = 0; i < 8; i++) {
+        p[i] = malloc(32);
+        if (!p[i]) { print("  FAIL: malloc 32 in loop\n\n"); return 0; }
+    }
+    for (i = 0; i < 8; i++)
+        free(p[i]);
+    // Re-malloc same sizes; all should come from the free list (no sbrk)
+    void *q[8];
+    for (i = 0; i < 8; i++) {
+        q[i] = malloc(32);
+        if (!q[i]) { print("  FAIL: re-malloc 32\n\n"); return 0; }
+    }
+    // Each q[i] should match one of the p[i] (order may differ — just check non-null and unique)
+    int matched = 0;
+    for (i = 0; i < 8; i++) {
+        int j;
+        for (j = 0; j < 8; j++) {
+            if (q[i] == p[j]) { matched++; break; }
+        }
+    }
+    for (i = 0; i < 8; i++) free(q[i]);
+    if (matched != 8) { print("  FAIL: not all blocks reused from free list\n\n"); return 0; }
+    print("  - 8 blocks freed and reused: OK\n");
+
+    // Smaller malloc after free of larger block must also reuse (fits within capacity)
+    void *big = malloc(128);
+    if (!big) { print("  FAIL: malloc 128\n\n"); return 0; }
+    free(big);
+    void *small = malloc(32);
+    if (!small) { print("  FAIL: malloc 32 after free 128\n\n"); return 0; }
+    if (small != big) { print("  FAIL: smaller alloc didn't reuse larger freed block\n\n"); return 0; }
+    free(small);
+    print("  - small alloc reuses larger freed block: OK\n");
+
+    // realloc(p, 0) should return NULL and free p
+    void *r = malloc(48);
+    if (!r) { print("  FAIL: malloc 48 for realloc test\n\n"); return 0; }
+    void *r2 = realloc(r, 0);
+    if (r2 != (void *)0) { print("  FAIL: realloc(p,0) should return NULL\n\n"); return 0; }
+    // The freed block should be reusable now
+    void *r3 = malloc(48);
+    if (!r3) { print("  FAIL: malloc after realloc(p,0)\n\n"); return 0; }
+    if (r3 != r) { print("  FAIL: realloc(p,0) didn't free block for reuse\n\n"); return 0; }
+    free(r3);
+    print("  - realloc(p,0) frees block: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_setjmp(void) {
+    print("TEST 47: setjmp/longjmp\n");
+
+    // Basic: setjmp returns 0 on first call, non-zero after longjmp
+    jmp_buf env;
+    int r = setjmp(env);
+    if (r != 0) {
+        // We got here from longjmp
+        if (r != 42) { print("  FAIL: longjmp value wrong\n\n"); return 0; }
+        print("  - longjmp returned correct value 42: OK\n");
+        goto after_longjmp;
+    }
+    // First call: should be 0
+    longjmp(env, 42);
+    print("  FAIL: should not reach here after longjmp\n\n");
+    return 0;
+
+after_longjmp:;
+
+    // longjmp(env, 0) must deliver 1 to setjmp caller (C standard)
+    jmp_buf env2;
+    int r2 = setjmp(env2);
+    if (r2 != 0) {
+        if (r2 != 1) { print("  FAIL: longjmp(env,0) should deliver 1\n\n"); return 0; }
+        print("  - longjmp(env,0) delivers 1: OK\n");
+        goto after_zero;
+    }
+    longjmp(env2, 0);
+    print("  FAIL: should not reach here\n\n");
+    return 0;
+
+after_zero:;
+
+    // Nested: inner longjmp should not affect outer env
+    jmp_buf outer, inner;
+    int stage = 0;
+    int ro = setjmp(outer);
+    if (ro == 99) {
+        print("  - nested longjmp to outer: OK\n");
+        goto after_nested;
+    }
+    {
+        int ri = setjmp(inner);
+        if (ri == 0) {
+            stage = 1;
+            longjmp(inner, 7);
+        }
+        if (ri != 7) { print("  FAIL: inner longjmp\n\n"); return 0; }
+        if (stage != 1) { print("  FAIL: stage not preserved\n\n"); return 0; }
+        print("  - inner longjmp: OK\n");
+        longjmp(outer, 99);
+    }
+    print("  FAIL: should not reach here\n\n");
+    return 0;
+
+after_nested:;
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_sscanf(void) {
+    print("TEST 48: sscanf\n");
+
+    // %d basic
+    int d = 0;
+    int n = sscanf("42", "%d", &d);
+    if (n != 1 || d != 42) { print("  FAIL: %d basic\n\n"); return 0; }
+    print("  - %%d basic: OK\n");
+
+    // %d negative
+    d = 0;
+    n = sscanf("-17", "%d", &d);
+    if (n != 1 || d != -17) { print("  FAIL: %d negative\n\n"); return 0; }
+    print("  - %%d negative: OK\n");
+
+    // %u
+    unsigned int u = 0;
+    n = sscanf("65535", "%u", &u);
+    if (n != 1 || u != 65535u) { print("  FAIL: %u\n\n"); return 0; }
+    print("  - %%u: OK\n");
+
+    // %x
+    u = 0;
+    n = sscanf("ff", "%x", &u);
+    if (n != 1 || u != 0xff) { print("  FAIL: %x\n\n"); return 0; }
+    print("  - %%x: OK\n");
+
+    // %x with 0x prefix
+    u = 0;
+    n = sscanf("0xDEAD", "%x", &u);
+    if (n != 1 || u != 0xDEAD) { print("  FAIL: %x 0x prefix\n\n"); return 0; }
+    print("  - %%x with 0x prefix: OK\n");
+
+    // %s
+    char s[32];
+    n = sscanf("hello world", "%s", s);
+    if (n != 1 || strcmp(s, "hello") != 0) { print("  FAIL: %s\n\n"); return 0; }
+    print("  - %%s: OK\n");
+
+    // Multiple conversions
+    int a = 0; char b[16]; int c2 = 0;
+    n = sscanf("10 foo 20", "%d %s %d", &a, b, &c2);
+    if (n != 3 || a != 10 || strcmp(b, "foo") != 0 || c2 != 20) {
+        print("  FAIL: multi-convert\n\n"); return 0;
+    }
+    print("  - multi-convert %%d %%s %%d: OK\n");
+
+    // %c
+    char ch = 0;
+    n = sscanf("Z", "%c", &ch);
+    if (n != 1 || ch != 'Z') { print("  FAIL: %c\n\n"); return 0; }
+    print("  - %%c: OK\n");
+
+    // Width limiter on %d
+    d = 0;
+    n = sscanf("1234567", "%3d", &d);
+    if (n != 1 || d != 123) { print("  FAIL: width on %%d\n\n"); return 0; }
+    print("  - width %%3d: OK\n");
+
+    // Suppress with *
+    d = 0; int e = 0;
+    n = sscanf("10 20", "%*d %d", &e);
+    if (n != 1 || e != 20) { print("  FAIL: suppress *\n\n"); return 0; }
+    print("  - suppress %%*d: OK\n");
+
+    // %% literal
+    n = sscanf("50%", "%d%%", &d);
+    if (n != 1 || d != 50) { print("  FAIL: %%%% literal\n\n"); return 0; }
+    print("  - %%%% literal: OK\n");
+
+    // %n — chars consumed
+    int pos = 0;
+    d = 0;
+    n = sscanf("123 abc", "%d%n", &d, &pos);
+    if (n != 1 || d != 123 || pos != 3) { print("  FAIL: %n\n\n"); return 0; }
+    print("  - %%n: OK\n");
+
+    // Return value on no match
+    n = sscanf("abc", "%d", &d);
+    if (n != -1 && n != 0) { print("  FAIL: no match return\n\n"); return 0; }
+    print("  - no match returns 0/-1: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
 // ============================================================
 // Entry point
 // ============================================================
@@ -1970,7 +2194,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 45;
+    int total = 48;
 
     // Run all tests
     if (test_syscalls())
@@ -2063,6 +2287,12 @@ void _start(int argc, char **argv) {
         passed++; // 44
     if (test_file_create_cycle())
         passed++; // 45
+    if (test_free())
+        passed++; // 46
+    if (test_setjmp())
+        passed++; // 47
+    if (test_sscanf())
+        passed++; // 48
 
     print("========================================\n");
     print("  Results: ");

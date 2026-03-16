@@ -219,6 +219,14 @@ int mkdir(const char *path) {
     return __syscall1(SYS_MKDIR, (unsigned int)path);
 }
 
+int rename(const char *oldpath, const char *newpath) {
+    return __syscall2(SYS_RENAME, (unsigned int)oldpath, (unsigned int)newpath);
+}
+
+int ftruncate(int fd, unsigned int length) {
+    return __syscall2(SYS_FTRUNCATE, (unsigned int)fd, length);
+}
+
 int rmdir(const char *path) {
     return __syscall1(SYS_RMDIR, (unsigned int)path);
 }

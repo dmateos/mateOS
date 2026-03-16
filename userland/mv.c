@@ -7,7 +7,13 @@ void _start(int argc, char **argv) {
         exit(1);
     }
 
-    // Copy src to dst, then delete src
+    // Try rename syscall first — handles same-dir renames atomically and
+    // cross-directory moves without needing a copy+delete cycle.
+    if (rename(argv[1], argv[2]) == 0)
+        exit(0);
+
+    // Fall back to copy+delete (e.g. if rename fails across filesystems,
+    // or the destination already exists as a directory).
     int in = open(argv[1], O_RDONLY);
     if (in < 0) {
         print("mv: open src failed: ");

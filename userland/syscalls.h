@@ -53,6 +53,8 @@
 #define SYS_NETSTATS 50
 #define SYS_SBRK 51
 #define SYS_DEBUG_EXIT 52
+#define SYS_RENAME    53
+#define SYS_FTRUNCATE 54
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -148,6 +150,7 @@ int getmouse(int *x, int *y, unsigned char *buttons);
 #define O_RDWR 2
 #define O_CREAT 4
 #define O_TRUNC 8
+#define O_APPEND 0x10
 
 // Stat result (must match kernel's vfs_stat_t)
 typedef struct {
@@ -167,6 +170,8 @@ int kill(int task_id);
 unsigned int get_ticks(void);
 void *sbrk(int increment);
 int debug_exit(int code);
+int rename(const char *oldpath, const char *newpath);
+int ftruncate(int fd, unsigned int length);
 
 // Process detach (for GUI apps)
 int detach(void);

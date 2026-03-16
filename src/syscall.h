@@ -58,6 +58,8 @@
 #define SYS_NETSTATS 50   // netstats(out_rx, out_tx) -> 0
 #define SYS_SBRK 51       // sbrk(increment) -> old brk, -1 on error
 #define SYS_DEBUG_EXIT 52 // debug_exit(code) -> write code to port 0xF4
+#define SYS_RENAME    53  // rename(oldpath, newpath) -> 0 or -1
+#define SYS_FTRUNCATE 54  // ftruncate(fd, length) -> 0 or -1
 
 // Task info returned by SYS_TASKLIST
 typedef struct {

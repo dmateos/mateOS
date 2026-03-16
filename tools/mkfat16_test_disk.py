@@ -36,6 +36,114 @@ def mk_83_name(name):
     return (base + ext).encode("ascii")
 
 
+def needs_lfn(name):
+    """Return True if name cannot be represented exactly as 8.3."""
+    upper = name.upper()
+    if "." in upper:
+        base, ext = upper.rsplit(".", 1)
+    else:
+        base, ext = upper, ""
+    valid = lambda ch: ch.isalnum() or ch in ('_', '-', '~', '!', '#', '$', '%', '&', '@')
+    clean_base = "".join(ch for ch in base if valid(ch))
+    clean_ext = "".join(ch for ch in ext if valid(ch))
+    # Needs LFN if base > 8 chars, ext > 3 chars, or any chars were stripped
+    return (len(clean_base) > 8 or len(clean_ext) > 3 or
+            clean_base != base or clean_ext != ext)
+
+
+def mk_83_alias(name, n=1):
+    """Generate a unique ~N short alias for a long filename."""
+    upper = name.upper()
+    if "." in upper:
+        base, ext = upper.rsplit(".", 1)
+    else:
+        base, ext = upper, ""
+    valid = lambda ch: ch.isalnum() or ch in ('_', '-', '~', '!', '#', '$', '%', '&', '@')
+    clean_base = "".join(ch for ch in base if valid(ch))
+    clean_ext = "".join(ch for ch in ext if valid(ch))[:3]
+    suffix = "~%d" % n
+    # Truncate base to leave room for ~N suffix (max 8 total)
+    trunc_base = clean_base[:8 - len(suffix)]
+    short_base = (trunc_base + suffix).ljust(8, " ")
+    short_ext = clean_ext.ljust(3, " ")
+    return (short_base + short_ext).encode("ascii")
+
+
+def lfn_checksum(name83):
+    """Compute the VFAT LFN checksum over the 11-byte 8.3 name."""
+    assert len(name83) == 11
+    csum = 0
+    for b in name83:
+        csum = (((csum & 1) << 7) | ((csum & 0xFE) >> 1)) + b
+        csum &= 0xFF
+    return csum
+
+
+def lfn_entries_for(name):
+    """
+    Build the list of 32-byte LFN directory entries for `name`.
+    Returns them in the order they must be written to disk (last-seq first,
+    i.e. highest sequence number first with LAST_LFN flag set, then
+    descending to seq 1), followed by the 8.3 short entry.
+    Caller writes these entries in the returned order.
+    """
+    # Encode name as UTF-16LE, null-terminated, padded with 0xFFFF
+    encoded = name.encode("utf-16-le")
+    # Each LFN entry holds 13 UTF-16LE characters = 26 bytes
+    chars_per_entry = 13
+    # Pad to multiple of chars_per_entry with null then 0xFFFF fill
+    char_count = len(encoded) // 2 + 1  # +1 for null terminator
+    padded_chars = char_count
+    remainder = padded_chars % chars_per_entry
+    if remainder:
+        padded_chars += chars_per_entry - remainder
+    # Build flat array of UTF-16LE words
+    utf16_words = list(struct.unpack_from("<%dH" % (len(encoded) // 2), encoded))
+    utf16_words.append(0x0000)  # null terminator
+    while len(utf16_words) < padded_chars:
+        utf16_words.append(0xFFFF)
+
+    num_entries = padded_chars // chars_per_entry
+    return num_entries, utf16_words
+
+
+def build_lfn_dirents(name, name83):
+    """
+    Return list of 32-byte bytearrays: LFN entries (high-seq first) in the
+    order they should be written to the directory before the 8.3 entry.
+    """
+    csum = lfn_checksum(name83)
+    num_entries, utf16_words = lfn_entries_for(name)
+
+    entries = []
+    for seq in range(num_entries, 0, -1):
+        e = bytearray(32)
+        seq_byte = seq
+        if seq == num_entries:
+            seq_byte |= 0x40  # LAST_LFN flag
+        e[0] = seq_byte
+        e[11] = 0x0F   # LFN attribute
+        e[12] = 0x00   # type
+        e[13] = csum
+        e[26] = 0x00   # cluster lo (always 0 for LFN)
+        e[27] = 0x00
+        # Fill in the 13 UTF-16LE characters for this entry
+        # Chars for seq s occupy positions [(s-1)*13 .. s*13-1]
+        idx_base = (seq - 1) * 13
+        chars = utf16_words[idx_base : idx_base + 13]
+        # name1: chars 0-4 at bytes 1-10
+        for i in range(5):
+            struct.pack_into("<H", e, 1 + i * 2, chars[i])
+        # name2: chars 5-10 at bytes 14-23
+        for i in range(6):
+            struct.pack_into("<H", e, 14 + i * 2, chars[5 + i])
+        # name3: chars 11-12 at bytes 28-31
+        for i in range(2):
+            struct.pack_into("<H", e, 28 + i * 2, chars[11 + i])
+        entries.append(bytes(e))
+    return entries
+
+
 def round_up(v, align):
     return ((v + align - 1) // align) * align
 
@@ -120,15 +228,34 @@ class Fat16Builder:
         self.next_cluster += count
         return first
 
-    def _write_dirent(self, dir_offset, entry_idx, name83, attr, first_cluster, file_size):
-        """Write a 32-byte directory entry."""
-        off = dir_offset + entry_idx * 32
+    def _write_dirent_with_lfn(self, dir_offset, entry_idx, name83, lfn_entries, attr, first_cluster, file_size):
+        """Write optional LFN entries followed by a 32-byte short directory entry.
+        Returns the number of directory slots consumed (1 + len(lfn_entries))."""
+        idx = entry_idx
+        for lfn_e in lfn_entries:
+            off = dir_offset + idx * 32
+            self.img[off : off + 32] = lfn_e
+            idx += 1
+        # Write the short 8.3 entry
+        off = dir_offset + idx * 32
         entry = bytearray(32)
         entry[0:11] = name83
         entry[11] = attr
         write_le16(entry, 26, first_cluster)
         write_le32(entry, 28, file_size)
         self.img[off : off + 32] = entry
+        return idx - entry_idx + 1  # total slots used
+
+    def _make_name83_and_lfn(self, name):
+        """Return (name83_bytes, lfn_entries_list).
+        lfn_entries_list is non-empty only when name requires LFN."""
+        if needs_lfn(name):
+            name83 = mk_83_alias(name)
+            lfn_entries = build_lfn_dirents(name, name83)
+        else:
+            name83 = mk_83_name(name)
+            lfn_entries = []
+        return name83, lfn_entries
 
     def add_root_file(self, name, data):
         """Add a file to the root directory."""
@@ -136,9 +263,10 @@ class Fat16Builder:
         clusters = max(1, round_up(file_size, self.bytes_per_sector) // self.bytes_per_sector)
         first_cluster = self._alloc_clusters(clusters)
 
+        name83, lfn_entries = self._make_name83_and_lfn(name)
         root_off = self.root_start * self.bytes_per_sector
-        self._write_dirent(root_off, self.root_entry_idx, mk_83_name(name), 0x20, first_cluster, file_size)
-        self.root_entry_idx += 1
+        slots = self._write_dirent_with_lfn(root_off, self.root_entry_idx, name83, lfn_entries, 0x20, first_cluster, file_size)
+        self.root_entry_idx += slots
 
         file_off = self._cluster_offset(first_cluster)
         self.img[file_off : file_off + file_size] = data
@@ -149,10 +277,11 @@ class Fat16Builder:
         # Allocate one cluster for the directory
         dir_cluster = self._alloc_clusters(1)
 
+        name83, lfn_entries = self._make_name83_and_lfn(name)
         # Add entry to root directory
         root_off = self.root_start * self.bytes_per_sector
-        self._write_dirent(root_off, self.root_entry_idx, mk_83_name(name), 0x10, dir_cluster, 0)
-        self.root_entry_idx += 1
+        slots = self._write_dirent_with_lfn(root_off, self.root_entry_idx, name83, lfn_entries, 0x10, dir_cluster, 0)
+        self.root_entry_idx += slots
 
         # Initialize the directory cluster with . and .. entries
         dir_off = self._cluster_offset(dir_cluster)
@@ -175,26 +304,61 @@ class Fat16Builder:
 
         return dir_cluster
 
+    def _extend_dir_cluster(self, dir_cluster):
+        """Allocate and link a new cluster to the end of a directory chain. Returns new cluster offset."""
+        new_cluster = self._alloc_clusters(1)
+        for fat_i in range(self.fat_count):
+            fat_lba = self.fat_start + fat_i * self.sectors_per_fat
+            fat_off = fat_lba * self.bytes_per_sector
+            c = dir_cluster
+            while True:
+                next_c = read_le16(self.img, fat_off + c * 2)
+                if next_c >= 0xFFF8:
+                    self.img[fat_off + c * 2 : fat_off + c * 2 + 2] = struct.pack("<H", new_cluster)
+                    break
+                c = next_c
+        new_off = self._cluster_offset(new_cluster)
+        cluster_bytes = self.bytes_per_sector * self.sectors_per_cluster
+        self.img[new_off : new_off + cluster_bytes] = b"\x00" * cluster_bytes
+        return new_off
+
     def add_file_to_dir(self, dir_cluster, name, data):
-        """Add a file to a subdirectory."""
+        """Add a file to a subdirectory, writing LFN entries when the name needs it."""
         file_size = len(data)
         clusters = max(1, round_up(file_size, self.bytes_per_sector) // self.bytes_per_sector)
         first_cluster = self._alloc_clusters(clusters)
 
+        name83, lfn_entries = self._make_name83_and_lfn(name)
+        slots_needed = 1 + len(lfn_entries)
+
         entries_per_cluster = (self.bytes_per_sector * self.sectors_per_cluster) // 32
 
-        # Walk the entire cluster chain looking for a free directory entry
+        # Walk the entire cluster chain looking for enough contiguous free slots.
+        # (LFN entries + short entry must all be within the same cluster run —
+        # in practice they fit easily since a cluster is 512 bytes = 16 entries.)
         dir_off = None
         entry_idx = None
         c = dir_cluster
         while c >= 2 and c < 0xFFF8:
             c_off = self._cluster_offset(c)
+            # Scan for a run of `slots_needed` consecutive free entries
+            run_start = None
+            run_len = 0
             for idx in range(entries_per_cluster):
                 e_off = c_off + idx * 32
                 if self.img[e_off] == 0x00 or self.img[e_off] == 0xE5:
-                    dir_off = c_off
-                    entry_idx = idx
-                    break
+                    if run_start is None:
+                        run_start = idx
+                        run_len = 1
+                    else:
+                        run_len += 1
+                    if run_len >= slots_needed:
+                        dir_off = c_off
+                        entry_idx = run_start
+                        break
+                else:
+                    run_start = None
+                    run_len = 0
             if dir_off is not None:
                 break
             # Follow FAT chain to next cluster
@@ -203,26 +367,10 @@ class Fat16Builder:
 
         if dir_off is None:
             # All clusters full — allocate another cluster and link it
-            new_cluster = self._alloc_clusters(1)
-            for fat_i in range(self.fat_count):
-                fat_lba = self.fat_start + fat_i * self.sectors_per_fat
-                fat_off = fat_lba * self.bytes_per_sector
-                # Walk chain to find last cluster
-                c = dir_cluster
-                while True:
-                    next_c = read_le16(self.img, fat_off + c * 2)
-                    if next_c >= 0xFFF8:
-                        self.img[fat_off + c * 2 : fat_off + c * 2 + 2] = struct.pack("<H", new_cluster)
-                        break
-                    c = next_c
-            # Clear new cluster
-            new_off = self._cluster_offset(new_cluster)
-            cluster_bytes = self.bytes_per_sector * self.sectors_per_cluster
-            self.img[new_off : new_off + cluster_bytes] = b"\x00" * cluster_bytes
-            dir_off = new_off
+            dir_off = self._extend_dir_cluster(dir_cluster)
             entry_idx = 0
 
-        self._write_dirent(dir_off, entry_idx, mk_83_name(name), 0x20, first_cluster, file_size)
+        self._write_dirent_with_lfn(dir_off, entry_idx, name83, lfn_entries, 0x20, first_cluster, file_size)
 
         file_off = self._cluster_offset(first_cluster)
         self.img[file_off : file_off + file_size] = data
