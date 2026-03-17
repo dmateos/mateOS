@@ -952,53 +952,18 @@ int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset) {
     return sigprocmask(how, set, oldset);
 }
 
-/* jmp_buf layout (int[6]): ebx, esi, edi, ebp, esp, eip */
-
-__attribute__((returns_twice))
-int _setjmp(jmp_buf env) {
-    __asm__ __volatile__(
-        "movl %%ebx, 0(%0)\n\t"
-        "movl %%esi, 4(%0)\n\t"
-        "movl %%edi, 8(%0)\n\t"
-        "movl %%ebp, 12(%0)\n\t"
-        /* caller's esp = current esp + 8 (ret addr + env arg) */
-        "leal 8(%%esp), %%ecx\n\t"
-        "movl %%ecx, 16(%0)\n\t"
-        /* eip = return address on stack */
-        "movl (%%esp), %%ecx\n\t"
-        "movl %%ecx, 20(%0)\n\t"
-        :
-        : "r"(env)
-        : "ecx", "memory"
-    );
-    return 0;
-}
-
-__attribute__((noreturn))
-void longjmp(jmp_buf env, int val) {
-    /* Ensure val != 0 (longjmp with 0 must return 1 to setjmp caller) */
-    if (val == 0) val = 1;
-    __asm__ __volatile__(
-        "movl %1, %%eax\n\t"   /* return value */
-        "movl 0(%0),  %%ebx\n\t"
-        "movl 4(%0),  %%esi\n\t"
-        "movl 8(%0),  %%edi\n\t"
-        "movl 12(%0), %%ebp\n\t"
-        "movl 16(%0), %%esp\n\t"
-        "jmpl *20(%0)\n\t"
-        :
-        : "r"(env), "r"(val)
-        : /* clobbers everything, but we're not returning */
-    );
-    __builtin_unreachable();
-}
-
-int sigsetjmp(sigjmp_buf env, int savesigs) {
-    (void)savesigs;
-    return _setjmp(env);
-}
-
-void siglongjmp(sigjmp_buf env, int val) { longjmp(env, val); }
+/*
+ * jmp_buf layout (int[6]): ebx, esi, edi, ebp, esp, eip
+ *
+ * Both functions are __naked__ so the compiler emits no prologue/epilogue.
+ * This gives us exact knowledge of the stack layout: at entry to _setjmp,
+ * esp+0 = return address, esp+4 = env pointer.  We save the caller's esp
+ * (= esp+8, past ret+arg), then return 0 via plain ret.
+ *
+ * longjmp reads env and val from the stack (esp+4 / esp+8), restores all
+ * callee-saved registers, sets eax=val, restores esp, and jumps to eip.
+ */
+/* setjmp / longjmp / sigsetjmp / siglongjmp implemented in setjmp.s */
 
 int sem_init(sem_t *sem, int pshared, unsigned int value) {
     (void)pshared;

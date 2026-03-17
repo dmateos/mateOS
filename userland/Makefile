@@ -214,6 +214,16 @@ crtn.o: crtn.s
 cprint.o: cprint.s
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+setjmp.o: setjmp.s
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# Merge setjmp.o into libc.o via partial link so every rule using libc.o
+# automatically gets setjmp/longjmp without changing individual link lines.
+libc.o: libc.c setjmp.o
+	$(CC) $(CFLAGS) -c -o libc_c.o $<
+	ld -m elf_i386 -r -o $@ libc_c.o setjmp.o
+	rm -f libc_c.o
+
 libtiny.a: libtiny.o
 	ar rcs $@ $^
 
@@ -256,6 +266,6 @@ endif
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f *.o *.a *.elf *.wlf smallerc/*.o smallerc/vendor/*.o tinycc/*.o doom/*.o doom/compat/*.o doom/doomgeneric/doomgeneric/*.o
+	rm -f *.o *.a *.elf *.wlf libc_c.o smallerc/*.o smallerc/vendor/*.o tinycc/*.o doom/*.o doom/compat/*.o doom/doomgeneric/doomgeneric/*.o
 
 .PHONY: all clean

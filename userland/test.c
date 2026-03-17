@@ -2036,62 +2036,58 @@ static int test_free(void) {
     return 1;
 }
 
+/* Helpers for nested-longjmp sub-test.  Each setjmp lives in its own stack
+ * frame so the optimizer cannot alias locals that span longjmps across gotos. */
+static jmp_buf sj_outer, sj_inner;
+static volatile int sj_stage;
+
+static void sj_do_inner(void) {
+    if (setjmp(sj_inner) == 0) {
+        sj_stage = 1;
+        longjmp(sj_inner, 7);
+    }
+    /* returns with sj_stage == 1 and inner longjmp done */
+}
+
 static int test_setjmp(void) {
     print("TEST 47: setjmp/longjmp\n");
 
-    // Basic: setjmp returns 0 on first call, non-zero after longjmp
+    /* Basic: setjmp returns 0 first, non-zero after longjmp */
     jmp_buf env;
-    int r = setjmp(env);
-    if (r != 0) {
-        // We got here from longjmp
-        if (r != 42) { print("  FAIL: longjmp value wrong\n\n"); return 0; }
-        print("  - longjmp returned correct value 42: OK\n");
-        goto after_longjmp;
+    volatile int r = setjmp(env);
+    if (r == 0) {
+        longjmp(env, 42);
+        print("  FAIL: should not reach here\n\n");
+        return 0;
     }
-    // First call: should be 0
-    longjmp(env, 42);
-    print("  FAIL: should not reach here after longjmp\n\n");
-    return 0;
+    if (r != 42) { print("  FAIL: longjmp value wrong\n\n"); return 0; }
+    print("  - longjmp returned correct value 42: OK\n");
 
-after_longjmp:;
-
-    // longjmp(env, 0) must deliver 1 to setjmp caller (C standard)
+    /* longjmp(env, 0) must deliver 1 to setjmp caller (C standard) */
     jmp_buf env2;
-    int r2 = setjmp(env2);
-    if (r2 != 0) {
-        if (r2 != 1) { print("  FAIL: longjmp(env,0) should deliver 1\n\n"); return 0; }
-        print("  - longjmp(env,0) delivers 1: OK\n");
-        goto after_zero;
+    volatile int r2 = setjmp(env2);
+    if (r2 == 0) {
+        longjmp(env2, 0);
+        print("  FAIL: should not reach here\n\n");
+        return 0;
     }
-    longjmp(env2, 0);
-    print("  FAIL: should not reach here\n\n");
-    return 0;
+    if (r2 != 1) { print("  FAIL: longjmp(env,0) should deliver 1\n\n"); return 0; }
+    print("  - longjmp(env,0) delivers 1: OK\n");
 
-after_zero:;
-
-    // Nested: inner longjmp should not affect outer env
-    jmp_buf outer, inner;
-    int stage = 0;
-    int ro = setjmp(outer);
-    if (ro == 99) {
-        print("  - nested longjmp to outer: OK\n");
-        goto after_nested;
-    }
-    {
-        int ri = setjmp(inner);
-        if (ri == 0) {
-            stage = 1;
-            longjmp(inner, 7);
-        }
-        if (ri != 7) { print("  FAIL: inner longjmp\n\n"); return 0; }
-        if (stage != 1) { print("  FAIL: stage not preserved\n\n"); return 0; }
+    /* Nested: outer env is set here; inner env is set in sj_do_inner().
+     * After sj_do_inner() returns, stage==1; then longjmp(outer,99). */
+    sj_stage = 0;
+    volatile int ro = setjmp(sj_outer);
+    if (ro == 0) {
+        sj_do_inner();
+        if (sj_stage != 1) { print("  FAIL: stage not preserved\n\n"); return 0; }
         print("  - inner longjmp: OK\n");
-        longjmp(outer, 99);
+        longjmp(sj_outer, 99);
+        print("  FAIL: should not reach here\n\n");
+        return 0;
     }
-    print("  FAIL: should not reach here\n\n");
-    return 0;
-
-after_nested:;
+    if (ro != 99) { print("  FAIL: outer longjmp value wrong\n\n"); return 0; }
+    print("  - nested longjmp to outer: OK\n");
 
     print("  PASSED\n\n");
     return 1;
