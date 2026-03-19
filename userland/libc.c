@@ -261,6 +261,9 @@ long strtol(const char *nptr, char **endptr, int base) {
         (s[1] == 'x' || s[1] == 'X')) {
         base = 16;
         s += 2;
+    } else if (base == 0 && s[0] == '0') {
+        base = 8;
+        s++;
     } else if (base == 0) {
         base = 10;
     }
@@ -627,6 +630,7 @@ static int mini_vsnprintf(char *out, int cap, const char *fmt, va_list ap) {
 
         {
             int left = 0;
+            int zero_pad = 0;
             int width = 0;
             char numbuf[32];
             const char *arg = numbuf;
@@ -636,6 +640,10 @@ static int mini_vsnprintf(char *out, int cap, const char *fmt, va_list ap) {
 
             if (*s == '-') {
                 left = 1;
+                s++;
+            }
+            if (*s == '0') {
+                zero_pad = 1;
                 s++;
             }
             while (c_isdigit((unsigned char)*s)) {
@@ -695,9 +703,10 @@ static int mini_vsnprintf(char *out, int cap, const char *fmt, va_list ap) {
 
             pad = width > len ? width - len : 0;
             if (!left) {
+                char pad_ch = zero_pad ? '0' : ' ';
                 while (pad-- > 0) {
                     if (p + 1 < cap)
-                        out[p] = ' ';
+                        out[p] = pad_ch;
                     p++;
                 }
             }

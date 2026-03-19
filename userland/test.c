@@ -2179,6 +2179,366 @@ static int test_sscanf(void) {
     return 1;
 }
 
+static int test_rename(void) {
+    print("TEST 49: rename syscall\n");
+
+    // Create source file
+    int fd = open("_ren_src.tmp", O_CREAT | O_RDWR);
+    if (fd < 0) { print("  FAIL: create src\n\n"); return 0; }
+    fd_write(fd, "hello", 5);
+    close(fd);
+
+    // Rename to new name
+    if (rename("_ren_src.tmp", "_ren_dst.tmp") != 0) {
+        print("  FAIL: rename returned error\n\n");
+        unlink("_ren_src.tmp");
+        return 0;
+    }
+    print("  - rename succeeded: OK\n");
+
+    // Source should be gone
+    stat_t st;
+    if (stat("_ren_src.tmp", &st) == 0) {
+        print("  FAIL: source still exists after rename\n\n");
+        unlink("_ren_dst.tmp");
+        return 0;
+    }
+    print("  - source gone after rename: OK\n");
+
+    // Destination should exist with correct size
+    if (stat("_ren_dst.tmp", &st) != 0 || st.size != 5) {
+        print("  FAIL: dest missing or wrong size\n\n");
+        unlink("_ren_dst.tmp");
+        return 0;
+    }
+    print("  - dest exists with correct size: OK\n");
+
+    // Read back content
+    fd = open("_ren_dst.tmp", O_RDONLY);
+    if (fd < 0) { print("  FAIL: open dest\n\n"); unlink("_ren_dst.tmp"); return 0; }
+    char buf[8] = {0};
+    fd_read(fd, buf, 5);
+    close(fd);
+    if (buf[0]!='h'||buf[1]!='e'||buf[2]!='l'||buf[3]!='l'||buf[4]!='o') {
+        print("  FAIL: content wrong after rename\n\n");
+        unlink("_ren_dst.tmp");
+        return 0;
+    }
+    print("  - content preserved: OK\n");
+
+    unlink("_ren_dst.tmp");
+
+    // Rename nonexistent file should fail
+    if (rename("_noexist_.tmp", "_ren_dst.tmp") == 0) {
+        print("  FAIL: rename of nonexistent should fail\n\n");
+        return 0;
+    }
+    print("  - rename nonexistent fails: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_ftruncate(void) {
+    print("TEST 50: ftruncate syscall\n");
+
+    // Create file with known content
+    int fd = open("_trunc.tmp", O_CREAT | O_RDWR);
+    if (fd < 0) { print("  FAIL: create\n\n"); return 0; }
+    fd_write(fd, "abcdefghij", 10);
+    close(fd);
+
+    // Truncate to 5 bytes
+    fd = open("_trunc.tmp", O_RDWR);
+    if (fd < 0) { print("  FAIL: open for truncate\n\n"); unlink("_trunc.tmp"); return 0; }
+    if (ftruncate(fd, 5) != 0) {
+        print("  FAIL: ftruncate(5) failed\n\n"); close(fd); unlink("_trunc.tmp"); return 0;
+    }
+    close(fd);
+
+    stat_t st;
+    if (stat("_trunc.tmp", &st) != 0 || st.size != 5) {
+        print("  FAIL: size not 5 after truncate\n\n"); unlink("_trunc.tmp"); return 0;
+    }
+    print("  - truncate to 5: size=5 OK\n");
+
+    // Read back — only first 5 bytes
+    fd = open("_trunc.tmp", O_RDONLY);
+    char buf[16] = {0};
+    int n = fd_read(fd, buf, 15);
+    close(fd);
+    if (n != 5 || buf[0]!='a' || buf[4]!='e') {
+        print("  FAIL: content wrong after truncate\n\n"); unlink("_trunc.tmp"); return 0;
+    }
+    print("  - content after truncate: OK\n");
+
+    // Extend to 10 bytes (grow — new bytes should be zero)
+    fd = open("_trunc.tmp", O_RDWR);
+    if (ftruncate(fd, 10) != 0) {
+        print("  FAIL: ftruncate(10) failed\n\n"); close(fd); unlink("_trunc.tmp"); return 0;
+    }
+    close(fd);
+
+    if (stat("_trunc.tmp", &st) != 0 || st.size != 10) {
+        print("  FAIL: size not 10 after grow\n\n"); unlink("_trunc.tmp"); return 0;
+    }
+    print("  - grow to 10: size=10 OK\n");
+
+    // Bytes 5-9 should be zero
+    fd = open("_trunc.tmp", O_RDONLY);
+    char buf2[16] = {0};
+    n = fd_read(fd, buf2, 15);
+    close(fd);
+    if (n != 10 || buf2[5] != 0 || buf2[9] != 0) {
+        print("  FAIL: grown bytes not zero\n\n"); unlink("_trunc.tmp"); return 0;
+    }
+    print("  - grown bytes are zero: OK\n");
+
+    unlink("_trunc.tmp");
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_oappend(void) {
+    print("TEST 51: O_APPEND flag\n");
+
+    // Create file with initial content
+    int fd = open("_app.tmp", O_CREAT | O_RDWR);
+    if (fd < 0) { print("  FAIL: create\n\n"); return 0; }
+    fd_write(fd, "hello", 5);
+    close(fd);
+
+    // Open O_APPEND and write — should go to end regardless of position
+    fd = open("_app.tmp", O_WRONLY | O_APPEND);
+    if (fd < 0) { print("  FAIL: open O_APPEND\n\n"); unlink("_app.tmp"); return 0; }
+    // Seek to beginning (O_APPEND should override this for writes)
+    seek(fd, 0, SEEK_SET);
+    fd_write(fd, "world", 5);
+    close(fd);
+
+    stat_t st;
+    if (stat("_app.tmp", &st) != 0 || st.size != 10) {
+        print("  FAIL: size not 10 after append\n\n"); unlink("_app.tmp"); return 0;
+    }
+    print("  - append after seek(0): size=10 OK\n");
+
+    // Read back — should be "helloworld"
+    fd = open("_app.tmp", O_RDONLY);
+    char buf[16] = {0};
+    fd_read(fd, buf, 15);
+    close(fd);
+    if (buf[0]!='h'||buf[5]!='w'||buf[9]!='d') {
+        print("  FAIL: content not helloworld\n\n"); unlink("_app.tmp"); return 0;
+    }
+    print("  - content is helloworld: OK\n");
+
+    // Multiple appends accumulate
+    fd = open("_app.tmp", O_WRONLY | O_APPEND);
+    fd_write(fd, "!", 1);
+    fd_write(fd, "!", 1);
+    close(fd);
+    if (stat("_app.tmp", &st) != 0 || st.size != 12) {
+        print("  FAIL: multi-append size wrong\n\n"); unlink("_app.tmp"); return 0;
+    }
+    print("  - multiple appends: OK\n");
+
+    unlink("_app.tmp");
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_sprintf_fmt(void) {
+    print("TEST 52: sprintf/printf formatting\n");
+
+    char buf[64];
+
+    // Basic %d
+    sprintf(buf, "%d", 42);
+    if (buf[0]!='4'||buf[1]!='2'||buf[2]!=0) { print("  FAIL: %%d\n\n"); return 0; }
+    print("  - %%d: OK\n");
+
+    // Negative
+    sprintf(buf, "%d", -7);
+    if (buf[0]!='-'||buf[1]!='7') { print("  FAIL: negative %%d\n\n"); return 0; }
+    print("  - negative %%d: OK\n");
+
+    // %u
+    sprintf(buf, "%u", 65535u);
+    if (strcmp(buf, "65535") != 0) { print("  FAIL: %%u\n\n"); return 0; }
+    print("  - %%u: OK\n");
+
+    // %x hex
+    sprintf(buf, "%x", 0xdeadbeef);
+    if (strcmp(buf, "deadbeef") != 0) { print("  FAIL: %%x\n\n"); return 0; }
+    print("  - %%x: OK\n");
+
+    // %X upper hex
+    sprintf(buf, "%X", 0xABC);
+    if (strcmp(buf, "ABC") != 0) { print("  FAIL: %%X\n\n"); return 0; }
+    print("  - %%X: OK\n");
+
+    // %s
+    sprintf(buf, "hello %s", "world");
+    if (strcmp(buf, "hello world") != 0) { print("  FAIL: %%s\n\n"); return 0; }
+    print("  - %%s: OK\n");
+
+    // %c
+    sprintf(buf, "%c", 'A');
+    if (buf[0]!='A'||buf[1]!=0) { print("  FAIL: %%c\n\n"); return 0; }
+    print("  - %%c: OK\n");
+
+    // Width padding
+    sprintf(buf, "%5d", 42);
+    if (strcmp(buf, "   42") != 0) { print("  FAIL: width pad\n\n"); return 0; }
+    print("  - width padding: OK\n");
+
+    // Zero padding
+    sprintf(buf, "%05d", 42);
+    if (strcmp(buf, "00042") != 0) { print("  FAIL: zero pad\n\n"); return 0; }
+    print("  - zero padding: OK\n");
+
+    // %% literal
+    sprintf(buf, "100%%");
+    if (strcmp(buf, "100%") != 0) { print("  FAIL: %%%%\n\n"); return 0; }
+    print("  - %%%% literal: OK\n");
+
+    // Multi-arg
+    sprintf(buf, "%d+%d=%d", 1, 2, 3);
+    if (strcmp(buf, "1+2=3") != 0) { print("  FAIL: multi-arg\n\n"); return 0; }
+    print("  - multi-arg: OK\n");
+
+    // snprintf truncation
+    char small[6];
+    int r = snprintf(small, 6, "hello world");
+    if (strcmp(small, "hello") != 0 || r != 11) {
+        print("  FAIL: snprintf truncation\n\n"); return 0;
+    }
+    print("  - snprintf truncation: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_strtol_family(void) {
+    print("TEST 53: strtol/strtoul\n");
+
+    char *end;
+
+    // Basic decimal
+    long v = strtol("42", &end, 10);
+    if (v != 42 || *end != 0) { print("  FAIL: strtol decimal\n\n"); return 0; }
+    print("  - strtol decimal: OK\n");
+
+    // Negative
+    v = strtol("-99", &end, 10);
+    if (v != -99) { print("  FAIL: strtol negative\n\n"); return 0; }
+    print("  - strtol negative: OK\n");
+
+    // Hex with base 16
+    v = strtol("ff", &end, 16);
+    if (v != 255) { print("  FAIL: strtol hex\n\n"); return 0; }
+    print("  - strtol hex: OK\n");
+
+    // Auto-base: 0x prefix -> hex
+    v = strtol("0xff", &end, 0);
+    if (v != 255) { print("  FAIL: strtol 0x auto\n\n"); return 0; }
+    print("  - strtol 0x auto-base: OK\n");
+
+    // Auto-base: 0 prefix -> octal
+    v = strtol("010", &end, 0);
+    if (v != 8) { print("  FAIL: strtol octal\n\n"); return 0; }
+    print("  - strtol octal auto-base: OK\n");
+
+    // endptr stops at non-digit
+    v = strtol("123abc", &end, 10);
+    if (v != 123 || *end != 'a') { print("  FAIL: strtol endptr\n\n"); return 0; }
+    print("  - strtol endptr: OK\n");
+
+    // strtoul
+    unsigned long u = strtoul("4294967295", &end, 10);
+    if (u != 4294967295ul) { print("  FAIL: strtoul max\n\n"); return 0; }
+    print("  - strtoul max u32: OK\n");
+
+    // Leading whitespace
+    v = strtol("  -7", &end, 10);
+    if (v != -7) { print("  FAIL: strtol leading space\n\n"); return 0; }
+    print("  - strtol leading whitespace: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+static int test_string_funcs(void) {
+    print("TEST 54: string/memory functions\n");
+
+    // memmove overlapping (dst > src)
+    char buf[16] = "abcdefgh";
+    memmove(buf + 2, buf, 6);
+    if (buf[2]!='a'||buf[7]!='f') { print("  FAIL: memmove overlap fwd\n\n"); return 0; }
+    print("  - memmove overlap (dst>src): OK\n");
+
+    // memmove overlapping (dst < src)
+    char buf2[16] = "abcdefgh";
+    memmove(buf2, buf2 + 2, 6);
+    if (buf2[0]!='c'||buf2[5]!='h') { print("  FAIL: memmove overlap bwd\n\n"); return 0; }
+    print("  - memmove overlap (dst<src): OK\n");
+
+    // memcmp equal
+    if (memcmp("abc", "abc", 3) != 0) { print("  FAIL: memcmp equal\n\n"); return 0; }
+    print("  - memcmp equal: OK\n");
+
+    // memcmp less
+    if (memcmp("abc", "abd", 3) >= 0) { print("  FAIL: memcmp less\n\n"); return 0; }
+    print("  - memcmp less: OK\n");
+
+    // memcmp greater
+    if (memcmp("abd", "abc", 3) <= 0) { print("  FAIL: memcmp greater\n\n"); return 0; }
+    print("  - memcmp greater: OK\n");
+
+    // strstr found
+    const char *r = strstr("hello world", "world");
+    if (!r || strcmp(r, "world") != 0) { print("  FAIL: strstr found\n\n"); return 0; }
+    print("  - strstr found: OK\n");
+
+    // strstr not found
+    if (strstr("hello", "xyz") != 0) { print("  FAIL: strstr not found\n\n"); return 0; }
+    print("  - strstr not found: OK\n");
+
+    // strchr found
+    r = strchr("hello", 'l');
+    if (!r || *r != 'l' || r[1] != 'l') { print("  FAIL: strchr\n\n"); return 0; }
+    print("  - strchr: OK\n");
+
+    // strrchr finds last
+    r = strrchr("hello", 'l');
+    if (!r || r[1] != 'o') { print("  FAIL: strrchr\n\n"); return 0; }
+    print("  - strrchr: OK\n");
+
+    // strcat
+    char cat[16] = "foo";
+    strcat(cat, "bar");
+    if (strcmp(cat, "foobar") != 0) { print("  FAIL: strcat\n\n"); return 0; }
+    print("  - strcat: OK\n");
+
+    // strncat with limit
+    char ncat[16] = "foo";
+    strncat(ncat, "barbaz", 3);
+    if (strcmp(ncat, "foobar") != 0) { print("  FAIL: strncat\n\n"); return 0; }
+    print("  - strncat: OK\n");
+
+    // calloc zeroes memory
+    int *p = (int *)calloc(4, sizeof(int));
+    if (!p) { print("  FAIL: calloc\n\n"); return 0; }
+    int zeroed = 1;
+    for (int i = 0; i < 4; i++) if (p[i] != 0) zeroed = 0;
+    free(p);
+    if (!zeroed) { print("  FAIL: calloc not zeroed\n\n"); return 0; }
+    print("  - calloc zeroed: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
 // ============================================================
 // Entry point
 // ============================================================
@@ -2190,7 +2550,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 48;
+    int total = 54;
 
     // Run all tests
     if (test_syscalls())
@@ -2289,6 +2649,18 @@ void _start(int argc, char **argv) {
         passed++; // 47
     if (test_sscanf())
         passed++; // 48
+    if (test_rename())
+        passed++; // 49
+    if (test_ftruncate())
+        passed++; // 50
+    if (test_oappend())
+        passed++; // 51
+    if (test_sprintf_fmt())
+        passed++; // 52
+    if (test_strtol_family())
+        passed++; // 53
+    if (test_string_funcs())
+        passed++; // 54
 
     print("========================================\n");
     print("  Results: ");

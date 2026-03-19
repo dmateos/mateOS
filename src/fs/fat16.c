@@ -1845,15 +1845,51 @@ static int fat16_vfs_ftruncate(int handle, uint32_t length) {
         if (f->pos > length)
             f->pos = length;
     } else {
-        // Grow: allocate clusters until we reach `length`, zero-fill (already
-        // done by fat16_alloc_cluster which zeroes the cluster on alloc).
-        // Just ensure the chain is long enough.
+        // Grow: allocate clusters until we reach `length`.
+        // New clusters from fat16_alloc_cluster are zeroed.  Bytes within
+        // the existing last cluster beyond old_size are zeroed here via
+        // read-modify-write on the sector(s) spanning [old_size, cluster_end).
+        uint32_t old_size = f->size;
         uint32_t need_clusters = (length + cluster_size - 1) / cluster_size;
         if (need_clusters == 0) need_clusters = 1;
         uint16_t cl;
         if (fat16_ensure_cluster_for_index(f, need_clusters - 1, &cl) < 0)
             return -1;
         f->size = length;
+
+        // Zero stale bytes in the old last cluster (from old_size to the
+        // lesser of the cluster boundary and the new length).
+        if (old_size > 0 && old_size < length) {
+            uint32_t old_cl_idx = (old_size - 1) / cluster_size;
+            uint32_t cl_end = (old_cl_idx + 1) * cluster_size;
+            uint32_t zero_end = cl_end < length ? cl_end : length;
+            if (old_size < zero_end) {
+                // Walk FAT chain to old last cluster
+                uint16_t zcl = f->first_cluster;
+                for (uint32_t i = 0; i < old_cl_idx; i++) {
+                    uint16_t next = fat16_get_entry(zcl);
+                    if (next >= 0xFFF8 || next < 2) break;
+                    zcl = next;
+                }
+                uint32_t lba = cluster_to_lba(zcl);
+                // Iterate over affected sectors within the cluster
+                uint32_t pos = old_size;
+                while (pos < zero_end) {
+                    uint32_t sec = pos / FAT16_SECTOR_SIZE;
+                    uint32_t boff = pos % FAT16_SECTOR_SIZE;
+                    uint32_t bend = FAT16_SECTOR_SIZE;
+                    uint32_t sec_end = (sec + 1) * FAT16_SECTOR_SIZE;
+                    if (sec_end > zero_end) bend = zero_end % FAT16_SECTOR_SIZE;
+                    if (bend == 0) bend = FAT16_SECTOR_SIZE;
+                    uint8_t sec_buf[FAT16_SECTOR_SIZE];
+                    if (ata_read_sector(lba + sec, sec_buf) == 0) {
+                        for (uint32_t b = boff; b < bend; b++) sec_buf[b] = 0;
+                        ata_write_sector(lba + sec, sec_buf);
+                    }
+                    pos = sec_end;
+                }
+            }
+        }
     }
 
     // Update directory entry on disk
