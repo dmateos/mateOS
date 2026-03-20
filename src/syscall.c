@@ -1,5 +1,6 @@
 #include "syscall.h"
 #include "arch/arch.h"
+#include "fs/pipe.h"
 #include "fs/vfs.h"
 #include "io/keyboard.h"
 #include "io/window.h"
@@ -1058,6 +1059,20 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
             return (uint32_t)-1;
         memcpy(gbuf, gcur->cwd, glen + 1);
         return 0;
+    }
+
+    case SYS_PIPE_CREATE: {
+        // pipe_create(name) -> 0 or -1 (ebx=name ptr)
+        if (!validate_user_string(ebx))
+            return (uint32_t)-1;
+        return (uint32_t)pipe_create((const char *)ebx);
+    }
+
+    case SYS_PIPE_DESTROY: {
+        // pipe_destroy(name) -> 0 or -1 (ebx=name ptr)
+        if (!validate_user_string(ebx))
+            return (uint32_t)-1;
+        return (uint32_t)pipe_destroy((const char *)ebx);
     }
 
     default:

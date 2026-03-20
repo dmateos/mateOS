@@ -227,6 +227,14 @@ int ftruncate(int fd, unsigned int length) {
     return __syscall2(SYS_FTRUNCATE, (unsigned int)fd, length);
 }
 
+int pipe_create(const char *name) {
+    return __syscall1(SYS_PIPE_CREATE, (unsigned int)name);
+}
+
+int pipe_destroy(const char *name) {
+    return __syscall1(SYS_PIPE_DESTROY, (unsigned int)name);
+}
+
 int rmdir(const char *path) {
     return __syscall1(SYS_RMDIR, (unsigned int)path);
 }

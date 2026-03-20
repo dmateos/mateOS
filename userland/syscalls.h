@@ -53,8 +53,10 @@
 #define SYS_NETSTATS 50
 #define SYS_SBRK 51
 #define SYS_DEBUG_EXIT 52
-#define SYS_RENAME    53
-#define SYS_FTRUNCATE 54
+#define SYS_RENAME       53
+#define SYS_FTRUNCATE    54
+#define SYS_PIPE_CREATE  55
+#define SYS_PIPE_DESTROY 56
 
 // Syscall wrappers
 int write(int fd, const void *buf, unsigned int len);
@@ -172,6 +174,14 @@ void *sbrk(int increment);
 int debug_exit(int code);
 int rename(const char *oldpath, const char *newpath);
 int ftruncate(int fd, unsigned int length);
+
+// Named kernel pipe syscalls (/pipe/<name>)
+// pipe_create: create a named pipe that persists until pipe_destroy
+// pipe_destroy: destroy named pipe (wakes blocked readers/writers)
+int pipe_create(const char *name);
+int pipe_destroy(const char *name);
+// Pipes are opened via open("/pipe/<name>", O_RDONLY or O_WRONLY)
+// and read/written via fd_read / fd_write.
 
 // Process detach (for GUI apps)
 int detach(void);

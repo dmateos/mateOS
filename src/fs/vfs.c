@@ -1,12 +1,18 @@
 #include "vfs.h"
 #include "liballoc/liballoc_1_1.h"
 #include "vfs_proc.h"
+#include "pipe.h"
 
 static const vfs_fs_ops_t *filesystems[VFS_MAX_FILESYSTEMS];
 static int fs_count = 0;
 
 #define VFS_MAX_VIRTUAL_FILES 16
 #define VFS_VIRT_BASE_ID (-1000)
+// Pipe fds are encoded as: fs_id = VFS_PIPE_BASE_ID - pipe_handle
+// VFS_PIPE_BASE_ID must not overlap VFS_VIRT_BASE_ID range.
+// Virtual files: -1001 .. -1000-VFS_MAX_VIRTUAL_FILES
+// Pipes: -2001 .. -2000-PIPE_FD_MAX  (well clear of virtual file range)
+#define VFS_PIPE_BASE_ID (-2000)
 
 typedef struct {
     const char *name;
@@ -90,11 +96,27 @@ static int vfs_virtual_index_from_fs_id(int fs_id) {
     return index;
 }
 
+static int vfs_pipe_fs_id_from_handle(int handle) {
+    return VFS_PIPE_BASE_ID - handle;
+}
+
+static int vfs_pipe_handle_from_fs_id(int fs_id) {
+    // Returns >= 0 if this is a pipe fs_id
+    int h = VFS_PIPE_BASE_ID - fs_id;
+    if (h < 0 || h >= PIPE_FD_MAX)
+        return -1;
+    // Distinguish from virtual files: pipe range is < VFS_PIPE_BASE_ID
+    if (fs_id > VFS_PIPE_BASE_ID)
+        return -1;
+    return h;
+}
+
 void vfs_init(void) {
     fs_count = 0;
     memset(filesystems, 0, sizeof(filesystems));
     virtual_file_count = 0;
     memset(virtual_files, 0, sizeof(virtual_files));
+    pipe_init();
     vfs_proc_register_files();
 }
 
@@ -202,6 +224,21 @@ int vfs_open(vfs_fd_table_t *fdt, const char *path, int flags) {
         return -2;
     }
 
+    // Named pipe: /pipe/<name>
+    if (pipe_is_pipe_path(path)) {
+        int ph = pipe_open(path, flags);
+        if (ph < 0) {
+            kprintf("[vfs] pipe open fail path=%s err=%d\n", path, ph);
+            return -1;
+        }
+        fdt->fds[fd].in_use = 1;
+        fdt->fds[fd].fs_id = vfs_pipe_fs_id_from_handle(ph);
+        fdt->fds[fd].fs_handle = ph;
+        fdt->fds[fd].open_flags = flags;
+        vfs_copy_path(fdt->fds[fd].debug_path, path);
+        return fd;
+    }
+
     int vfi = vfs_find_virtual_file(path);
     if (vfi >= 0) {
         int access = flags & 0x3;
@@ -248,6 +285,12 @@ int vfs_read(vfs_fd_table_t *fdt, int fd, void *buf, uint32_t len) {
     int fs = fdt->fds[fd].fs_id;
     if (fs < 0 && fs > VFS_VIRT_BASE_ID)
         return -1; // console fd, not VFS-backed
+
+    // Named pipe read
+    int ph = vfs_pipe_handle_from_fs_id(fs);
+    if (ph >= 0)
+        return pipe_read(ph, buf, len);
+
     int vfi = vfs_virtual_index_from_fs_id(fs);
     if (vfi >= 0) {
         int n = virtual_files[vfi].read_fn((uint32_t)fdt->fds[fd].fs_handle,
@@ -284,6 +327,12 @@ int vfs_write(vfs_fd_table_t *fdt, int fd, const void *buf, uint32_t len) {
     int fs = fdt->fds[fd].fs_id;
     if (fs < 0 && fs > VFS_VIRT_BASE_ID)
         return -1; // console fd, not VFS-backed
+
+    // Named pipe write
+    int ph = vfs_pipe_handle_from_fs_id(fs);
+    if (ph >= 0)
+        return pipe_write(ph, buf, len);
+
     int vfi = vfs_virtual_index_from_fs_id(fs);
     if (vfi >= 0) {
         kprintf("[vfs] write fail path=%s err=%d\n", fdt->fds[fd].debug_path,
@@ -312,7 +361,10 @@ int vfs_close(vfs_fd_table_t *fdt, int fd) {
 
     int fs = fdt->fds[fd].fs_id;
     int ret = 0;
-    if (vfs_virtual_index_from_fs_id(fs) < 0) {
+    int ph = vfs_pipe_handle_from_fs_id(fs);
+    if (ph >= 0) {
+        ret = pipe_close(ph);
+    } else if (vfs_virtual_index_from_fs_id(fs) < 0) {
         if (fs >= 0 && filesystems[fs]->close) {
             ret = filesystems[fs]->close(fdt->fds[fd].fs_handle);
         }
@@ -384,6 +436,10 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
         return 0;
     }
 
+    // /pipe virtual directory and files
+    if (pipe_is_pipe_path(path))
+        return pipe_stat(path, st);
+
     int vfi = vfs_find_virtual_file(path);
     if (vfi >= 0) {
         st->size = virtual_files[vfi].size_fn();
@@ -404,6 +460,12 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
 static int vfs_is_mos_dir(const char *path) {
     return strcmp(path, "/mos") == 0 || strcmp(path, "/mos/") == 0 ||
            strcmp(path, "mos") == 0;
+}
+
+// Check if path refers to the /pipe virtual directory
+static int vfs_is_pipe_dir(const char *path) {
+    return strcmp(path, "/pipe") == 0 || strcmp(path, "/pipe/") == 0 ||
+           strcmp(path, "pipe") == 0;
 }
 
 int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
@@ -430,19 +492,30 @@ int vfs_readdir(const char *path, int index, char *buf, uint32_t size) {
         return 0; // no FS entries in /mos
     }
 
-    // Reading root "/": show "mos" virtual directory entry first
+    // Reading /pipe: list named pipes
+    if (vfs_is_pipe_dir(path))
+        return pipe_readdir(index, buf, size);
+
+    // Reading root "/": show "mos" and "pipe" virtual directory entries first
     if (strcmp(path, "/") == 0 || strcmp(path, "") == 0) {
         if (remaining == 0) {
-            // First entry: the mos virtual directory
             const char *pname = "mos";
             size_t n = 3;
-            if (n >= size)
-                n = size - 1;
+            if (n >= size) n = size - 1;
             memcpy(buf, pname, n);
             buf[n] = '\0';
             return (int)(n + 1);
         }
-        remaining--; // account for the "mos" entry
+        remaining--;
+        if (remaining == 0) {
+            const char *pname = "pipe";
+            size_t n = 4;
+            if (n >= size) n = size - 1;
+            memcpy(buf, pname, n);
+            buf[n] = '\0';
+            return (int)(n + 1);
+        }
+        remaining--; // account for both "mos" and "pipe" entries
     }
 
     for (int fs = 0; fs < fs_count; fs++) {

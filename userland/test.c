@@ -2540,6 +2540,102 @@ static int test_string_funcs(void) {
 }
 
 // ============================================================
+// Test 55: Named kernel pipes (/pipe/<name>)
+// ============================================================
+static int test_named_pipes(void) {
+    print("TEST 55: named kernel pipes\n");
+
+    // Create a pipe
+    if (pipe_create("testpipe") != 0) {
+        print("  FAIL: pipe_create\n\n");
+        return 0;
+    }
+    print("  - pipe_create: OK\n");
+
+    // Open writer fd
+    int wfd = open("/pipe/testpipe", O_WRONLY);
+    if (wfd < 0) {
+        print("  FAIL: open wronly\n\n");
+        pipe_destroy("testpipe");
+        return 0;
+    }
+    print("  - open O_WRONLY: OK\n");
+
+    // Open reader fd
+    int rfd = open("/pipe/testpipe", O_RDONLY);
+    if (rfd < 0) {
+        print("  FAIL: open rdonly\n\n");
+        close(wfd);
+        pipe_destroy("testpipe");
+        return 0;
+    }
+    print("  - open O_RDONLY: OK\n");
+
+    // Write some bytes
+    const char *msg = "hello pipe";
+    int wn = fd_write(wfd, msg, 10);
+    if (wn != 10) {
+        print("  FAIL: fd_write\n\n");
+        close(wfd); close(rfd);
+        pipe_destroy("testpipe");
+        return 0;
+    }
+    print("  - fd_write: OK\n");
+
+    // Read them back
+    char rbuf[16];
+    int rn = fd_read(rfd, rbuf, 10);
+    if (rn != 10 || memcmp(rbuf, msg, 10) != 0) {
+        print("  FAIL: fd_read\n\n");
+        close(wfd); close(rfd);
+        pipe_destroy("testpipe");
+        return 0;
+    }
+    print("  - fd_read: OK\n");
+
+    // stat /pipe should be a directory
+    stat_t pst;
+    if (stat("/pipe", &pst) != 0 || pst.type != 1) {
+        print("  FAIL: stat /pipe dir\n\n");
+        close(wfd); close(rfd);
+        pipe_destroy("testpipe");
+        return 0;
+    }
+    print("  - stat /pipe dir: OK\n");
+
+    // stat /pipe/testpipe should be a file
+    stat_t fst;
+    if (stat("/pipe/testpipe", &fst) != 0 || fst.type != 0) {
+        print("  FAIL: stat /pipe/testpipe\n\n");
+        close(wfd); close(rfd);
+        pipe_destroy("testpipe");
+        return 0;
+    }
+    print("  - stat /pipe/testpipe: OK\n");
+
+    // Close fds then destroy
+    close(wfd);
+    close(rfd);
+    if (pipe_destroy("testpipe") != 0) {
+        print("  FAIL: pipe_destroy\n\n");
+        return 0;
+    }
+    print("  - pipe_destroy: OK\n");
+
+    // pipe_destroy should make open fail
+    int bad = open("/pipe/testpipe", O_RDONLY);
+    if (bad >= 0) {
+        print("  FAIL: open after destroy should fail\n\n");
+        close(bad);
+        return 0;
+    }
+    print("  - open after destroy fails: OK\n");
+
+    print("  PASSED\n\n");
+    return 1;
+}
+
+// ============================================================
 // Entry point
 // ============================================================
 void _start(int argc, char **argv) {
@@ -2550,7 +2646,7 @@ void _start(int argc, char **argv) {
     print("========================================\n\n");
 
     int passed = 0;
-    int total = 54;
+    int total = 55;
 
     // Run all tests
     if (test_syscalls())
@@ -2661,6 +2757,8 @@ void _start(int argc, char **argv) {
         passed++; // 53
     if (test_string_funcs())
         passed++; // 54
+    if (test_named_pipes())
+        passed++; // 55
 
     print("========================================\n");
     print("  Results: ");
