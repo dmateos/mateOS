@@ -59,7 +59,7 @@ static uint32_t gfx_owner_pid = 0; // Task ID that owns graphics mode
 // Forward declaration for interrupt registration
 extern void isr128(void);
 
-// iret_frame_t is defined in arch/i686/interrupts.h, included via arch/arch.h
+// arch_irq_frame_t is defined in arch/arch_interface.h
 
 // Write to console or window text buffer (if stdout redirected)
 static int sys_do_write(int fd, const char *buf, size_t len) {
@@ -115,10 +115,10 @@ static int sys_do_sleepms(uint32_t ms) {
     return 0;
 }
 
-// Load ELF segments into a page directory. Returns entry point, or 0 on error.
+// Load ELF segments into an address space. Returns entry point, or 0 on error.
 // If stack_phys_out is non-NULL, stores the physical address of the user stack
 // page.
-uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
+uint32_t load_elf_into(arch_aspace_t *page_dir, const char *filename,
                        uint32_t *stack_phys_out, uint32_t *user_end_out) {
     void *data = NULL;
     uint32_t size = 0;
@@ -221,24 +221,11 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
 
         for (uint32_t page_vaddr = seg_start; page_vaddr < seg_end;
              page_vaddr += 0x1000) {
-            uint32_t dir_idx = page_vaddr >> 22;
-            uint32_t table_idx = (page_vaddr >> 12) & 0x3FF;
-            uint32_t phys = 0;
-
-            if (page_dir->tables[dir_idx] & PAGE_PRESENT) {
-                page_table_t *pt = (page_table_t *)PHYS_TO_KVIRT(
-                    page_dir->tables[dir_idx] & ~0xFFF);
-                if (pt->pages[table_idx] & PAGE_PRESENT) {
-                    uint32_t pte = pt->pages[table_idx];
-                    // Only reuse pages that were already mapped as user pages
-                    // (eg overlapping PT_LOAD segments). Kernel identity
-                    // mappings in the user VA range must be replaced with fresh
-                    // user-mapped frames.
-                    if (pte & PAGE_USER) {
-                        phys = pte & ~0xFFF;
-                    }
-                }
-            }
+            // Reuse page if already mapped as a user page (overlapping
+            // PT_LOAD segments).  Kernel-only mappings in the user VA range
+            // must be replaced with fresh user frames.
+            uint32_t phys =
+                (uint32_t)arch_aspace_user_phys(page_dir, page_vaddr);
 
             if (!phys) {
                 phys = pmm_alloc_frame();
@@ -248,9 +235,9 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
                     return 0;
                 }
                 memset((void *)PHYS_TO_KVIRT(phys), 0, 0x1000);
-                if (paging_map_page(page_dir, page_vaddr, phys,
-                                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER) <
-                    0) {
+                if (arch_aspace_map(page_dir, page_vaddr, phys,
+                                    ARCH_PAGE_PRESENT | ARCH_PAGE_WRITE |
+                                    ARCH_PAGE_USER) < 0) {
                     printf("[exec] failed to map page 0x%x\n", page_vaddr);
                     pmm_free_frames(temp_frames_base, temp_frames_count);
                     return 0;
@@ -282,8 +269,9 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
             return 0;
         }
         memset((void *)PHYS_TO_KVIRT(phys), 0, 0x1000);
-        if (paging_map_page(page_dir, stack_base + (i * 0x1000u), phys,
-                            PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
+        if (arch_aspace_map(page_dir, stack_base + (i * 0x1000u), phys,
+                            ARCH_PAGE_PRESENT | ARCH_PAGE_WRITE |
+                            ARCH_PAGE_USER) < 0) {
             printf("[exec] failed to map stack page %d\n", (int)i);
             pmm_free_frames(temp_frames_base, temp_frames_count);
             return 0;
@@ -311,7 +299,7 @@ uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
 }
 
 // Execute ELF binary from VFS - replaces current process
-static int sys_do_exec(const char *filename, iret_frame_t *frame) {
+static int sys_do_exec(const char *filename, arch_irq_frame_t *frame) {
     if (!filename)
         return -1;
 
@@ -327,31 +315,25 @@ static int sys_do_exec(const char *filename, iret_frame_t *frame) {
     memcpy(kfilename, filename, flen);
     kfilename[flen] = '\0';
 
-    page_directory_t *kernel_dir = paging_get_kernel_dir();
-    paging_switch(kernel_dir);
+    arch_aspace_switch(arch_aspace_kernel());
 
     uint32_t user_end = USER_REGION_START;
     uint32_t entry =
         load_elf_into(current->page_dir, kfilename, NULL, &user_end);
 
-    // Restore current task address space before returning to user/continuing
-    // kernel work.
-    paging_switch(current->page_dir);
+    // Restore current task address space before returning to user.
+    arch_aspace_switch(current->page_dir);
     if (!entry)
         return -1;
     current->user_brk_min = user_end;
     current->user_brk = user_end;
 
-    // Flush TLB
-    paging_switch(current->page_dir);
+    // Flush TLB by re-loading address space.
+    arch_aspace_switch(current->page_dir);
 
-    // Modify the iret frame to jump to ELF entry with new stack
-    frame->eip = entry;
-    frame->cs = USER_CODE_SEL;
-    frame->eflags = ARCH_EFLAGS_DEFAULT;
-    frame->esp = USER_STACK_TOP_PAGE_VADDR + 0x1000; // Top of user stack
-    frame->ss = USER_DATA_SEL;
-
+    // Redirect iret frame so task resumes at new ELF entry point.
+    arch_set_return_context(frame, entry,
+                            USER_STACK_TOP_PAGE_VADDR + 0x1000u);
     return 0;
 }
 
@@ -367,21 +349,20 @@ static uint32_t sys_do_gfx_init(void) {
         if (lfb) {
             uint32_t fb_size = 1024 * 768 * 2; // 16bpp RGB565
 
-            // Map LFB pages in kernel page directory (for propagation to new
-            // processes)
-            paging_map_vbe(lfb, fb_size);
+            // Map LFB pages in kernel address space (propagates to new procs)
+            arch_aspace_map_mmio(lfb, fb_size);
 
-            // Also map into calling process's page directory
+            // Also map into calling process's address space
             task_t *current = task_current();
             if (current && current->page_dir) {
-                uint32_t start = lfb & ~0xFFF;
-                uint32_t end = (lfb + fb_size + 0xFFF) & ~0xFFF;
+                uint32_t start = lfb & ~0xFFFu;
+                uint32_t end = (lfb + fb_size + 0xFFFu) & ~0xFFFu;
                 for (uint32_t addr = start; addr < end; addr += 0x1000) {
-                    paging_map_page(current->page_dir, addr, addr,
-                                    PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+                    arch_aspace_map(current->page_dir, addr, addr,
+                                    ARCH_PAGE_PRESENT | ARCH_PAGE_WRITE |
+                                    ARCH_PAGE_USER);
                 }
-                // Flush TLB
-                paging_switch(current->page_dir);
+                arch_aspace_switch(current->page_dir); // flush TLB
             }
 
             bga_fb_addr = lfb;
@@ -405,18 +386,20 @@ static uint32_t sys_do_gfx_init(void) {
     // Fallback: Mode 13h
     vga_enter_mode13h();
 
-    // Map VGA Mode 13h framebuffer into kernel dir (for propagation to new
-    // processes) and into the current task's address space.
-    paging_map_vbe(VGA_MODE13H_FB_START, VGA_MODE13H_FB_END - VGA_MODE13H_FB_START);
+    // Map VGA Mode 13h framebuffer into kernel address space (propagates to
+    // new processes) and into the current task's address space.
+    arch_aspace_map_mmio(VGA_MODE13H_FB_START,
+                         VGA_MODE13H_FB_END - VGA_MODE13H_FB_START);
     {
         task_t *cur = task_current();
         if (cur && cur->page_dir) {
             for (uint32_t addr = VGA_MODE13H_FB_START;
                  addr < VGA_MODE13H_FB_END; addr += 0x1000) {
-                paging_map_page(cur->page_dir, addr, addr,
-                                PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+                arch_aspace_map(cur->page_dir, addr, addr,
+                                ARCH_PAGE_PRESENT | ARCH_PAGE_WRITE |
+                                ARCH_PAGE_USER);
             }
-            paging_switch(cur->page_dir);
+            arch_aspace_switch(cur->page_dir); // flush TLB
         }
     }
 
@@ -515,10 +498,10 @@ static int sys_do_spawn(const char *filename, const char **argv, int argc) {
     }
 
     task_t *parent = task_current();
-    page_directory_t *restore_dir = (parent && parent->page_dir)
-                                        ? parent->page_dir
-                                        : paging_get_kernel_dir();
-    paging_switch(paging_get_kernel_dir());
+    arch_aspace_t *restore_dir = (parent && parent->page_dir)
+                                     ? parent->page_dir
+                                     : arch_aspace_kernel();
+    arch_aspace_switch(arch_aspace_kernel());
 
     task_t *t;
     if (kargc > 0) {
@@ -526,7 +509,7 @@ static int sys_do_spawn(const char *filename, const char **argv, int argc) {
     } else {
         t = task_create_user_elf(kfilename, NULL, 0);
     }
-    paging_switch(restore_dir);
+    arch_aspace_switch(restore_dir);
     if (!t) {
         kprintf("[task] spawn fail file=%s err=%d\n", kfilename, -1);
         return -1;
@@ -666,8 +649,9 @@ static uint32_t sys_do_sbrk(int32_t increment) {
         if (!phys)
             return (uint32_t)-1;
         memset((void *)PHYS_TO_KVIRT(phys), 0, 0x1000u);
-        if (paging_map_page(current->page_dir, va, phys,
-                            PAGE_PRESENT | PAGE_WRITE | PAGE_USER) < 0) {
+        if (arch_aspace_map(current->page_dir, va, phys,
+                            ARCH_PAGE_PRESENT | ARCH_PAGE_WRITE |
+                            ARCH_PAGE_USER) < 0) {
             pmm_free_frame(phys);
             return (uint32_t)-1;
         }
@@ -708,7 +692,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
     case SYS_EXEC:
         if (!validate_user_string(ebx))
             return (uint32_t)-1;
-        return (uint32_t)sys_do_exec((const char *)ebx, (iret_frame_t *)frame);
+        return (uint32_t)sys_do_exec((const char *)ebx,
+                                     arch_irq_frame_from_state(frame));
 
     case SYS_GFX_INIT:
         return sys_do_gfx_init();

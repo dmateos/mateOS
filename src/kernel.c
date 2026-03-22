@@ -79,7 +79,7 @@ static int str_ends_with(const char *s, const char *sfx) {
 }
 
 void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
-    init_686();
+    arch_init();
     kprintf("[boot] mateOS %s (abi=%d, built=%s)\n", KERNEL_VERSION_FULL,
             KERNEL_VERSION_ABI, KERNEL_BUILD_DATE_UTC);
     kprintf("[boot] paging init ok\n");

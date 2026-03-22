@@ -77,12 +77,12 @@ typedef struct {
 // Initialize syscall handler (registers int 0x80)
 void syscall_init(void);
 
-// Load ELF from VFS into a page directory. Returns entry point, or 0 on
+// Load ELF from VFS into an address space. Returns entry point, or 0 on
 // error. If stack_phys_out is non-NULL, stores the physical address of the user
 // stack page. If user_end_out is non-NULL, stores the first unmapped byte above
 // loaded PT_LOAD segments.
-struct page_directory;
-uint32_t load_elf_into(struct page_directory *page_dir, const char *filename,
+#include "arch/arch_interface.h"
+uint32_t load_elf_into(arch_aspace_t *aspace, const char *filename,
                        uint32_t *stack_phys_out, uint32_t *user_end_out);
 
 // Syscall handler called from assembly

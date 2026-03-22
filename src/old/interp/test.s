@@ -1,0 +1,19 @@
+@LABEL dont
+SET 69
+PRINT
+RET
+
+@LABEL test
+SET 99
+PRINT
+RET
+
+@LABEL test2
+SET 88
+PRINT
+RET
+
+@LABEL start
+CALL test
+CALL test2
+CALL test

@@ -114,33 +114,9 @@ task_t *task_create(const char *name, void (*entry)(void)) {
     task->stack = stack;
     task->entry = entry;
 
-    // Set up initial stack for context switch
-    // Stack grows downward, so start at top
-    uint32_t *sp = (uint32_t *)((uint8_t *)stack + TASK_STACK_SIZE);
-
-    // Push initial CPU state (what the interrupt handler expects)
-    // These will be popped by iret
-    *(--sp) = ARCH_EFLAGS_DEFAULT;          // EFLAGS (IF=1, reserved bit 1 = 1)
-    *(--sp) = KERNEL_CODE_SEG;              // CS (kernel code segment)
-    *(--sp) = (uint32_t)task_entry_wrapper; // EIP - start at wrapper
-
-    // Pushed by pusha (in reverse order since stack grows down)
-    *(--sp) = 0; // EAX
-    *(--sp) = 0; // ECX
-    *(--sp) = 0; // EDX
-    *(--sp) = 0; // EBX
-    *(--sp) = 0; // ESP (ignored by popa)
-    *(--sp) = 0; // EBP
-    *(--sp) = 0; // ESI
-    *(--sp) = 0; // EDI
-
-    // Segment registers (for kernel task, use kernel data segment)
-    *(--sp) = KERNEL_DATA_SEG; // GS
-    *(--sp) = KERNEL_DATA_SEG; // FS
-    *(--sp) = KERNEL_DATA_SEG; // ES
-    *(--sp) = KERNEL_DATA_SEG; // DS
-
-    task->stack_top = sp;
+    // Set up initial stack for context switch via arch abstraction
+    uint32_t *stack_top = (uint32_t *)((uint8_t *)stack + TASK_STACK_SIZE);
+    task->stack_top = arch_task_init_kernel(task_entry_wrapper, stack_top);
 
     // Kernel mode task
     task->is_kernel = 1;
@@ -213,7 +189,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     }
 
     // Create per-process address space
-    page_directory_t *page_dir = paging_create_address_space();
+    arch_aspace_t *page_dir = arch_aspace_create();
     if (!page_dir) {
         kprintf("Error: Failed to create address space\n");
         return NULL;
@@ -225,7 +201,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     uint32_t elf_entry =
         load_elf_into(page_dir, filename, &stack_phys, &user_end);
     if (!elf_entry) {
-        paging_destroy_address_space(page_dir);
+        arch_aspace_destroy(page_dir);
         return NULL;
     }
 
@@ -291,7 +267,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     uint32_t *kernel_stack = (uint32_t *)kmalloc(TASK_STACK_SIZE);
     if (!kernel_stack) {
         kprintf("Error: Failed to allocate kernel stack\n");
-        paging_destroy_address_space(page_dir);
+        arch_aspace_destroy(page_dir);
         return NULL;
     }
 
@@ -317,34 +293,10 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     task->kernel_stack = kernel_stack;
     task->kernel_stack_top = (uint32_t)kernel_stack + TASK_STACK_SIZE;
 
-    // Set up initial kernel stack for first context switch.
-    // The iret frame points directly at the ELF entry point in user mode.
-    uint32_t *sp = (uint32_t *)task->kernel_stack_top;
-
-    // User mode iret frame
-    *(--sp) = USER_DATA_SEL; // SS
-    *(--sp) = user_esp;      // ESP (points at argc on user stack)
-    *(--sp) = ARCH_EFLAGS_DEFAULT; // EFLAGS (IF=1)
-    *(--sp) = USER_CODE_SEL;       // CS
-    *(--sp) = elf_entry;     // EIP - directly at ELF entry point
-
-    // Pushed by pusha
-    *(--sp) = 0; // EAX
-    *(--sp) = 0; // ECX
-    *(--sp) = 0; // EDX
-    *(--sp) = 0; // EBX
-    *(--sp) = 0; // ESP (ignored)
-    *(--sp) = 0; // EBP
-    *(--sp) = 0; // ESI
-    *(--sp) = 0; // EDI
-
-    // Segment registers
-    *(--sp) = USER_DATA_SEL; // GS
-    *(--sp) = USER_DATA_SEL; // FS
-    *(--sp) = USER_DATA_SEL; // ES
-    *(--sp) = USER_DATA_SEL; // DS
-
-    task->stack_top = sp;
+    // Set up initial kernel stack for first context switch via arch abstraction
+    task->stack_top = arch_task_init_user(
+        elf_entry, user_esp,
+        (uint32_t *)task->kernel_stack_top);
     task->stdout_wid = -1;
     task->detached = 0;
     task->runtime_ticks = 0;
@@ -362,7 +314,7 @@ task_t *task_create_user_elf(const char *filename, const char **argv,
     if (!task->fd_table) {
         kprintf("[task] failed to allocate fd_table for pid=%d\n", task->id);
         kfree(kernel_stack);
-        paging_destroy_address_space(page_dir);
+        arch_aspace_destroy(page_dir);
         task->state = TASK_TERMINATED;
         return NULL;
     }
@@ -440,16 +392,16 @@ uint32_t *schedule(uint32_t *current_esp, uint32_t is_hw_tick) {
     current_task = next;
     current_task->state = TASK_RUNNING;
 
-    // Update TSS with new task's kernel stack for user mode tasks
+    // Update TSS / MSR with new task's kernel stack for user mode tasks
     if (!current_task->is_kernel && current_task->kernel_stack_top) {
-        tss_set_kernel_stack(current_task->kernel_stack_top);
+        arch_task_set_kernel_stack(current_task->kernel_stack_top);
     }
 
-    // Switch address space (CR3)
+    // Switch address space (CR3 / TTBR / …)
     if (current_task->page_dir) {
-        paging_switch(current_task->page_dir);
+        arch_aspace_switch(current_task->page_dir);
     } else {
-        paging_switch(paging_get_kernel_dir());
+        arch_aspace_switch(arch_aspace_kernel());
     }
 
     return current_task->stack_top;
@@ -498,17 +450,17 @@ static void task_terminate(task_t *task, int code) {
     // Save caller's page directory so we can restore it after destroying
     // the target's address space. When killing a *different* task from
     // userland, the caller still needs its own page directory active.
-    page_directory_t *saved_dir = current_task ? current_task->page_dir : NULL;
-    paging_switch(paging_get_kernel_dir());
+    arch_aspace_t *saved_dir = current_task ? current_task->page_dir : NULL;
+    arch_aspace_switch(arch_aspace_kernel());
     if (task->page_dir) {
-        paging_destroy_address_space(task->page_dir);
+        arch_aspace_destroy(task->page_dir);
         task->page_dir = NULL;
     }
-    // Restore caller's page directory (unless the terminated task *is* the
+    // Restore caller's address space (unless the terminated task *is* the
     // current task, in which case its page_dir was just destroyed — keep
-    // kernel CR3).
+    // kernel address space).
     if (task != current_task && saved_dir) {
-        paging_switch(saved_dir);
+        arch_aspace_switch(saved_dir);
     }
 
     task->stack = NULL;

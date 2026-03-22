@@ -2,10 +2,12 @@ TARGET_ARCH = i686-unknown-none-elf
 CC = clang --target=$(TARGET_ARCH)
 AS = clang --target=$(TARGET_ARCH)
 LD = clang --target=$(TARGET_ARCH)
+ARCH = i686
+ARCH_DEFINE = ARCH_I686
 CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes -fno-pie \
+         -D$(ARCH_DEFINE) \
          -I$(SRCDIR) -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip
 LDFLAGS = -T src/linker.ld -ffreestanding -O2 -nostdlib -static -Wl,--build-id=none
-ARCH = i686
 
 SRCDIR = src
 BUILDDIR = build
