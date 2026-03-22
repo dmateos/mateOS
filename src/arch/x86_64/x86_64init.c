@@ -1,26 +1,59 @@
 /*
- * x86_64init.c — 64-bit architecture bring-up  [STUB]
+ * x86_64init.c — 64-bit architecture bring-up
  *
- * Order of operations (to be filled in):
- *   1. Set up GDT64 (null, kcode, kdata, ucode, udata, TSS×2)
- *   2. Load GDTR (lgdt)
- *   3. Reload segment registers (cs via far return, ds/es/ss/fs/gs = 0)
- *   4. Set up TSS64 (rsp0 for syscall stack, IST stacks for NMI/DF/MC)
- *   5. Load TR (ltr)
- *   6. Set up IDT64 (256 × 16-byte descriptors)
- *   7. Load IDTR (lidt)
- *   8. Remap PIC (or configure APIC)
- *   9. Set up 4-level page tables (already done in boot.S on real hw)
- *  10. Configure PIT / APIC timer at 100 Hz
- *  11. Enable SSE (if desired)
- *  12. Set EFER.SCE for SYSCALL/SYSRET (optional — int 0x80 also works)
+ * Called from arch_impl.c → arch_init() → kernel_main.
+ *
+ * Order of operations:
+ *   1. GDT64 (null, kcode, kdata, ucode, udata, TSS×2)
+ *   2. TSS64 (rsp0 for syscall stack)
+ *   3. IDT64 (256 × 16-byte descriptors) + PIC remap
+ *   4. PMM (physical memory manager — needs multiboot info)
+ *   5. 4-level paging (permanent kernel PML4)
+ *   6. PIT timer at ~100 Hz
  */
-
 #include "arch/x86_64/x86_64init.h"
+#include "arch/x86_64/gdt.h"
+#include "arch/x86_64/tss.h"
+#include "arch/x86_64/idt.h"
+#include "arch/x86_64/paging.h"
+#include "arch/x86_64/interrupts.h"
+#include "arch/x86_64/timer.h"
+#include "arch/x86_64/io.h"
+#include "memlayout.h"
 #include "lib.h"
 
+/*
+ * Temporary kernel stack — top is stored here so tss64_init has a
+ * valid rsp0 before the first task switch.  The real per-task kernel
+ * stacks are allocated by task_create().
+ */
+extern char stack_top[];  /* defined in boot.S BSS */
+
 void init_x86_64(void) {
-    /* TODO: implement 64-bit bring-up sequence */
-    kprintf("[arch] x86_64 init — NOT YET IMPLEMENTED\n");
-    while (1) {} /* halt — don't let kernel continue with no arch */
+    kprintf("[arch] x86_64 init starting\n");
+
+    /* 1. TSS must exist before GDT loads the TSS descriptor */
+    tss64_init((uintptr_t)stack_top);
+
+    /* 2. GDT64: installs null/kcode/kdata/ucode/udata and TSS descriptor,
+     *    then does lgdt + ltr. */
+    gdt64_init();
+    kprintf("[arch] GDT64 loaded\n");
+
+    /* 3. IDT + PIC remap */
+    init_idt();
+    kprintf("[arch] IDT64 loaded\n");
+
+    /* 4. Paging: build permanent kernel PML4 and switch to it.
+     *    (PMM must already be initialised by kernel_main before arch_init
+     *     — see the call order in kernel.c.  If PMM is not ready yet,
+     *     init_paging will use the boot page tables until PMM is up.) */
+    init_paging();
+    kprintf("[arch] paging64 active\n");
+
+    /* 5. PIT timer at 100 Hz */
+    init_timer(100);
+    kprintf("[arch] timer 100 Hz\n");
+
+    kprintf("[arch] x86_64 init done\n");
 }

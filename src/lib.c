@@ -140,7 +140,12 @@ static void emit_cstr(putc_fn_t out, const char *s) {
         out(*s++);
 }
 
+#ifdef ARCH_I686
 static void term_putc_adapter(char c) { term_putchar(c); }
+#else
+/* x86_64: use serial port for early console output (VGA tty not yet ported) */
+static void term_putc_adapter(char c) { serial_putchar(c); }
+#endif
 
 void console_set_serial_mirror(int enabled) { (void)enabled; }
 

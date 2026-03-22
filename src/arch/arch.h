@@ -53,10 +53,13 @@
 #elif defined(ARCH_X86_64)
 
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/gdt.h"
+#include "arch/x86_64/idt.h"
 #include "arch/x86_64/interrupts.h"
 #include "arch/x86_64/io.h"
 #include "arch/x86_64/paging.h"
 #include "arch/x86_64/timer.h"
+#include "arch/x86_64/tss.h"
 #include "arch/x86_64/x86_64init.h"
 
 #else

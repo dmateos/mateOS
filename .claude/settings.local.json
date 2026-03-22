@@ -79,7 +79,8 @@
       "Bash(QEMU_BASE=\"-kernel dmos.bin -drive file=boot.img,format=raw,if=ide -no-reboot\"\ntimeout 30s qemu-system-i386 -display none -serial stdio \\\\\n    $QEMU_BASE \\\\\n    -append \"autorun=test serial=1\" \\\\\n    -device isa-debug-exit,iobase=0xf4,iosize=0x04 \\\\\n    2>&1 | head -120)",
       "Bash(cd /mnt/data/per/code/mateOS && touch userland/test.c && make 2>&1 | grep -E \"error|Wrote boot|test\\\\.elf\")",
       "Bash(cd /mnt/data/per/code/mateOS && touch userland/setjmp.s && make 2>&1 | grep -E \"error|Wrote boot|setjmp|test\\\\.elf\")",
-      "Bash(timeout 90 qemu-system-i386 \\\\\n  -kernel dmos.bin \\\\\n  -drive file=boot.img,format=raw,if=ide \\\\\n  -no-reboot \\\\\n  -display none \\\\\n  -serial stdio \\\\\n  -device isa-debug-exit,iobase=0xf4,iosize=0x04 \\\\\n  2>&1 <<'EOF'\ntest\nEOF)"
+      "Bash(timeout 90 qemu-system-i386 \\\\\n  -kernel dmos.bin \\\\\n  -drive file=boot.img,format=raw,if=ide \\\\\n  -no-reboot \\\\\n  -display none \\\\\n  -serial stdio \\\\\n  -device isa-debug-exit,iobase=0xf4,iosize=0x04 \\\\\n  2>&1 <<'EOF'\ntest\nEOF)",
+      "Bash(clang --target=x86_64-unknown-none-elf -std=gnu99 -ffreestanding -O2 -DARCH_X86_64 -Isrc -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -c src/drivers/ata_pio.c -o /tmp/test_ata.o 2>&1 | head -5)"
     ],
     "deny": [],
     "ask": []

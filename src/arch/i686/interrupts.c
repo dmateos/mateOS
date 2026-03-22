@@ -15,7 +15,7 @@
 #define PRIVILEGE_USER 0xEE // DPL=3, allow user mode to trigger this interrupt
 
 // Interrupt Service Routine (ISR) handlers
-void (*interruptPointers[256])(uint32_t, uint32_t) = {0};
+irq_handler_fn_t interruptPointers[256];
 static const char *interruptNames[256] = {0};
 static uint8_t unknown_irq_reported[256] = {0};
 
@@ -134,7 +134,7 @@ static void init_idt_table(idt_entry_t *ide) {
                     PRIVILEGE_USER);
 }
 
-void register_interrupt_handler_impl(uint8_t n, void (*h)(uint32_t, uint32_t),
+void register_interrupt_handler_impl(uint8_t n, irq_handler_fn_t h,
                                      const char *name) {
     interruptPointers[n] = h;
     interruptNames[n] = name;

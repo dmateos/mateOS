@@ -87,11 +87,13 @@ static void sys_do_exit(int code) {
     task_t *current = task_current();
     if (user_gfx_active && current && current->id == gfx_owner_pid) {
         keyboard_buffer_enable(0);
+#ifdef ARCH_I686
         if (user_gfx_bga) {
             vga_exit_bga_mode();
         } else {
             vga_enter_text_mode();
         }
+#endif
         user_gfx_active = 0;
         user_gfx_bga = 0;
         gfx_owner_pid = 0;
@@ -339,6 +341,10 @@ static int sys_do_exec(const char *filename, arch_irq_frame_t *frame) {
 
 // Enter graphics mode — try BGA (Bochs VGA) for 1024x768, else Mode 13h
 static uint32_t sys_do_gfx_init(void) {
+#ifndef ARCH_I686
+    /* x86_64 port: graphics not yet implemented */
+    return 0;
+#else
     if (user_gfx_active) {
         return user_gfx_bga ? bga_fb_addr : VGA_MODE13H_FB_START;
     }
@@ -415,6 +421,7 @@ static uint32_t sys_do_gfx_init(void) {
     mouse_set_bounds(320, 200);
 
     return VGA_MODE13H_FB_START;
+#endif /* ARCH_I686 */
 }
 
 // Return to text mode — only the gfx owner can do this
@@ -427,11 +434,13 @@ static void sys_do_gfx_exit(void) {
         return;
 
     keyboard_buffer_enable(0);
+#ifdef ARCH_I686
     if (user_gfx_bga) {
         vga_exit_bga_mode();
     } else {
         vga_enter_text_mode();
     }
+#endif
     user_gfx_active = 0;
     user_gfx_bga = 0;
     bga_bpp = 0;
@@ -664,7 +673,11 @@ static uint32_t sys_do_sbrk(int32_t increment) {
 static uint32_t sys_do_getticks(void) { return get_tick_count(); }
 
 static int sys_do_debug_exit(uint32_t code) {
+#ifdef ARCH_I686
     outb(QEMU_DEBUG_EXIT_PORT, (uint8_t)(code & 0xFFu));
+#else
+    (void)code;
+#endif
     return 0;
 }
 
@@ -798,6 +811,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
     case SYS_WAIT_NB:
         return (uint32_t)sys_do_wait_nb(ebx);
 
+#ifdef ARCH_I686
     case SYS_PING:
         return (uint32_t)net_ping(ebx, ecx);
 
@@ -826,10 +840,18 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
         *(uint32_t *)ecx = tx;
         return 0;
     }
+#else
+    case SYS_PING:
+    case SYS_NETCFG:
+    case SYS_NETGET:
+    case SYS_NETSTATS:
+        return (uint32_t)-1;  /* net not yet ported to x86_64 */
+#endif
 
     case SYS_SLEEPMS:
         return (uint32_t)sys_do_sleepms(ebx);
 
+#ifdef ARCH_I686
     case SYS_SOCK_LISTEN:
         return (uint32_t)net_sock_listen((uint16_t)ebx);
 
@@ -848,6 +870,14 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
 
     case SYS_SOCK_CLOSE:
         return (uint32_t)net_sock_close((int)ebx);
+#else
+    case SYS_SOCK_LISTEN:
+    case SYS_SOCK_ACCEPT:
+    case SYS_SOCK_SEND:
+    case SYS_SOCK_RECV:
+    case SYS_SOCK_CLOSE:
+        return (uint32_t)-1;  /* sockets not yet ported to x86_64 */
+#endif
 
     case SYS_WIN_READ_TEXT: {
         if (edx > 0 && !validate_user_ptr(ecx, edx))
@@ -873,6 +903,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
             return (uint32_t)-1;
         if (edx && !validate_user_ptr(edx, 1))
             return (uint32_t)-1;
+#ifdef ARCH_I686
         mouse_state_t ms = mouse_get_state();
         if (ebx)
             *(int *)ebx = ms.x;
@@ -880,6 +911,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
             *(int *)ecx = ms.y;
         if (edx)
             *(uint8_t *)edx = ms.buttons;
+#endif
         return 0;
     }
 

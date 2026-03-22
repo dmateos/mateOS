@@ -156,7 +156,7 @@ $(BOOT_IMG): userland
 		$(if $(USER_CC_FILES),--add-dir user $(USER_CC_FILES),)
 
 clean:
-	rm -rf $(BUILDDIR) $(TARGET)
+	rm -rf $(BUILDDIR) $(TARGET) $(TARGET64)
 	rm -rf out.iso $(BOOT_IMG) $(KERNEL_VERSION_FILE)
 	@$(MAKE) -C userland clean
 	@cd rust && cargo clean 2>/dev/null || true
@@ -291,8 +291,117 @@ TINYCC_SRC ?= /tmp/tinycc
 tinycc-phase1:
 	@sh tools/tinycc_phase1_probe.sh "$(TINYCC_SRC)"
 
-test64:
-	qemu-system-x86_64 -display curses -kernel $(TARGET)
+# ── x86_64 build target ──────────────────────────────────────────────────
+# Builds a 64-bit kernel binary (dmos64.bin) using clang x86_64.
+# Usage:
+#   make x86_64            — build 64-bit kernel
+#   make run64             — boot it in qemu-system-x86_64 (curses)
+#   make run64 GFX=1       — boot with SDL display
+
+TARGET64   = dmos64.bin
+CC64       = clang --target=x86_64-unknown-none-elf
+AS64       = clang --target=x86_64-unknown-none-elf
+LD64       = clang --target=x86_64-unknown-none-elf
+ARCH64     = x86_64
+CFLAGS64   = -std=gnu99 -ffreestanding -O2 -Wall -Wextra -Wstrict-prototypes \
+             -fno-pie -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+             -DARCH_X86_64 \
+             -I$(SRCDIR) -I$(SRCDIR)/lwip/src/include -I$(SRCDIR)/lwip
+LDFLAGS64  = -T src/linker64.ld -ffreestanding -O2 -nostdlib -static \
+             -Wl,--build-id=none -mcmodel=large -mno-red-zone
+
+# Source files for x86_64 build (same subsystems, different arch dir)
+SRC_C_ARCH64 = $(wildcard $(SRCDIR)/arch/$(ARCH64)/*.c)
+SRC_S_ARCH64 = $(wildcard $(SRCDIR)/arch/$(ARCH64)/*.S)
+# x86_64: exclude drivers that need PCI or i686 hardware not yet ported;
+# instead include *_stub.c files that satisfy link dependencies.
+SRC_C_DRIVERS64_RAW = $(wildcard $(SRCDIR)/drivers/*.c)
+SRC_C_DRIVERS64 = $(filter-out $(SRCDIR)/drivers/rtl8139.c $(SRCDIR)/drivers/ata_pio.c \
+                               $(SRCDIR)/drivers/rtl8139_stub.c $(SRCDIR)/drivers/ata_pio_stub.c, \
+                               $(SRC_C_DRIVERS64_RAW)) \
+                  $(SRCDIR)/drivers/ata_pio_stub.c $(SRCDIR)/drivers/rtl8139_stub.c
+
+OBJ_C64      = $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/64/%.o,$(SRC_C))
+OBJ_C_FS64   = $(patsubst $(SRCDIR)/fs/%.c,$(BUILDDIR)/64/fs/%.o,$(SRC_C_FS))
+OBJ_C_PROC64 = $(patsubst $(SRCDIR)/proc/%.c,$(BUILDDIR)/64/proc/%.o,$(SRC_C_PROC))
+OBJ_C_NET64  = $(patsubst $(SRCDIR)/net/%.c,$(BUILDDIR)/64/net/%.o,$(SRC_C_NET))
+OBJ_C_IO64   = $(patsubst $(SRCDIR)/io/%.c,$(BUILDDIR)/64/io/%.o,$(SRC_C_IO))
+OBJ_C_BOOT64 = $(patsubst $(SRCDIR)/boot/%.c,$(BUILDDIR)/64/boot/%.o,$(SRC_C_BOOT))
+OBJ_C_UTILS64 = $(patsubst $(SRCDIR)/utils/%.c,$(BUILDDIR)/64/utils/%.o,$(SRC_C_UTILS))
+OBJ_C_ARCH64  = $(patsubst $(SRCDIR)/arch/$(ARCH64)/%.c,$(BUILDDIR)/64/arch/%.o,$(SRC_C_ARCH64))
+OBJ_C_LIBALLOC64 = $(patsubst $(SRCDIR)/liballoc/%.c,$(BUILDDIR)/64/liballoc/%.o,$(SRC_C_LIBALLOC))
+OBJ_C_DRIVERS64  = $(patsubst $(SRCDIR)/drivers/%.c,$(BUILDDIR)/64/drivers/%.o,$(SRC_C_DRIVERS64))
+OBJ_S_ARCH64  = $(patsubst $(SRCDIR)/arch/$(ARCH64)/%.S,$(BUILDDIR)/64/arch/%.o,$(SRC_S_ARCH64))
+OBJ_LWIP64    = $(patsubst $(LWIP_DIR)/%.c,$(BUILDDIR)/64/lwip/%.o,$(SRC_LWIP))
+
+OBJS_ALL64 = $(OBJ_C64) $(OBJ_C_FS64) $(OBJ_C_PROC64) $(OBJ_C_IO64) \
+             $(OBJ_C_BOOT64) $(OBJ_C_UTILS64) $(OBJ_C_ARCH64) \
+             $(OBJ_C_LIBALLOC64) $(OBJ_C_DRIVERS64) \
+             $(OBJ_S_ARCH64)
+# Note: net64 and lwIP omitted — networking not yet ported to x86_64
+
+x86_64: $(KERNEL_VERSION_FILE) $(TARGET64)
+
+$(TARGET64): $(OBJS_ALL64)
+	$(LD64) $(LDFLAGS64) $(OBJS_ALL64) -o $(TARGET64)
+
+$(BUILDDIR)/64/%.o: $(SRCDIR)/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/fs/%.o: $(SRCDIR)/fs/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/proc/%.o: $(SRCDIR)/proc/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/net/%.o: $(SRCDIR)/net/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/io/%.o: $(SRCDIR)/io/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/boot/%.o: $(SRCDIR)/boot/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/utils/%.o: $(SRCDIR)/utils/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/arch/%.o: $(SRCDIR)/arch/$(ARCH64)/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/arch/%.o: $(SRCDIR)/arch/$(ARCH64)/%.S
+	@mkdir -p $(dir $@)
+	$(AS64) -c $< -o $@
+
+$(BUILDDIR)/64/liballoc/%.o: $(SRCDIR)/liballoc/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/drivers/%.o: $(SRCDIR)/drivers/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(BUILDDIR)/64/lwip/%.o: $(LWIP_DIR)/%.c $(KERNEL_VERSION_FILE)
+	@mkdir -p $(dir $@)
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+QEMU64 = qemu-system-x86_64
+QEMU64_BASE = -kernel $(TARGET64) -drive file=$(BOOT_IMG),format=raw,if=ide -no-reboot
+
+run64: $(TARGET64) $(BOOT_IMG)
+ifdef GFX
+	$(QEMU64) -display sdl -vga std $(QEMU64_BASE)
+else
+	$(QEMU64) -display curses $(QEMU64_BASE)
+endif
 
 stop-test:
 	ps aux |grep qemu | awk '{print $2}' | xargs kill
@@ -304,4 +413,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland tinycc-phase1
+.PHONY: clean rust run run64 x86_64 cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland tinycc-phase1

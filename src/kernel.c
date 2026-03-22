@@ -86,7 +86,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
     // Parse multiboot info (if provided by bootloader)
     // The bootloader passes a physical pointer; convert to higher-half VA.
-    multiboot_info = (multiboot_info_t *)PHYS_TO_KVIRT((uint32_t)multiboot_info);
+    multiboot_info = (multiboot_info_t *)PHYS_TO_KVIRT((uintptr_t)multiboot_info);
     printf("\n");
     multiboot_init(multiboot_magic, multiboot_info);
     const char *cmdline = multiboot_get_cmdline();
@@ -111,17 +111,21 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
     keyboard_init_interrupts();
 
-    // Test Rust integration on boot
+#ifdef ARCH_I686
+    // Test Rust integration on boot (Rust library is 32-bit only for now)
     printf("\n");
     rust_hello();
     printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
 
-    // Scan PCI bus
+    // Scan PCI bus (x86_64 port: PCI not yet wired up)
     pci_init();
     kprintf("[boot] pci scan ok\n");
 
-    // Initialize network (RTL8139 + minimal ARP/ICMP)
+    // Initialize network (RTL8139 + minimal ARP/ICMP — 32-bit only for now)
     net_init();
+#else
+    kprintf("[boot] skipping pci/net (x86_64 stub)\n");
+#endif
     kprintf("[boot] net init ok\n");
 
     // Initialize VFS and register FAT16 boot filesystem
@@ -130,8 +134,13 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     if (fat16_init() != 0) {
         printf("FATAL: FAT16 boot disk not found. Cannot boot.\n");
         printf("Ensure an IDE disk with FAT16 filesystem is attached.\n");
-        while (1)
+        while (1) {
+#ifdef ARCH_I686
             halt_and_catch_fire();
+#else
+            __asm__ volatile("hlt");
+#endif
+        }
     }
     vfs_register_fs(fat16_get_ops());
     kprintf("[boot] fat16 boot disk ok\n");
@@ -148,10 +157,12 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     window_init();
     kprintf("[boot] window init ok\n");
 
-    // Initialize PS/2 mouse
+#ifdef ARCH_I686
+    // Initialize PS/2 mouse (x86_64 port: not yet wired up)
     mouse_init();
     register_interrupt_handler(0x2C, mouse_irq_handler);
     pic_unmask_irq(12);
+#endif
 
     // Print boot summary with RAM and PMM stats
     {
@@ -205,6 +216,10 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
 
     // Main loop - just halt and wait for interrupts
     while (1) {
+#ifdef ARCH_I686
         halt_and_catch_fire();
+#else
+        __asm__ volatile("hlt");
+#endif
     }
 }

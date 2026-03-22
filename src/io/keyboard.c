@@ -100,9 +100,14 @@ uint8_t keyboard_buffer_pop(void) {
 
 int keyboard_buffer_empty(void) { return kring_u8_empty(&key_buffer); }
 
-static void keyboard_irq_handler(uint32_t number __attribute__((unused)),
-                                 uint32_t error_code __attribute__((unused))) {
+static void keyboard_irq_handler(uintptr_t number __attribute__((unused)),
+                                 uintptr_t error_code __attribute__((unused))) {
+#ifdef ARCH_I686
     uint8_t scancode = inb(IO_KB_DATA);
+#else
+    /* x86_64: PS/2 keyboard port is the same 0x60 */
+    uint8_t scancode = inb(0x60);
+#endif
 
     if (scancode == 0xE0) {
         kb_extended = 1;
@@ -113,10 +118,14 @@ static void keyboard_irq_handler(uint32_t number __attribute__((unused)),
         kb_extended = 0;
         if (!(scancode & 0x80)) {
             if (scancode == 0x49) {
+#ifdef ARCH_I686
                 terminal_scroll_up();
+#endif
                 return;
             } else if (scancode == 0x51) {
+#ifdef ARCH_I686
                 terminal_scroll_down();
+#endif
                 return;
             } else if (keyboard_buffer_is_enabled()) {
                 uint8_t key = 0;

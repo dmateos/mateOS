@@ -65,7 +65,10 @@ typedef struct idt_ptr {
     uint32_t base;
 } __attribute__((packed)) idt_ptr_t;
 
-void register_interrupt_handler_impl(uint8_t, void (*h)(uint32_t, uint32_t),
+/* Common IRQ handler function type — use this in driver/subsystem code */
+typedef void (*irq_handler_fn_t)(uint32_t irq, uint32_t vec);
+
+void register_interrupt_handler_impl(uint8_t, irq_handler_fn_t h,
                                      const char *name);
 #define register_interrupt_handler(n, h)                                       \
     register_interrupt_handler_impl((n), (h), #h)
