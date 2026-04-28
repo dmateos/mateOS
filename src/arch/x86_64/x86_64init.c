@@ -30,6 +30,8 @@
 extern char stack_top[];  /* defined in boot.S BSS */
 
 void init_x86_64(void) {
+    /* Serial must be first — it is the only console on x86_64. */
+    serial_init();
     kprintf("[arch] x86_64 init starting\n");
 
     /* 1. TSS must exist before GDT loads the TSS descriptor */
@@ -44,14 +46,11 @@ void init_x86_64(void) {
     init_idt();
     kprintf("[arch] IDT64 loaded\n");
 
-    /* 4. Paging: build permanent kernel PML4 and switch to it.
-     *    (PMM must already be initialised by kernel_main before arch_init
-     *     — see the call order in kernel.c.  If PMM is not ready yet,
-     *     init_paging will use the boot page tables until PMM is up.) */
-    init_paging();
-    kprintf("[arch] paging64 active\n");
-
-    /* 5. PIT timer at 100 Hz */
+    /* 4. PIT timer at 100 Hz.
+     *    NOTE: Paging is NOT initialised here — init_paging() requires PMM
+     *    which is started by kernel_main after arch_init() returns.  The
+     *    boot.S temporary page tables remain active until kernel_main calls
+     *    arch_paging_init() after pmm_init(). */
     init_timer(100);
     kprintf("[arch] timer 100 Hz\n");
 

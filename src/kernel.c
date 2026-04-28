@@ -10,15 +10,10 @@
 #include "io/window.h"
 #include "liballoc/liballoc_1_1.h"
 #include "memlayout.h"
-#include "net/net.h"
 #include "proc/pmm.h"
 #include "proc/task.h"
 #include "syscall.h"
 #include "version.h"
-
-// External Rust functions
-extern void rust_hello(void);
-extern int rust_add(int a, int b);
 
 static int cmdline_has_token(const char *cmdline, const char *token) {
     if (!cmdline || !token || !token[0])
@@ -107,25 +102,21 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     kprintf("[boot] pmm init ok — %d MB RAM, %d frames (0x%x-0x%x)\n",
             ram_top / (1024 * 1024), PMM_FRAME_COUNT, PMM_START, PMM_END);
 
+    arch_paging_init();
+
     printf("\n");
 
     keyboard_init_interrupts();
 
-#ifdef ARCH_I686
-    // Test Rust integration on boot (Rust library is 32-bit only for now)
-    printf("\n");
-    rust_hello();
-    printf("Rust test: 40 + 2 = %d\n\n", rust_add(40, 2));
+    // Test Rust integration on boot (no-op on arches without Rust library)
+    arch_rust_test();
 
-    // Scan PCI bus (x86_64 port: PCI not yet wired up)
-    pci_init();
+    // Scan PCI bus
+    arch_pci_init();
     kprintf("[boot] pci scan ok\n");
 
-    // Initialize network (RTL8139 + minimal ARP/ICMP — 32-bit only for now)
-    net_init();
-#else
-    kprintf("[boot] skipping pci/net (x86_64 stub)\n");
-#endif
+    // Initialize network stack (no-op on arches without network driver)
+    arch_net_init();
     kprintf("[boot] net init ok\n");
 
     // Initialize VFS and register FAT16 boot filesystem
@@ -134,13 +125,7 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     if (fat16_init() != 0) {
         printf("FATAL: FAT16 boot disk not found. Cannot boot.\n");
         printf("Ensure an IDE disk with FAT16 filesystem is attached.\n");
-        while (1) {
-#ifdef ARCH_I686
-            halt_and_catch_fire();
-#else
-            __asm__ volatile("hlt");
-#endif
-        }
+        arch_halt_forever();
     }
     vfs_register_fs(fat16_get_ops());
     kprintf("[boot] fat16 boot disk ok\n");
@@ -157,12 +142,10 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
     window_init();
     kprintf("[boot] window init ok\n");
 
-#ifdef ARCH_I686
-    // Initialize PS/2 mouse (x86_64 port: not yet wired up)
-    mouse_init();
-    register_interrupt_handler(0x2C, mouse_irq_handler);
+    // Initialize PS/2 mouse (no-op on arches without PS/2 support)
+    arch_mouse_init();
+    register_interrupt_handler(0x2C, arch_mouse_irq_handler);
     pic_unmask_irq(12);
-#endif
 
     // Print boot summary with RAM and PMM stats
     {
@@ -214,12 +197,6 @@ void kernel_main(uint32_t multiboot_magic, multiboot_info_t *multiboot_info) {
         printf("No boot program available. System halted.\n");
     }
 
-    // Main loop - just halt and wait for interrupts
-    while (1) {
-#ifdef ARCH_I686
-        halt_and_catch_fire();
-#else
-        __asm__ volatile("hlt");
-#endif
-    }
+    // Main loop - halt and wait for interrupts
+    arch_halt_forever();
 }

@@ -11,6 +11,7 @@
  */
 #include "arch/arch_interface.h"
 #include "arch/x86_64/gdt.h"
+#include "arch/x86_64/io.h"
 #include "arch/x86_64/tss.h"
 #include "arch/x86_64/paging.h"
 #include "arch/x86_64/x86_64init.h"
@@ -210,4 +211,122 @@ arch_irq_frame_t *arch_irq_frame_from_state(void *state) {
 
 void arch_init(void) {
     init_x86_64();
+}
+
+void arch_paging_init(void) {
+    /* Build the permanent kernel PML4 now that PMM is available. */
+    init_paging();
+}
+
+/* ── Halt / shutdown ────────────────────────────────────────────────────── */
+
+void __attribute__((noreturn)) arch_halt_forever(void) {
+    while (1)
+        __asm__ volatile("hlt");
+}
+
+/* ── Console output ─────────────────────────────────────────────────────── */
+
+void arch_console_putchar(char c) {
+    serial_putchar(c);
+}
+
+/* ── CPU information ────────────────────────────────────────────────────── */
+
+void arch_cpu_get_info(arch_cpu_info_t *out) {
+    if (!out)
+        return;
+    /* CPUID is available in 64-bit mode; provide a minimal implementation. */
+    uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0;
+    /* leaf 0: max_leaf and vendor string */
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(0));
+    out->max_leaf = eax;
+    /* Vendor string: EBX EDX ECX in order (12 chars + NUL). */
+    uint32_t *v = (uint32_t *)out->vendor;
+    v[0] = ebx; v[1] = edx; v[2] = ecx;
+    out->vendor[12] = '\0';
+    /* leaf 1: family/model/stepping and feature flags */
+    if (eax >= 1) {
+        __asm__ volatile("cpuid"
+                         : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                         : "a"(1));
+        out->stepping    = (eax >> 0)  & 0xF;
+        out->model       = (eax >> 4)  & 0xF;
+        out->family      = (eax >> 8)  & 0xF;
+        out->feature_ecx = ecx;
+        out->feature_edx = edx;
+    } else {
+        out->stepping = out->model = out->family = 0;
+        out->feature_ecx = out->feature_edx = 0;
+    }
+}
+
+/* ── PCI bus ────────────────────────────────────────────────────────────── */
+
+void arch_pci_init(void) {
+    /* TODO: implement PCI for x86_64 */
+}
+
+int arch_pci_get_devices(arch_pci_device_t *out, int max) {
+    (void)out; (void)max;
+    return 0;
+}
+
+/* ── Graphics / framebuffer ─────────────────────────────────────────────── */
+
+int      arch_gfx_bga_available(void)                       { return 0; }
+uint32_t arch_gfx_enter_bga(int w, int h, int bpp)          { (void)w;(void)h;(void)bpp; return 0; }
+void     arch_gfx_exit_bga(void)                            {}
+void     arch_gfx_enter_mode13h(void)                       {}
+void     arch_gfx_enter_text_mode(void)                     {}
+uint32_t arch_gfx_mode13h_fb_start(void)                    { return 0xA0000u; }
+uint32_t arch_gfx_mode13h_fb_end(void)                      { return 0xB0000u; }
+
+/* ── PS/2 mouse ─────────────────────────────────────────────────────────── */
+
+void arch_mouse_init(void)                                   {}
+void arch_mouse_irq_handler(uintptr_t irq, uintptr_t vec)   { (void)irq;(void)vec; }
+void arch_mouse_get_state(int *x, int *y, uint8_t *buttons) {
+    if (x)       *x       = 0;
+    if (y)       *y       = 0;
+    if (buttons) *buttons = 0;
+}
+void arch_mouse_set_bounds(int w, int h)                     { (void)w;(void)h; }
+
+/* ── Terminal scrolling ─────────────────────────────────────────────────── */
+
+void arch_terminal_scroll_up(void)                           {}
+void arch_terminal_scroll_down(void)                         {}
+
+/* ── Networking ─────────────────────────────────────────────────────────── */
+
+void arch_net_init(void)                                               {}
+void arch_net_sock_close_all_for_pid(uint32_t pid)                    { (void)pid; }
+int  arch_net_ping(uint32_t ip_be, uint32_t timeout_ms)               { (void)ip_be;(void)timeout_ms; return -1; }
+void arch_net_set_config(uint32_t a, uint32_t b, uint32_t c)          { (void)a;(void)b;(void)c; }
+void arch_net_get_config(uint32_t *a, uint32_t *b, uint32_t *c)       {
+    if (a) *a = 0; if (b) *b = 0; if (c) *c = 0;
+}
+void arch_net_get_stats(uint32_t *rx, uint32_t *tx)                   {
+    if (rx) *rx = 0; if (tx) *tx = 0;
+}
+int  arch_net_sock_listen(uint16_t port)                               { (void)port; return -1; }
+int  arch_net_sock_accept(int fd)                                      { (void)fd; return -1; }
+int  arch_net_sock_send(int fd, const void *buf, uint32_t len)         { (void)fd;(void)buf;(void)len; return -1; }
+int  arch_net_sock_recv(int fd, void *buf, uint32_t len)               { (void)fd;(void)buf;(void)len; return -1; }
+int  arch_net_sock_close(int fd)                                       { (void)fd; return -1; }
+
+/* ── Rust integration ───────────────────────────────────────────────────── */
+
+void arch_rust_test(void) {
+    /* Rust library not linked for x86_64. */
+}
+
+/* ── QEMU debug exit ────────────────────────────────────────────────────── */
+
+void arch_debug_exit(uint32_t code) {
+    /* QEMU_DEBUG_EXIT_PORT = 0xF4, same on both arches. */
+    outb(0xF4, (uint8_t)(code & 0xFFu));
 }

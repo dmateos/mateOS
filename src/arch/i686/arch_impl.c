@@ -16,11 +16,22 @@
 /* Pull in all existing i686 headers — implementation details stay here. */
 #include "arch/i686/cpu.h"
 #include "arch/i686/interrupts.h"
+#include "arch/i686/io.h"
+#include "arch/i686/legacytty.h"
+#include "arch/i686/mouse.h"
 #include "arch/i686/paging.h"
+#include "arch/i686/pci.h"
 #include "arch/i686/tss.h"
+#include "arch/i686/util.h"
+#include "arch/i686/vga.h"
 #include "arch/i686/686init.h"
 #include "lib.h"
 #include "memlayout.h"
+#include "net/net.h"
+
+/* External Rust functions — only available in the i686 build. */
+extern void rust_hello(void);
+extern int  rust_add(int a, int b);
 
 /* ------------------------------------------------------------------ */
 /* Concrete type definitions                                           */
@@ -245,4 +256,184 @@ arch_irq_frame_t *arch_irq_frame_from_state(void *state) {
 
 void arch_init(void) {
     init_686();
+}
+
+void arch_paging_init(void) {
+    /* i686 paging is fully set up inside init_686() — nothing to do here. */
+}
+
+/* ------------------------------------------------------------------ */
+/* Halt / shutdown                                                     */
+/* ------------------------------------------------------------------ */
+
+void __attribute__((noreturn)) arch_halt_forever(void) {
+    /* halt_and_catch_fire() does hlt+ret, so we must loop —
+     * interrupts (timer) can wake the CPU from hlt and cause ret to execute. */
+    while (1)
+        halt_and_catch_fire();
+}
+
+/* ------------------------------------------------------------------ */
+/* Console output                                                      */
+/* ------------------------------------------------------------------ */
+
+void arch_console_putchar(char c) {
+    term_putchar(c);
+}
+
+/* ------------------------------------------------------------------ */
+/* CPU information                                                     */
+/* ------------------------------------------------------------------ */
+
+void arch_cpu_get_info(arch_cpu_info_t *out) {
+    /* cpu_info_t and arch_cpu_info_t have identical layout. */
+    cpu_get_info((cpu_info_t *)out);
+}
+
+/* ------------------------------------------------------------------ */
+/* PCI bus                                                             */
+/* ------------------------------------------------------------------ */
+
+void arch_pci_init(void) {
+    pci_init();
+}
+
+int arch_pci_get_devices(arch_pci_device_t *out, int max) {
+    /* pci_device_t and arch_pci_device_t have identical layout. */
+    return pci_get_devices((pci_device_t *)out, max);
+}
+
+/* ------------------------------------------------------------------ */
+/* Graphics / framebuffer                                              */
+/* ------------------------------------------------------------------ */
+
+int arch_gfx_bga_available(void) {
+    return vga_bga_available();
+}
+
+uint32_t arch_gfx_enter_bga(int width, int height, int bpp) {
+    return vga_enter_bga_mode(width, height, bpp);
+}
+
+void arch_gfx_exit_bga(void) {
+    vga_exit_bga_mode();
+}
+
+void arch_gfx_enter_mode13h(void) {
+    vga_enter_mode13h();
+}
+
+void arch_gfx_enter_text_mode(void) {
+    vga_enter_text_mode();
+}
+
+uint32_t arch_gfx_mode13h_fb_start(void) {
+    return VGA_MODE13H_FB_START;
+}
+
+uint32_t arch_gfx_mode13h_fb_end(void) {
+    return VGA_MODE13H_FB_END;
+}
+
+/* ------------------------------------------------------------------ */
+/* PS/2 mouse                                                          */
+/* ------------------------------------------------------------------ */
+
+void arch_mouse_init(void) {
+    mouse_init();
+}
+
+void arch_mouse_irq_handler(uintptr_t irq, uintptr_t vec) {
+    /* mouse_irq_handler takes (uint32_t, uint32_t) — safe cast. */
+    mouse_irq_handler((uint32_t)irq, (uint32_t)vec);
+}
+
+void arch_mouse_get_state(int *x, int *y, uint8_t *buttons) {
+    mouse_state_t ms = mouse_get_state();
+    if (x)       *x       = ms.x;
+    if (y)       *y       = ms.y;
+    if (buttons) *buttons = ms.buttons;
+}
+
+void arch_mouse_set_bounds(int width, int height) {
+    mouse_set_bounds(width, height);
+}
+
+/* ------------------------------------------------------------------ */
+/* Terminal scrolling                                                  */
+/* ------------------------------------------------------------------ */
+
+void arch_terminal_scroll_up(void) {
+    terminal_scroll_up();
+}
+
+void arch_terminal_scroll_down(void) {
+    terminal_scroll_down();
+}
+
+/* ------------------------------------------------------------------ */
+/* Networking                                                          */
+/* ------------------------------------------------------------------ */
+
+void arch_net_init(void) {
+    net_init();
+}
+
+void arch_net_sock_close_all_for_pid(uint32_t pid) {
+    net_sock_close_all_for_pid(pid);
+}
+
+int arch_net_ping(uint32_t ip_be, uint32_t timeout_ms) {
+    return net_ping(ip_be, timeout_ms);
+}
+
+void arch_net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be) {
+    net_set_config(ip_be, mask_be, gw_be);
+}
+
+void arch_net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be) {
+    net_get_config(ip_be, mask_be, gw_be);
+}
+
+void arch_net_get_stats(uint32_t *rx, uint32_t *tx) {
+    net_get_stats(rx, tx);
+}
+
+int arch_net_sock_listen(uint16_t port) {
+    return net_sock_listen(port);
+}
+
+int arch_net_sock_accept(int fd) {
+    return net_sock_accept(fd);
+}
+
+int arch_net_sock_send(int fd, const void *buf, uint32_t len) {
+    return net_sock_send(fd, buf, len);
+}
+
+int arch_net_sock_recv(int fd, void *buf, uint32_t len) {
+    return net_sock_recv(fd, buf, len);
+}
+
+int arch_net_sock_close(int fd) {
+    return net_sock_close(fd);
+}
+
+/* ------------------------------------------------------------------ */
+/* Rust integration                                                    */
+/* ------------------------------------------------------------------ */
+
+void arch_rust_test(void) {
+    rust_hello();
+    /* Log Rust add result — callers can ignore the value. */
+    int r = rust_add(40, 2);
+    kprintf("[boot] Rust test: 40 + 2 = %d\n", r);
+}
+
+/* ------------------------------------------------------------------ */
+/* QEMU debug exit                                                     */
+/* ------------------------------------------------------------------ */
+
+void arch_debug_exit(uint32_t code) {
+    outb(QEMU_DEBUG_EXIT_PORT, (uint8_t)(code & 0xFFu));
 }

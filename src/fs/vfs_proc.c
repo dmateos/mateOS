@@ -4,7 +4,6 @@
 #include "io/window.h"
 #include "liballoc/liballoc_hooks.h"
 #include "memlayout.h"
-#include "net/net.h"
 #include "proc/pmm.h"
 #include "proc/task.h"
 #include "utils/strbuf.h"
@@ -86,9 +85,8 @@ static uint32_t vgen_meminfo(char *dst, uint32_t cap) {
 
 static uint32_t vgen_cpuinfo(char *dst, uint32_t cap) {
     uint32_t len = 0;
-#ifdef ARCH_I686
-    cpu_info_t info;
-    cpu_get_info(&info);
+    arch_cpu_info_t info;
+    arch_cpu_get_info(&info);
 
     append_cstr(dst, cap, &len, "CPU vendor: ");
     append_cstr(dst, cap, &len, info.vendor);
@@ -105,9 +103,6 @@ static uint32_t vgen_cpuinfo(char *dst, uint32_t cap) {
     append_cstr(dst, cap, &len, "\nFeature EDX: ");
     append_hex_u32(dst, cap, &len, info.feature_edx);
     append_cstr(dst, cap, &len, "\n");
-#else
-    append_cstr(dst, cap, &len, "x86_64 cpuinfo not yet implemented\n");
-#endif
     return len;
 }
 
@@ -146,19 +141,15 @@ static uint32_t vgen_lsirq(char *dst, uint32_t cap) {
 
 static uint32_t vgen_pci(char *dst, uint32_t cap) {
     uint32_t len = 0;
-#ifndef ARCH_I686
-    append_cstr(dst, cap, &len, "PCI not yet implemented for x86_64\n");
-    return len;
-#else
-    pci_device_t devs[PCI_MAX_DEVICES];
-    int count = pci_get_devices(devs, PCI_MAX_DEVICES);
+    arch_pci_device_t devs[ARCH_PCI_MAX_DEVICES];
+    int count = arch_pci_get_devices(devs, ARCH_PCI_MAX_DEVICES);
 
     append_cstr(dst, cap, &len, "PCI devices (");
     append_dec_u32(dst, cap, &len, (uint32_t)count);
     append_cstr(dst, cap, &len, "):\n");
 
     for (int i = 0; i < count; i++) {
-        pci_device_t *d = &devs[i];
+        arch_pci_device_t *d = &devs[i];
         append_cstr(dst, cap, &len, "  ");
         append_dec_u32(dst, cap, &len, d->bus);
         append_cstr(dst, cap, &len, ":");
@@ -181,7 +172,6 @@ static uint32_t vgen_pci(char *dst, uint32_t cap) {
     }
 
     return len;
-#endif /* ARCH_I686 */
 }
 
 static uint32_t vgen_uptime(char *dst, uint32_t cap) {
@@ -349,10 +339,8 @@ static uint32_t vgen_net(char *dst, uint32_t cap) {
     uint32_t len = 0;
     uint32_t ip_be = 0, mask_be = 0, gw_be = 0;
     uint32_t rx = 0, tx = 0;
-#ifdef ARCH_I686
-    net_get_config(&ip_be, &mask_be, &gw_be);
-    net_get_stats(&rx, &tx);
-#endif
+    arch_net_get_config(&ip_be, &mask_be, &gw_be);
+    arch_net_get_stats(&rx, &tx);
 
     append_cstr(dst, cap, &len, "ip   ");
     append_ip_be(dst, cap, &len, ip_be);

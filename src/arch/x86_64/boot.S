@@ -37,6 +37,17 @@
 /* Higher-half offset used throughout this file */
 .set KVBASE,        0xC0000000
 
+/*
+ * Physical address of _start.  The ELF entry point (long_mode_entry) is a
+ * higher-half VMA that GRUB cannot jump to before paging is active.  We
+ * embed a multiboot2 entry address tag (type=3) whose entry_addr field is
+ * the physical load address of _start so GRUB jumps to the right place.
+ *
+ * _start lives at VMA 0xC0200000 + some offset, LMA = VMA - 0xC0000000.
+ * We compute it as: (_start - KVBASE) using linker arithmetic.
+ */
+.set _start_phys, (_start - KVBASE)
+
 /* ── BSS page-table structures (4KB-aligned, zeroed by loader) ───────── */
 .section .bss
 .align 4096
@@ -60,7 +71,18 @@ mb2_header_start:
     .long  MB2_ARCH
     .long  MB2_HDR_LEN
     .long  MB2_CHECKSUM
+    /*
+     * Entry address tag (type=3, flags=0, size=12):
+     * Tells GRUB to jump to the physical address of _start rather than the
+     * ELF entry point (long_mode_entry at VMA 0xC02xxxxx, unreachable before
+     * paging is enabled).
+     */
+    .word  3              /* tag type: entry address */
+    .word  0              /* flags: not optional */
+    .long  12             /* tag size: 4+4+4 bytes */
+    .long  _start_phys    /* physical entry point */
     /* terminating tag */
+    .align 8
     .word  0    /* type = end */
     .word  0    /* flags */
     .long  8    /* size */

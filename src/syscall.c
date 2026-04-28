@@ -8,7 +8,6 @@
 #include "liballoc/liballoc_1_1.h"
 #include "liballoc/liballoc_hooks.h"
 #include "memlayout.h"
-#include "net/net.h"
 #include "proc/elf.h"
 #include "proc/pmm.h"
 #include "proc/task.h"
@@ -87,13 +86,11 @@ static void sys_do_exit(int code) {
     task_t *current = task_current();
     if (user_gfx_active && current && current->id == gfx_owner_pid) {
         keyboard_buffer_enable(0);
-#ifdef ARCH_I686
         if (user_gfx_bga) {
-            vga_exit_bga_mode();
+            arch_gfx_exit_bga();
         } else {
-            vga_enter_text_mode();
+            arch_gfx_enter_text_mode();
         }
-#endif
         user_gfx_active = 0;
         user_gfx_bga = 0;
         gfx_owner_pid = 0;
@@ -341,17 +338,13 @@ static int sys_do_exec(const char *filename, arch_irq_frame_t *frame) {
 
 // Enter graphics mode — try BGA (Bochs VGA) for 1024x768, else Mode 13h
 static uint32_t sys_do_gfx_init(void) {
-#ifndef ARCH_I686
-    /* x86_64 port: graphics not yet implemented */
-    return 0;
-#else
     if (user_gfx_active) {
-        return user_gfx_bga ? bga_fb_addr : VGA_MODE13H_FB_START;
+        return user_gfx_bga ? bga_fb_addr : arch_gfx_mode13h_fb_start();
     }
 
     // Try BGA mode (QEMU -vga std)
-    if (vga_bga_available()) {
-        uint32_t lfb = vga_enter_bga_mode(1024, 768, 16);
+    if (arch_gfx_bga_available()) {
+        uint32_t lfb = arch_gfx_enter_bga(1024, 768, 16);
         if (lfb) {
             uint32_t fb_size = 1024 * 768 * 2; // 16bpp RGB565
 
@@ -376,31 +369,29 @@ static uint32_t sys_do_gfx_init(void) {
             bga_height = 768;
             bga_bpp = 16;
 
-            // In 16bpp the DAC palette is not used for framebuffer pixels.
-
             user_gfx_bga = 1;
             keyboard_buffer_init();
             keyboard_buffer_enable(1);
             user_gfx_active = 1;
             gfx_owner_pid = current ? current->id : 0;
-            mouse_set_bounds((int)bga_width, (int)bga_height);
+            arch_mouse_set_bounds((int)bga_width, (int)bga_height);
 
             return bga_fb_addr;
         }
     }
 
     // Fallback: Mode 13h
-    vga_enter_mode13h();
+    arch_gfx_enter_mode13h();
 
     // Map VGA Mode 13h framebuffer into kernel address space (propagates to
     // new processes) and into the current task's address space.
-    arch_aspace_map_mmio(VGA_MODE13H_FB_START,
-                         VGA_MODE13H_FB_END - VGA_MODE13H_FB_START);
+    uint32_t fb_start = arch_gfx_mode13h_fb_start();
+    uint32_t fb_end   = arch_gfx_mode13h_fb_end();
+    arch_aspace_map_mmio(fb_start, fb_end - fb_start);
     {
         task_t *cur = task_current();
         if (cur && cur->page_dir) {
-            for (uint32_t addr = VGA_MODE13H_FB_START;
-                 addr < VGA_MODE13H_FB_END; addr += 0x1000) {
+            for (uint32_t addr = fb_start; addr < fb_end; addr += 0x1000) {
                 arch_aspace_map(cur->page_dir, addr, addr,
                                 ARCH_PAGE_PRESENT | ARCH_PAGE_WRITE |
                                 ARCH_PAGE_USER);
@@ -418,10 +409,9 @@ static uint32_t sys_do_gfx_init(void) {
         task_t *cur = task_current();
         gfx_owner_pid = cur ? cur->id : 0;
     }
-    mouse_set_bounds(320, 200);
+    arch_mouse_set_bounds(320, 200);
 
-    return VGA_MODE13H_FB_START;
-#endif /* ARCH_I686 */
+    return fb_start;
 }
 
 // Return to text mode — only the gfx owner can do this
@@ -434,13 +424,11 @@ static void sys_do_gfx_exit(void) {
         return;
 
     keyboard_buffer_enable(0);
-#ifdef ARCH_I686
     if (user_gfx_bga) {
-        vga_exit_bga_mode();
+        arch_gfx_exit_bga();
     } else {
-        vga_enter_text_mode();
+        arch_gfx_enter_text_mode();
     }
-#endif
     user_gfx_active = 0;
     user_gfx_bga = 0;
     bga_bpp = 0;
@@ -673,11 +661,7 @@ static uint32_t sys_do_sbrk(int32_t increment) {
 static uint32_t sys_do_getticks(void) { return get_tick_count(); }
 
 static int sys_do_debug_exit(uint32_t code) {
-#ifdef ARCH_I686
-    outb(QEMU_DEBUG_EXIT_PORT, (uint8_t)(code & 0xFFu));
-#else
-    (void)code;
-#endif
+    arch_debug_exit(code);
     return 0;
 }
 
@@ -811,12 +795,11 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
     case SYS_WAIT_NB:
         return (uint32_t)sys_do_wait_nb(ebx);
 
-#ifdef ARCH_I686
     case SYS_PING:
-        return (uint32_t)net_ping(ebx, ecx);
+        return (uint32_t)arch_net_ping(ebx, ecx);
 
     case SYS_NETCFG:
-        net_set_config(ebx, ecx, edx);
+        arch_net_set_config(ebx, ecx, edx);
         return 0;
 
     case SYS_NETGET: {
@@ -824,7 +807,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
             !validate_user_ptr(edx, 4))
             return (uint32_t)-1;
         uint32_t ip_be = 0, mask_be = 0, gw_be = 0;
-        net_get_config(&ip_be, &mask_be, &gw_be);
+        arch_net_get_config(&ip_be, &mask_be, &gw_be);
         *(uint32_t *)ebx = ip_be;
         *(uint32_t *)ecx = mask_be;
         *(uint32_t *)edx = gw_be;
@@ -835,49 +818,33 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
         if (!validate_user_ptr(ebx, 4) || !validate_user_ptr(ecx, 4))
             return (uint32_t)-1;
         uint32_t rx = 0, tx = 0;
-        net_get_stats(&rx, &tx);
+        arch_net_get_stats(&rx, &tx);
         *(uint32_t *)ebx = rx;
         *(uint32_t *)ecx = tx;
         return 0;
     }
-#else
-    case SYS_PING:
-    case SYS_NETCFG:
-    case SYS_NETGET:
-    case SYS_NETSTATS:
-        return (uint32_t)-1;  /* net not yet ported to x86_64 */
-#endif
 
     case SYS_SLEEPMS:
         return (uint32_t)sys_do_sleepms(ebx);
 
-#ifdef ARCH_I686
     case SYS_SOCK_LISTEN:
-        return (uint32_t)net_sock_listen((uint16_t)ebx);
+        return (uint32_t)arch_net_sock_listen((uint16_t)ebx);
 
     case SYS_SOCK_ACCEPT:
-        return (uint32_t)net_sock_accept((int)ebx);
+        return (uint32_t)arch_net_sock_accept((int)ebx);
 
     case SYS_SOCK_SEND:
         if (!validate_user_ptr(ecx, edx))
             return (uint32_t)-1;
-        return (uint32_t)net_sock_send((int)ebx, (const void *)ecx, edx);
+        return (uint32_t)arch_net_sock_send((int)ebx, (const void *)ecx, edx);
 
     case SYS_SOCK_RECV:
         if (!validate_user_ptr(ecx, edx))
             return (uint32_t)-1;
-        return (uint32_t)net_sock_recv((int)ebx, (void *)ecx, edx);
+        return (uint32_t)arch_net_sock_recv((int)ebx, (void *)ecx, edx);
 
     case SYS_SOCK_CLOSE:
-        return (uint32_t)net_sock_close((int)ebx);
-#else
-    case SYS_SOCK_LISTEN:
-    case SYS_SOCK_ACCEPT:
-    case SYS_SOCK_SEND:
-    case SYS_SOCK_RECV:
-    case SYS_SOCK_CLOSE:
-        return (uint32_t)-1;  /* sockets not yet ported to x86_64 */
-#endif
+        return (uint32_t)arch_net_sock_close((int)ebx);
 
     case SYS_WIN_READ_TEXT: {
         if (edx > 0 && !validate_user_ptr(ecx, edx))
@@ -903,15 +870,12 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
             return (uint32_t)-1;
         if (edx && !validate_user_ptr(edx, 1))
             return (uint32_t)-1;
-#ifdef ARCH_I686
-        mouse_state_t ms = mouse_get_state();
-        if (ebx)
-            *(int *)ebx = ms.x;
-        if (ecx)
-            *(int *)ecx = ms.y;
-        if (edx)
-            *(uint8_t *)edx = ms.buttons;
-#endif
+        int mx = 0, my = 0;
+        uint8_t mb = 0;
+        arch_mouse_get_state(&mx, &my, &mb);
+        if (ebx) *(int *)ebx      = mx;
+        if (ecx) *(int *)ecx      = my;
+        if (edx) *(uint8_t *)edx  = mb;
         return 0;
     }
 

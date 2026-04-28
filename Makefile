@@ -157,7 +157,7 @@ $(BOOT_IMG): userland
 
 clean:
 	rm -rf $(BUILDDIR) $(TARGET) $(TARGET64)
-	rm -rf out.iso $(BOOT_IMG) $(KERNEL_VERSION_FILE)
+	rm -rf out.iso out64.iso $(BOOT_IMG) $(KERNEL_VERSION_FILE)
 	@$(MAKE) -C userland clean
 	@cd rust && cargo clean 2>/dev/null || true
 
@@ -393,14 +393,22 @@ $(BUILDDIR)/64/lwip/%.o: $(LWIP_DIR)/%.c $(KERNEL_VERSION_FILE)
 	@mkdir -p $(dir $@)
 	$(CC64) $(CFLAGS64) -c $< -o $@
 
-QEMU64 = qemu-system-x86_64
-QEMU64_BASE = -kernel $(TARGET64) -drive file=$(BOOT_IMG),format=raw,if=ide -no-reboot
+QEMU64     = qemu-system-x86_64
+ISO64      = out64.iso
+ISODIR64   = isodir64
 
-run64: $(TARGET64) $(BOOT_IMG)
+# Build a GRUB2 bootable ISO for the x86_64 kernel.
+# QEMU -kernel cannot load a multiboot2 ELF without a PVH note, so we use
+# grub-mkrescue to wrap it in a proper ISO with a GRUB2 loader.
+iso64: $(TARGET64)
+	cp $(TARGET64) $(ISODIR64)/boot/
+	grub-mkrescue -o $(ISO64) $(ISODIR64)
+
+run64: iso64 $(BOOT_IMG)
 ifdef GFX
-	$(QEMU64) -display sdl -vga std $(QEMU64_BASE)
+	$(QEMU64) -display sdl -vga std -cdrom $(ISO64) -drive file=$(BOOT_IMG),format=raw,if=ide -no-reboot
 else
-	$(QEMU64) -display curses $(QEMU64_BASE)
+	$(QEMU64) -display curses -cdrom $(ISO64) -drive file=$(BOOT_IMG),format=raw,if=ide -no-reboot
 endif
 
 stop-test:
@@ -413,4 +421,4 @@ iso:
 testiso:
 	qemu-system-i386 -display curses -cdrom out.iso
 
-.PHONY: clean rust run run64 x86_64 cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland tinycc-phase1
+.PHONY: clean rust run run64 iso64 x86_64 cc-smoke cc-symbol-smoke tcc-smoke doom-smoke userland tinycc-phase1

@@ -138,8 +138,165 @@ arch_irq_frame_t *arch_irq_frame_from_state(void *state);
 /* Architecture initialisation                                         */
 /* ------------------------------------------------------------------ */
 
-/* One-shot arch initialisation: GDT, IDT, paging, TSS, timer.
- * Replaces init_686() / init_x86_64(). */
+/* One-shot arch initialisation: GDT, IDT, TSS, timer (and paging on i686).
+ * Called at the very start of kernel_main, before PMM. */
 void arch_init(void);
+
+/* Second-phase paging init: build permanent kernel page tables using PMM.
+ * Must be called after pmm_init(). On i686 this is a no-op (paging is
+ * fully set up in arch_init). On x86_64 this builds the permanent PML4. */
+void arch_paging_init(void);
+
+/* ------------------------------------------------------------------ */
+/* Halt / shutdown                                                     */
+/* ------------------------------------------------------------------ */
+
+/* Spin forever with interrupts disabled (kernel panic / fatal error). */
+void __attribute__((noreturn)) arch_halt_forever(void);
+
+/* ------------------------------------------------------------------ */
+/* Console output                                                      */
+/* ------------------------------------------------------------------ */
+
+/* Write one character to the primary boot console (VGA text or serial). */
+void arch_console_putchar(char c);
+
+/* ------------------------------------------------------------------ */
+/* CPU information                                                     */
+/* ------------------------------------------------------------------ */
+
+/* Vendor/feature information returned by arch_cpu_get_info(). */
+typedef struct {
+    char     vendor[13];
+    uint32_t max_leaf;
+    uint32_t family;
+    uint32_t model;
+    uint32_t stepping;
+    uint32_t feature_ecx;
+    uint32_t feature_edx;
+} arch_cpu_info_t;
+
+/* Fill *out with CPUID information for the boot CPU. */
+void arch_cpu_get_info(arch_cpu_info_t *out);
+
+/* ------------------------------------------------------------------ */
+/* PCI bus                                                             */
+/* ------------------------------------------------------------------ */
+
+#define ARCH_PCI_MAX_DEVICES 32
+
+/* One discovered PCI device. */
+typedef struct {
+    uint8_t  bus;
+    uint8_t  device;
+    uint8_t  function;
+    uint16_t vendor_id;
+    uint16_t device_id;
+    uint8_t  class_code;
+    uint8_t  subclass;
+    uint8_t  irq_line;
+    uint32_t bar[6];
+} arch_pci_device_t;
+
+/* Scan the PCI bus (no-op if not supported by this arch). */
+void arch_pci_init(void);
+
+/* Copy up to max discovered devices into out[].
+ * Returns number of devices found (may be 0). */
+int arch_pci_get_devices(arch_pci_device_t *out, int max);
+
+/* ------------------------------------------------------------------ */
+/* Graphics / framebuffer                                              */
+/* ------------------------------------------------------------------ */
+
+/* Returns 1 if a BGA-compatible framebuffer is available, 0 otherwise. */
+int arch_gfx_bga_available(void);
+
+/* Enter BGA mode at width×height, bpp bits per pixel.
+ * Returns the physical/virtual address of the linear framebuffer,
+ * or 0 on failure. */
+uint32_t arch_gfx_enter_bga(int width, int height, int bpp);
+
+/* Leave BGA mode (no-op if not in BGA mode). */
+void arch_gfx_exit_bga(void);
+
+/* Enter VGA Mode 13h (320×200, 8bpp palette). */
+void arch_gfx_enter_mode13h(void);
+
+/* Return to VGA text mode. */
+void arch_gfx_enter_text_mode(void);
+
+/* Physical start address of the Mode 13h framebuffer (0xA0000). */
+uint32_t arch_gfx_mode13h_fb_start(void);
+
+/* Physical end   address of the Mode 13h framebuffer (0xB0000). */
+uint32_t arch_gfx_mode13h_fb_end(void);
+
+/* ------------------------------------------------------------------ */
+/* PS/2 mouse                                                          */
+/* ------------------------------------------------------------------ */
+
+/* Initialise the PS/2 mouse controller. */
+void arch_mouse_init(void);
+
+/* IRQ handler entry point for mouse interrupts (called from IDT). */
+void arch_mouse_irq_handler(uintptr_t irq, uintptr_t vec);
+
+/* Read the current mouse state. x/y may be NULL if not needed. */
+void arch_mouse_get_state(int *x, int *y, uint8_t *buttons);
+
+/* Set the clamp bounds for mouse cursor movement. */
+void arch_mouse_set_bounds(int width, int height);
+
+/* ------------------------------------------------------------------ */
+/* Terminal scrolling                                                  */
+/* ------------------------------------------------------------------ */
+
+/* Scroll the VGA text-mode terminal up/down one line. */
+void arch_terminal_scroll_up(void);
+void arch_terminal_scroll_down(void);
+
+/* ------------------------------------------------------------------ */
+/* Networking                                                          */
+/* ------------------------------------------------------------------ */
+
+/* Initialise the network stack (RTL8139 + lwIP, or no-op). */
+void arch_net_init(void);
+
+/* Close all sockets owned by pid (called on task exit). */
+void arch_net_sock_close_all_for_pid(uint32_t pid);
+
+/* Send an ICMP echo to ip_be (big-endian).
+ * Returns round-trip ms or -1 on failure. */
+int arch_net_ping(uint32_t ip_be, uint32_t timeout_ms);
+
+/* Set / get IP configuration (big-endian values). */
+void arch_net_set_config(uint32_t ip_be, uint32_t mask_be, uint32_t gw_be);
+void arch_net_get_config(uint32_t *ip_be, uint32_t *mask_be, uint32_t *gw_be);
+
+/* Get packet counters. */
+void arch_net_get_stats(uint32_t *rx, uint32_t *tx);
+
+/* TCP socket interface (returns fd-like integers, negative on error). */
+int arch_net_sock_listen(uint16_t port);
+int arch_net_sock_accept(int fd);
+int arch_net_sock_send(int fd, const void *buf, uint32_t len);
+int arch_net_sock_recv(int fd, void *buf, uint32_t len);
+int arch_net_sock_close(int fd);
+
+/* ------------------------------------------------------------------ */
+/* Rust integration                                                    */
+/* ------------------------------------------------------------------ */
+
+/* Run the Rust hello-world / smoke-test (no-op on arches without Rust lib). */
+void arch_rust_test(void);
+
+/* ------------------------------------------------------------------ */
+/* QEMU debug exit                                                     */
+/* ------------------------------------------------------------------ */
+
+/* Write code to the QEMU ISA debug-exit device, terminating the VM.
+ * Has no effect on real hardware. */
+void arch_debug_exit(uint32_t code);
 
 #endif /* _ARCH_INTERFACE_H */

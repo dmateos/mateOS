@@ -5,7 +5,6 @@
 #include "lib.h"
 #include "liballoc/liballoc_1_1.h"
 #include "memlayout.h"
-#include "net/net.h"
 #include "pmm.h"
 #include "syscall.h" // for load_elf_into
 
@@ -436,10 +435,8 @@ static void task_terminate(task_t *task, int code) {
     // Clean up any windows owned by this process.
     window_cleanup_pid(task->id);
 
-#ifdef ARCH_I686
-    // Clean up any TCP sockets owned by this process.
-    net_sock_close_all_for_pid(task->id);
-#endif
+    // Clean up any TCP sockets owned by this process (no-op if net not available).
+    arch_net_sock_close_all_for_pid(task->id);
 
     // Close all open file descriptors.
     if (task->fd_table) {
